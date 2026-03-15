@@ -1,0 +1,62 @@
+import type { AgentContext } from '../core/types.js';
+import { ClarificationNeeded } from '../core/types.js';
+import { BaseAgent } from '../core/agent.js';
+import { assemblePrompt, type OutputSpec } from '../core/prompt-assembler.js';
+
+export class UIDesignerAgent extends BaseAgent {
+  getOutputSpec(): OutputSpec {
+    return {
+      artifacts: ['components/'],
+      manifest: 'components.manifest.json',
+    };
+  }
+
+  protected async run(context: AgentContext): Promise<void> {
+    const spec = this.getOutputSpec();
+    const prompt = assemblePrompt(context, spec);
+
+    this.logger.agent(this.stage, 'info', 'llm:call', {
+      promptLength: prompt.length,
+    });
+
+    const raw = await this.provider.call(prompt, {
+      systemPrompt: context.systemPrompt,
+    });
+
+    this.logger.agent(this.stage, 'info', 'llm:response', {
+      responseLength: raw.length,
+    });
+
+    // Check for clarification
+    const clarificationMatch = raw.match(
+      /<!-- CLARIFICATION -->\s*([\s\S]*?)\s*<!-- END:CLARIFICATION -->/
+    );
+    if (clarificationMatch) {
+      throw new ClarificationNeeded(clarificationMatch[1].trim());
+    }
+
+    // Dynamically extract all ARTIFACT blocks (component files have dynamic names)
+    const artifactPattern = /<!-- ARTIFACT:([\S]+) -->\s*([\s\S]*?)\s*<!-- END:\1 -->/g;
+    let match;
+    while ((match = artifactPattern.exec(raw)) !== null) {
+      const name = match[1];
+      const content = match[2].trim();
+      this.writeOutput(name, content);
+    }
+
+    // Extract manifest
+    const manifestPattern = /<!-- MANIFEST:components\.manifest\.json -->\s*([\s\S]*?)\s*<!-- END:MANIFEST -->/;
+    const manifestMatch = raw.match(manifestPattern);
+    if (manifestMatch) {
+      const jsonStr = manifestMatch[1].trim()
+        .replace(/^```(?:json)?\s*/, '')
+        .replace(/\s*```$/, '');
+      try {
+        const data = JSON.parse(jsonStr);
+        this.writeOutputManifest('components.manifest.json', data);
+      } catch {
+        throw new Error('Failed to parse components.manifest.json from LLM response');
+      }
+    }
+  }
+}
