@@ -1,30 +1,55 @@
-# Mosaic — 自治式 AI Agent 全流程交付框架（项目计划书 v2）
+# Mosaicat — AID 方法论参考实现（项目计划书 v3）
 
-> 基于 v1 计划书的补充讨论，修正架构问题，明确 MVP 范围与技术决策。
+> 基于 v2 计划书的深度重审，围绕 AID 三大原则（意图前置 / 自治执行 / 经验沉淀）重构架构设计。
 
 ---
 
 ## 产品定位
 
-一个通过 MCP 协议接入 LLM（如 Claude Code）的自治式 AI Agent 框架。用户给出一条指令，Agent 集群自主完成从 idea 到设计交付的全流程，关键节点由人工审批把控。
+Mosaicat 是 **AID（Autonomous Iterative Delivery）方法论**的参考实现。
+
+AID 的核心洞察：AI Coding 时代，执行者从人变成了 AI Agent，瓶颈从"执行"转移到了"决策"。传统方法论优化执行效率，AID 优化**决策效率**——让人更高效地做出正确决策，让 AI 更自治地完成交付。
 
 **一句话描述：** 一条指令，AI 团队帮你从想法做到设计稿和 API 规范。
 
 **核心理念：** 定义一种新的 AI Coding 赋能下的需求交付模式——AI 辅助人工，而非替代人工。设计师、产品经理等角色在流程中真实参与、审核、决策。
 
+### AID 三大原则
+
+| 原则 | 含义 | 解决的问题 |
+|---|---|---|
+| **意图前置** | 在执行之前充分澄清需求，减少决策返工 | 模糊指令导致的反复迭代 |
+| **自治执行** | AI 自主完成全过程，人只在关键节点验收 | 人过度介入过程细节 |
+| **经验沉淀** | 每次迭代的经验自动积累为 prompt 和 skill | 知识随人员流动而丢失 |
+
+### AID vs 传统模型
+
+| 维度 | Scrum/Agile | AID |
+|---|---|---|
+| 迭代周期 | 1-2 周 Sprint | 分钟级 Pipeline run |
+| 人的角色 | 执行者 + 决策者 | 决策者（意图定义 + 结果验收） |
+| 沟通方式 | 会议、文档、口头 | Artifact 契约 + 结构化澄清 |
+| 知识积累 | 在人脑中，依赖文档化 | 在 Agent prompt + skill 中，自动沉淀 |
+| 质量保障 | Code Review、QA 团队 | Agent 自评估 + Validator 交叉校验 |
+| 反馈循环 | Sprint Retro | 自进化提案（实时） |
+
 ---
 
 ## 核心差异化（vs MetaGPT / CrewAI / LangGraph）
 
-| 差异点 | 同类产品 | Mosaic |
+| 差异点 | 同类产品 | Mosaicat |
 |---|---|---|
+| 方法论 | 无，纯工具 | **AID 方法论**，框架是验证载体 |
 | 接入方式 | 独立应用，脱离开发者工作流 | MCP 框架，融入 Claude Code 等现有工具 |
 | 设计输出 | 纯文字/代码，无视觉产出 | **React 组件 + Playwright 截图**，设计师可审查 |
+| 意图处理 | 直接执行用户指令 | **Agent 级意图澄清**，执行前主动消除模糊 |
 | Agent 通信 | 内存中传递，不可追溯 | **Git Issue 驱动**，天然可审计 |
+| 质量校验 | 无/简单检查 | **Validator + manifest 交叉校验**，低 token 高覆盖 |
 | 使用门槛 | 需要 API Key | **仅需 Claude 订阅**，零额外配置 |
 | 人工介入 | 要么全手动要么全自动 | **可配置审批门控**，任意节点可选人工/自动 |
 | 上下文管理 | 全量传递，容易溢出 | **工件隔离**，Agent 只看契约内的 Artifact |
-| 自我进化 | Prompt 固定不变 | **Agent 自进化**，基于使用经验持续优化（人工审批后生效） |
+| 自我进化 | Prompt 固定不变 | **Prompt + Skill 双轨进化**（人工审批后生效） |
+| 可追溯性 | 无/基本日志 | **分层日志系统**，支持按 run 复盘 |
 
 ---
 
@@ -35,28 +60,36 @@
 ```
 用户指令（一条）
     ↓
-Researcher Agent      → 竞品分析 + 可行性报告
+Researcher Agent      → 竞品分析 + 可行性报告        [可澄清]
     ↓ 自动触发
 ProductOwner Agent    → 结构化 PRD
     ↓ 人工审批门控
-UXDesigner Agent      → 交互流程 + 组件清单
+UXDesigner Agent      → 交互流程 + 组件清单            [可澄清]
+    ↓ 自动触发
+APIDesigner Agent     → OpenAPI 3.0 规范              [可澄清]
     ↓ 自动触发
 UIDesigner Agent      → React 组件 + Playwright 截图
     ↓ 人工审批门控（设计师 review 截图）
-APIDesigner Agent     → OpenAPI 3.0 规范
+Validator             → 交叉校验所有 Artifact 一致性
     ↓
 完成，用户查看产出物
 ```
 
-### 5 个 MVP Agent
+**关键调整（相对 v2）：**
+- APIDesigner 移到 UIDesigner **之前**：UI 组件应基于确定的 API 契约设计数据绑定
+- 新增 Validator：交叉校验所有 Artifact 的一致性
+- 新增意图澄清能力：Researcher、UXDesigner、APIDesigner 可在执行前向用户提问
 
-| 团队 | Agent | 输入 | 输出 |
-|---|---|---|---|
-| 产品团队 | Researcher | 用户指令 | `research.md` |
-| 产品团队 | ProductOwner | 用户指令 + `research.md` | `prd.md` |
-| 设计团队 | UXDesigner | `prd.md` | `ux-flows.md` |
-| 设计团队 | UIDesigner | `prd.md` + `ux-flows.md` | `components/` + `screenshots/` |
-| 设计团队 | APIDesigner | `prd.md` + `ux-flows.md` | `api-spec.yaml` |
+### 6 个 MVP Agent
+
+| 团队 | Agent | 输入 | 输出 | 澄清 | 门控 |
+|---|---|---|---|---|---|
+| 产品团队 | Researcher | 用户指令 | `research.md` + `research.manifest.json` | 开启 | auto |
+| 产品团队 | ProductOwner | 用户指令 + `research.md` | `prd.md` + `prd.manifest.json` | 关闭 | manual |
+| 设计团队 | UXDesigner | `prd.md` | `ux-flows.md` + `ux-flows.manifest.json` | 开启 | auto |
+| 设计团队 | APIDesigner | `prd.md` + `ux-flows.md` | `api-spec.yaml` + `api-spec.manifest.json` | 开启 | auto |
+| 设计团队 | UIDesigner | `prd.md` + `ux-flows.md` + `api-spec.yaml` | `components/` + `screenshots/` + `components.manifest.json` | 关闭 | manual |
+| 质量 | Validator | 所有 `*.manifest.json` | `validation-report.md` | 关闭 | auto |
 
 ### 完整版本（Phase 2+）
 
@@ -68,7 +101,7 @@ APIDesigner Agent     → OpenAPI 3.0 规范
 | 团队 | Agents | 产出物 |
 |---|---|---|
 | 产品团队 | ProductOwner, Researcher | PRD、竞品分析、可行性报告 |
-| 设计团队 | UXDesigner, UIDesigner, APIDesigner | React 组件截图、交互流程、API 规范 |
+| 设计团队 | UXDesigner, UIDesigner, APIDesigner, Validator | React 组件截图、交互流程、API 规范 |
 | 研发团队 | TechLead, Coder×N, Reviewer | 代码、PR、Code Review |
 | 测试团队 | QALead, Tester, SecurityAuditor | 测试用例、测试报告、安全扫描 |
 | SRE 团队 | DevOps, ReleaseManager, Monitor | CI/CD 配置、部署配置、监控配置 |
@@ -85,11 +118,14 @@ APIDesigner Agent     → OpenAPI 3.0 规范
 ├─ 自治引擎层 ─────────────────┤ ← 核心差异化
 │ 流水线状态机 + 本地事件总线   │
 │ Git Issue 仅做持久化 + 人工入口│
+│ 分层日志系统                  │
 ├─ Agent 层 ───────────────────┤
-│ 5 Agent（MVP）               │
+│ 6 Agent（MVP）               │
 │ 每个 Agent 独立调用 LLM      │
+│ Agent 级意图澄清能力          │
 ├─ 基础设施层 ─────────────────┤
 │ 上下文管理 / 快照 / 持久化    │
+│ Skill 管理 / 进化引擎         │
 └───────────────────────────────┘
 ```
 
@@ -129,6 +165,7 @@ type AgentContext = {
   system_prompt: string        // 该 Agent 的角色定义
   task: Task                   // 当前分配的任务
   input_artifacts: Artifact[]  // 仅契约内指定的文件
+  available_skills: Skill[]    // 该 Agent 可用的 skill（私有 + shared）
   // ❌ 没有 pipeline history
   // ❌ 没有其他 agent 的推理过程
   // ❌ 没有完整的 issue thread
@@ -137,21 +174,77 @@ type AgentContext = {
 
 **用户原始指令只传递到 ProductOwner 为止。** 之后所有下游 Agent 的信息来源是 `prd.md`，它是唯一的"根"。
 
-### 4. Artifact 契约
+### 4. 意图澄清
 
-Agent 之间的唯一通信介质是**写到磁盘/仓库的文件**，不是内存里的对象传递。路径和格式是契约的一部分，不能随意更改。
+Agent 级可选能力，在执行前主动向用户提问以消除模糊。
+
+**执行流程：**
+```
+收到任务 + 输入 Artifact
+    ↓
+[clarification_enabled?]
+    ├─ 是 → 分析输入，识别模糊点
+    │        ├─ 有模糊点 → 生成澄清问题 → awaiting_clarification
+    │        │              用户回答 → 补充到 Artifact → 继续执行
+    │        └─ 无模糊点 → 继续执行
+    └─ 否 → 直接执行
+```
+
+**约束：**
+- 每次执行最多一轮澄清（一组问题，用户一次性回答）
+- 澄清结果作为 Artifact 的补充，标注来源
+
+**澄清结果格式（追加到 Artifact 末尾）：**
+```markdown
+---
+## Clarifications [source: user]
+- Q: 目标用户群体？ A: 面向独立开发者和小型团队
+- Q: 是否需要多语言支持？ A: MVP 不需要
+```
+
+### 5. Artifact 契约 + Manifest
+
+Agent 之间的唯一通信介质是**写到磁盘的文件**。路径和格式是契约的一部分。
+
+**每个 Artifact 附带一份结构化 manifest**，用于 Validator 交叉校验（避免全量 Artifact 消耗过多 token）。
 
 ```
 .mosaic/artifacts/
-├── research.md                 # Researcher 产出
-├── prd.md                      # ProductOwner 产出
-├── ux-flows.md                 # UXDesigner 产出
-├── components/                 # UIDesigner 产出
+├── research.md                  # Researcher 产出
+├── research.manifest.json       # 结构化摘要
+├── prd.md                       # ProductOwner 产出
+├── prd.manifest.json
+├── ux-flows.md
+├── ux-flows.manifest.json
+├── api-spec.yaml                # APIDesigner 产出
+├── api-spec.manifest.json
+├── components/                  # UIDesigner 产出
 │   ├── LoginForm.tsx
 │   └── index.ts
-├── screenshots/                # UIDesigner 产出（Playwright 生成）
+├── screenshots/                 # UIDesigner 产出（Playwright 生成）
 │   └── LoginForm.png
-└── api-spec.yaml               # APIDesigner 产出
+├── components.manifest.json
+└── validation-report.md         # Validator 产出
+```
+
+**manifest 示例（prd.manifest.json）：**
+```json
+{
+  "features": ["user-auth", "markdown-editor", "comment-system"],
+  "constraints": ["no-third-party-auth"],
+  "out_of_scope": ["payment", "i18n"]
+}
+```
+
+**manifest 示例（api-spec.manifest.json）：**
+```json
+{
+  "endpoints": [
+    { "method": "POST", "path": "/auth/login", "covers_feature": "user-auth" },
+    { "method": "GET",  "path": "/posts",      "covers_feature": "markdown-editor" }
+  ],
+  "models": ["User", "Post", "Comment"]
+}
 ```
 
 **`research.md` 结构：**
@@ -190,7 +283,20 @@ Agent 之间的唯一通信介质是**写到磁盘/仓库的文件**，不是内
 
 **`api-spec.yaml`：** 标准 OpenAPI 3.0 格式。
 
-### 5. UI 设计输出：Code-first
+### 6. Validator 交叉校验
+
+Validator 消费所有 `*.manifest.json`（非全量 Artifact），执行一致性校验：
+
+- prd.features ↔ ux-flows.flows 覆盖率
+- ux-flows 操作 ↔ api-spec.endpoints 覆盖率
+- api-spec.models ↔ components.manifest 消费关系
+- 命名一致性（PRD 术语是否贯穿所有 Artifact）
+
+产出 `validation-report.md`，标注通过/不通过及具体不一致项。不通过则触发回退。
+
+**token 控制：** 全量 Artifact 可能 5-8 万 token，manifest 总计 2-3k token。
+
+### 7. UI 设计输出：Code-first
 
 **决策：** 不依赖 Figma，采用 React + Tailwind 组件 + Playwright 截图。
 
@@ -209,11 +315,11 @@ UIDesigner Agent → React 组件 + Playwright 截图
                     └── feedback（文字）→ AI 修改组件 → 重新截图
 ```
 
-### 6. Agent 间通信：本地事件总线 + Git Issue 持久化
+### 8. Agent 间通信：本地事件总线 + Git Issue 持久化
 
 **决策：** Pipeline 内部用本地 EventEmitter 驱动，Git Issue 只做持久化记录和人工介入入口。
 
-**理由：** MVP 是线性 Pipeline（5 Agent 串行执行），每阶段结束触发下一阶段，不存在并发 polling。GitHub API 5000 req/hr 的限制对我们不构成问题，但也没必要用 API 做内部驱动。
+**理由：** MVP 是线性 Pipeline（6 Agent 串行执行），每阶段结束触发下一阶段，不存在并发 polling。GitHub API 5000 req/hr 的限制对我们不构成问题，但也没必要用 API 做内部驱动。
 
 **Issue 的实际作用：**
 - 每阶段完成后创建一个 Issue，记录产出物
@@ -233,22 +339,23 @@ body:
   request: null                # Agent 不能主动发起新需求
 ```
 
-### 7. Pipeline 状态机
+### 9. Pipeline 状态机
 
 **阶段状态流转：**
 ```
-idle → running → awaiting_human → approved → done
-                               └→ rejected → 回退到上一阶段
-                               └→ failed（超时/错误）
+idle → running → awaiting_clarification → running → awaiting_human → approved → done
+                                                                   └→ rejected → 回退到上一阶段
+                                                                   └→ failed（超时/错误）
 ```
 
-**回退策略：固定回退上一阶段（方案C）**
+**回退策略：固定回退上一阶段**
 ```
-APIDesigner rejected → UIDesigner 重试
-UIDesigner rejected  → UXDesigner 重试
-UXDesigner rejected  → ProductOwner 重试
+Validator rejected    → UIDesigner 重试
+UIDesigner rejected   → APIDesigner 重试
+APIDesigner rejected  → UXDesigner 重试
+UXDesigner rejected   → ProductOwner 重试
 ProductOwner rejected → Researcher 重试
-Researcher rejected  → 等待发起者修改原始指令
+Researcher rejected   → 等待发起者修改原始指令
 ```
 
 **审批门控配置：**
@@ -256,14 +363,22 @@ Researcher rejected  → 等待发起者修改原始指令
 # config/pipeline.yaml
 stages:
   researcher:
+    clarification: true
     gate: auto
   product_owner:
-    gate: manual          # PRD 需要人工确认
+    clarification: false
+    gate: manual
   ux_designer:
+    clarification: true
+    gate: auto
+  api_designer:
+    clarification: true
     gate: auto
   ui_designer:
-    gate: manual          # 设计截图需要设计师审查
-  api_designer:
+    clarification: false
+    gate: manual
+  validator:
+    clarification: false
     gate: auto
 
 pipeline:
@@ -271,13 +386,13 @@ pipeline:
   snapshot: on_stage_complete
 ```
 
-### 8. 快照与回退
+### 10. 快照与回退
 
 **快照时机：每阶段完成时创建一次。**
 
 ```
 .mosaic/snapshots/
-└── 2026-03-15T10:00:00/
+└── {timestamp}/
     ├── artifacts/              # 该阶段完成时的全部 artifact 副本
     └── meta.json               # 阶段信息、Agent 版本、Issue 列表
 ```
@@ -288,17 +403,52 @@ pipeline:
 3. 关闭回退阶段之后创建的 Issue，标记 `[rolled-back]`
 4. 从目标阶段重新执行
 
-### 9. 自治执行模式
+### 11. 自治执行模式
 
 ```
 每个 Agent 的执行循环：
-  输入 Artifact → 调用 LLM → 产出 Artifact
+  [意图澄清（可选）]
+      ↓
+  输入 Artifact → 调用 LLM → 产出 Artifact + Manifest
       ↓
   自评估（内置 critic）
       ├─ 通过 → 写入 Issue → 等待门控（auto 或 human）
       └─ 不通过 → 自动修正（最多 3 次）
            └─ 超限 → 产出当前最佳版本 + 标记 [needs-review]
 ```
+
+### 12. 日志与复盘
+
+每次 Pipeline run 独立记录，用于事后复盘。
+
+```
+.mosaic/logs/
+└── run-{timestamp}/
+    ├── pipeline.log              # Pipeline 级：阶段流转、状态变化、耗时
+    ├── agents/
+    │   ├── researcher.log        # Agent 级：输入摘要、LLM 调用次数、自评估结果
+    │   ├── product-owner.log
+    │   ├── ux-designer.log
+    │   ├── api-designer.log
+    │   ├── ui-designer.log
+    │   └── validator.log
+    ├── clarifications.log        # 所有澄清问答记录
+    └── evolution.log             # 进化提案记录
+```
+
+**日志层级：**
+
+| 层级 | 记录内容 | 用途 |
+|---|---|---|
+| Pipeline | 阶段启动/完成/回退、门控结果、总耗时 | 全局复盘 |
+| Agent | 输入 Artifact 清单、LLM 调用次数、自评估通过/重试、产出 Artifact 清单 | 单 Agent 效能分析 |
+| Clarification | 问题-回答对、来源 Agent、时间戳 | 意图澄清有效性分析 |
+| Evolution | Skill/Prompt 提案内容、审批结果、前后 diff | 进化轨迹追踪 |
+
+**日志原则：**
+- 不记录 LLM 完整 prompt/response（太大且含敏感信息），只记录摘要和元数据
+- 日志只追加，不可修改
+- 每次 run 独立目录，方便按次复盘
 
 ---
 
@@ -322,8 +472,8 @@ Level 3 — 外部内容（网页、文档等，永远不可信）
 ```yaml
 # config/pipeline.yaml
 security:
-  initiator: "lddmay"        # GitHub login，唯一可信源
-  reject_policy: "silent"     # 非发起者的事件静默忽略
+  initiator: "{github-login}"     # GitHub login，唯一可信源
+  reject_policy: "silent"         # 非发起者的事件静默忽略
 ```
 
 ```typescript
@@ -341,7 +491,7 @@ function isTrustedActor(event: GitHubEvent): boolean {
 | PRD 审批 | 需求确认权不能委托给 AI |
 | 设计截图 approve | 视觉决策权不能委托给 AI |
 | Pipeline 终止 / 回滚 | 破坏性操作 |
-| 进化 approve | 修改 Agent prompt 是系统级变更 |
+| 进化 approve | 修改 Agent prompt / 创建 Skill 是系统级变更 |
 
 ### Agent 间信任边界
 
@@ -366,11 +516,20 @@ const safeExternalContent = {
 
 ## Agent 自进化机制
 
+### 进化类型
+
+| 进化类型 | 冷却 | 范围 | 审批 |
+|---|---|---|---|
+| Prompt 修改 | 24h | 仅自身 Agent | 人工 approve |
+| Agent 描述修改 | 24h | 仅自身 Agent | 人工 approve |
+| Skill 创建 | 无冷却 | 普适性判定 → 私有/共享 | 人工 approve |
+
 ### 进化范围
 
 ```
 可进化（需人工 approve）：
-  .claude/agents/mosaic/*.md    ← Agent system prompt
+  .claude/agents/mosaic/*.md    ← Agent system prompt + 描述
+  .mosaic/evolution/skills/     ← Agent 自开发的 skill
 
 不可进化（硬编码）：
   信任模型（initiator 验证逻辑）
@@ -378,10 +537,10 @@ const safeExternalContent = {
   进化审批机制本身
 ```
 
-### 进化提案生命周期
+### Prompt/描述 进化提案生命周期
 
 ```
-Agent 发现问题（连续失败 / 重复 pattern）
+Agent 发现问题（连续失败 / 重复 pattern / 用户反馈 / 效率低下）
     ↓
 生成 evolution_proposal（只能提，不能自己改）
     ↓
@@ -390,11 +549,37 @@ Agent 发现问题（连续失败 / 重复 pattern）
     └── /reject-evolution  → 丢弃，记录原因
 ```
 
+### Skill 自开发
+
+**Skill = 可复用的脚本模板/snippet，Agent 可以创建、保存、在后续执行中调用。**
+
+```
+Skill 创建流程：
+
+Agent 发现可复用 pattern → 生成 Skill 提案
+    ↓
+自动判定普适性（LLM 评估）
+    ├─ 专用（仅对特定 Agent 角色有价值）→ skills/{agent}/
+    └─ 通用（跨角色可复用）→ skills/shared/
+    ↓
+人工 approve → 持久化
+```
+
+```
+.mosaic/evolution/skills/
+├── shared/                          # 通用 skill，所有 Agent 可用
+│   └── markdown-table-formatter.md
+├── ui-designer/                     # 专用 skill
+│   └── screenshot-card-layout.ts
+└── researcher/
+    └── competitor-analysis-template.md
+```
+
 ### 安全约束
 
-- Agent 只能提案修改**自己的** prompt，不能修改其他 Agent
-- 同一个 Agent 连续提案冷却期 24h
-- 同时只能有一个待审批提案（`max_pending: 1`）
+- Agent 只能提案修改**自己的** prompt/描述，不能修改其他 Agent
+- Prompt/描述修改冷却期 24h；Skill 创建无冷却
+- 同时只能有一个待审批的 Prompt/描述提案（`max_pending: 1`）
 - 全版本化，可回退到任意历史版本
 - **进化机制本身不可进化**
 
@@ -429,11 +614,13 @@ src/
 │   ├── pipeline.ts             # 流水线状态机引擎
 │   ├── orchestrator.ts         # 全局编排器
 │   ├── agent.ts                # Agent 基类
-│   ├── artifact.ts             # 结构化工件定义 + 契约校验
+│   ├── artifact.ts             # 工件定义 + 契约校验
+│   ├── manifest.ts             # manifest 生成 + 校验
 │   ├── event-bus.ts            # 本地事件总线（eventemitter3）
 │   ├── snapshot.ts             # 阶段快照与回退
+│   ├── logger.ts               # 分层日志系统
 │   ├── context-manager.ts      # 上下文管理（工件隔离）
-│   └── llm-provider.ts        # LLM Provider 接口 + 调度队列
+│   └── llm-provider.ts         # LLM Provider 接口
 ├── providers/
 │   └── claude-cli.ts           # Claude CLI Provider (MVP)
 ├── adapters/
@@ -443,30 +630,37 @@ src/
 │   ├── researcher.ts           # Researcher Agent
 │   ├── product-owner.ts        # ProductOwner Agent
 │   ├── ux-designer.ts          # UXDesigner Agent
+│   ├── api-designer.ts         # APIDesigner Agent
 │   ├── ui-designer.ts          # UIDesigner Agent
-│   └── api-designer.ts         # APIDesigner Agent
+│   └── validator.ts            # Validator Agent
 ├── evolution/
-│   ├── engine.ts               # 进化引擎（记录分析 + 建议生成）
-│   └── prompt-versioning.ts    # Prompt 版本管理
+│   ├── engine.ts               # 进化引擎
+│   ├── prompt-versioning.ts    # Prompt 版本管理
+│   └── skill-manager.ts        # Skill 管理（创建/分级/分发）
 └── index.ts                    # CLI 入口
 
 config/
-├── pipeline.yaml               # 流水线配置（阶段/门控/重试/安全）
+├── pipeline.yaml               # 流水线配置（阶段/门控/重试/安全/澄清）
 └── agents.yaml                 # Agent 编排配置（输入/输出契约）
 
-.claude/agents/mosaic/          # Agent 能力定义（YAML frontmatter + MD）
+.claude/agents/mosaic/          # Agent Prompt 定义（可进化）
 ├── researcher.md
 ├── product-owner.md
 ├── ux-designer.md
+├── api-designer.md
 ├── ui-designer.md
-└── api-designer.md
+└── validator.md
 
 .mosaic/                        # 运行时数据（git ignored）
-├── artifacts/                  # 当前 Pipeline 的工件产出
+├── artifacts/                  # 当前 Pipeline 的工件产出（含 manifest）
 ├── snapshots/                  # 阶段快照
-└── evolution/                  # 进化数据
-    ├── records/
-    └── prompts/
+├── logs/                       # 分层运行日志
+│   └── run-{timestamp}/
+└── evolution/
+    ├── prompts/                # prompt 版本历史
+    └── skills/                 # Agent 自开发的 skill
+        ├── shared/
+        └── {agent-name}/
 ```
 
 ---
@@ -474,15 +668,20 @@ config/
 ## 用户操作流（MVP）
 
 ```
-1. mosaic run "开发一个博客系统"            ← 一条指令启动
-2.（等待）Researcher 调研 + ProductOwner 生成 PRD
-3. 收到通知：PRD 已完成，请审批             ← GitHub Issue
-4. 审查 PRD → /approve 或 /reject + feedback
-5.（等待）UXDesigner + UIDesigner 生成设计截图
-6. 收到通知：设计截图已完成，请审批
-7. 审查截图 → /approve 或 /reject + feedback  ← 设计师在此参与
-8.（等待）APIDesigner 生成 API 规范
-9. Pipeline 完成 → .mosaic/artifacts/ 中查看全部产出物
+1. mosaicat run "开发一个博客系统"            ← 一条指令启动
+2. Researcher 分析指令 → 向用户澄清           ← [可选] 意图澄清
+3. 用户回答澄清问题 → Researcher 继续执行
+4.（等待）Researcher 调研 + ProductOwner 生成 PRD
+5. 收到通知：PRD 已完成，请审批               ← GitHub Issue
+6. 审查 PRD → /approve 或 /reject + feedback
+7.（等待）UXDesigner 生成交互流程（可能澄清）
+8.（等待）APIDesigner 生成 API 规范（可能澄清）
+9.（等待）UIDesigner 生成组件 + 截图
+10. 收到通知：设计截图已完成，请审批
+11. 审查截图 → /approve 或 /reject + feedback  ← 设计师在此参与
+12.（等待）Validator 交叉校验
+13. Pipeline 完成 → .mosaic/artifacts/ 中查看全部产出物
+14. 查看 .mosaic/logs/ 复盘本次迭代
 ```
 
 ---
@@ -491,11 +690,11 @@ config/
 
 | 阶段 | 范围 | 里程碑 |
 |---|---|---|
-| Phase 1 | 核心引擎：Pipeline 状态机 + Agent 基类 + CLI Provider + 本地事件总线 | 能跑通空 Pipeline |
-| Phase 2 | 产品团队：Researcher + ProductOwner Agent | 输入指令 → 输出 PRD |
-| Phase 3 | 设计团队：UXDesigner + UIDesigner + APIDesigner | 输入 PRD → 输出截图 + API 规范 |
+| Phase 1 | 核心引擎：Pipeline 状态机 + Agent 基类 + CLI Provider + 事件总线 + 日志系统 | 能跑通空 Pipeline + 日志输出 |
+| Phase 2 | 产品团队：Researcher + ProductOwner Agent + 意图澄清 | 输入指令 → 澄清 → 输出 PRD |
+| Phase 3 | 设计团队：UXDesigner + APIDesigner + UIDesigner + Validator | 输入 PRD → 输出截图 + API 规范 + 校验报告 |
 | Phase 4 | 安全 + 审批：信任验证 + GitHub Issue 持久化 + 人工门控 | 完整审批流程可用 |
-| Phase 5 | 自进化：进化引擎 + Prompt 版本管理 | Agent 可提出进化提案 |
+| Phase 5 | 自进化：进化引擎 + Prompt 版本管理 + Skill 管理 | Agent 可提出进化提案 + 创建 Skill |
 
 ---
 
