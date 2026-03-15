@@ -125,28 +125,61 @@ config/
 
 ---
 
-## Vibe Coding 开发工作流
+## ⛔ 强制开发工作流（MANDATORY — 违反会被 hook 阻断）
 
-### 决策文档化
+> **以下规则由 hooks 机械化强制执行。不是建议，是硬性约束。**
 
-- 重大操作前写 **Decision:** [做什么] — [为什么] — [替代方案]
+### 铁律：每个 Step 的生命周期
 
-### Issue 驱动开发
+任何代码修改都必须在一个 Step 生命周期内完成。**没有例外。**
 
-- Phase 级 Issue：标签 `phase`，标题 `[Phase N] desc`
-- Step 级 Issue：标签 `step`，标题 `[Phase N / Step M] desc`，body 引用 phase issue
-- commit message 必须引用 Issue 号
+```
+/start-step N M desc    ← 1. 先建 issue，拿到 issue 号
+    ↓
+写代码 + 测试           ← 2. 所有 commit 引用该 issue 号
+    ↓
+/complete-step <issue>  ← 3. 评论结果 + 关闭 issue
+```
 
-### 分支与 PR
+**禁止：**
+- ❌ 写代码之前不建 step issue
+- ❌ 一个 commit 跨多个 step（每个 step 独立 commit）
+- ❌ 跳过 `/complete-step` 直接开始下一个 step
+- ❌ commit message 不引用 issue 号（hook 会阻断 `git commit`）
 
-- 分支命名：`phase-N/short-desc`
-- Step 工作在 Phase 分支上，不建子分支
-- Phase 结束创建 PR to main，body 列出所有 Step Issue
+### 铁律：每个 Phase 的生命周期
+
+```
+/start-phase N desc       ← 1. 建分支 + phase issue
+    ↓
+循环执行每个 Step          ← 2. 每个 step 走上面的生命周期
+    ↓
+/complete-phase <issue>   ← 3. push + 创建 PR + 关闭 phase issue
+```
+
+**禁止：**
+- ❌ 在 main 分支直接 commit（hook 会阻断）
+- ❌ Phase 结束不创建 PR
+- ❌ Step issues 没关完就 `/complete-phase`
 
 ### Commit 规范
 
 - 格式：`<type>: <description> (#<issue>)`
 - type: feat / fix / refactor / test / docs / chore
+- **issue 号必须出现在 commit message 中，否则被 hook 阻断**
+
+### Hook 强制执行清单
+
+| Hook | 事件 | 强制行为 |
+|---|---|---|
+| `validate-commit.sh` | PreToolUse(Bash) | 阻断无 issue 引用的 git commit；阻断在 main 上的直接 commit |
+| `workflow-guard.sh` | Stop | 每次响应结束提醒：未关闭的 step issue、未提交的改动、未 push 的 commit |
+| `session-context.sh` | UserPromptSubmit | 每次用户输入时注入当前 phase/step 状态 |
+| `log-tool-use.sh` | PostToolUse | 记录所有工具调用到 JSONL |
+
+### 决策文档化
+
+- 重大操作前写 **Decision:** [做什么] — [为什么] — [替代方案]
 
 ### 会话日志
 
