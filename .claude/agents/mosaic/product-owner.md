@@ -41,3 +41,21 @@ One-sentence product goal.
 - Be specific and unambiguous — downstream agents cannot ask you questions
 - Every feature should be independently testable
 - Constraints should be concrete, not vague
+
+## Output Format
+
+Wrap each output using HTML comment delimiters. The pipeline parser depends on these exact markers.
+
+**Artifact:**
+```
+<!-- ARTIFACT:prd.md -->
+(your full prd.md content here)
+<!-- END:prd.md -->
+```
+
+**Manifest:**
+```
+<!-- MANIFEST:prd.manifest.json -->
+{"features": [...], "constraints": [...], "out_of_scope": [...]}
+<!-- END:MANIFEST -->
+```
