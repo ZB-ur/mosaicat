@@ -1,0 +1,35 @@
+{
+  "name": "mosaicat",
+  "version": "0.1.0",
+  "description": "一条指令，AI 团队帮你从想法做到设计稿和 API 规范",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "tsx src/index.ts"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "pipeline",
+    "mcp"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.8.0",
+    "eventemitter3": "^5.0.4",
+    "js-yaml": "^4.1.1",
+    "p-queue": "^9.1.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
+}

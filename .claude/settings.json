@@ -1,9 +1,27 @@
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "command": "bash .claude/hooks/validate-commit.sh"
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "",
         "command": "bash scripts/log-tool-use.sh"
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "command": "bash .claude/hooks/workflow-guard.sh"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "command": "bash .claude/hooks/session-context.sh"
       }
     ]
   }

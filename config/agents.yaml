@@ -1,0 +1,62 @@
+agents:
+  researcher:
+    name: Researcher
+    prompt_file: .claude/agents/mosaic/researcher.md
+    inputs:
+      - user_instruction
+    outputs:
+      - research.md
+      - research.manifest.json
+
+  product_owner:
+    name: ProductOwner
+    prompt_file: .claude/agents/mosaic/product-owner.md
+    inputs:
+      - user_instruction
+      - research.md
+    outputs:
+      - prd.md
+      - prd.manifest.json
+
+  ux_designer:
+    name: UXDesigner
+    prompt_file: .claude/agents/mosaic/ux-designer.md
+    inputs:
+      - prd.md
+    outputs:
+      - ux-flows.md
+      - ux-flows.manifest.json
+
+  api_designer:
+    name: APIDesigner
+    prompt_file: .claude/agents/mosaic/api-designer.md
+    inputs:
+      - prd.md
+      - ux-flows.md
+    outputs:
+      - api-spec.yaml
+      - api-spec.manifest.json
+
+  ui_designer:
+    name: UIDesigner
+    prompt_file: .claude/agents/mosaic/ui-designer.md
+    inputs:
+      - prd.md
+      - ux-flows.md
+      - api-spec.yaml
+    outputs:
+      - components/
+      - screenshots/
+      - components.manifest.json
+
+  validator:
+    name: Validator
+    prompt_file: .claude/agents/mosaic/validator.md
+    inputs:
+      - research.manifest.json
+      - prd.manifest.json
+      - ux-flows.manifest.json
+      - api-spec.manifest.json
+      - components.manifest.json
+    outputs:
+      - validation-report.md
