@@ -1,5 +1,8 @@
 # Mosaicat — AID 方法论参考实现（项目计划书 v3）
 
+> ⚠️ 本文档是设计规范和决策记录。日常开发只需参考 `CLAUDE.md`（自动加载）。
+> 仅在需要理解"为什么这样设计"时才需阅读本文档。
+
 > 基于 v2 计划书的深度重审，围绕 AID 三大原则（意图前置 / 自治执行 / 经验沉淀）重构架构设计。
 
 ---
@@ -596,8 +599,7 @@ Agent 发现可复用 pattern → 生成 Skill 提案
 | Git 操作 | @octokit/rest（GitHub 适配器） |
 | UI 输出 | React + Tailwind CSS + Playwright（截图） |
 | 工件校验 | zod |
-| 状态持久化 | better-sqlite3 |
-| 向量检索 (Phase 2) | sqlite-vec（SQLite 扩展） |
+| 向量检索 (planned) | sqlite-vec（SQLite 扩展，Phase 2） |
 | 事件驱动 | eventemitter3 |
 | 串行队列 | p-queue |
 
@@ -609,39 +611,56 @@ Agent 发现可复用 pattern → 生成 Skill 提案
 src/
 ├── mcp/
 │   ├── server.ts               # MCP Server 入口
-│   └── tools.ts                # MCP 工具定义
+│   └── tools.ts                 # MCP 工具注册（registerTools）
+├── mcp-entry.ts                 # MCP stdio 启动入口
 ├── core/
-│   ├── pipeline.ts             # 流水线状态机引擎
-│   ├── orchestrator.ts         # 全局编排器
-│   ├── agent.ts                # Agent 基类
-│   ├── artifact.ts             # 工件定义 + 契约校验
-│   ├── manifest.ts             # manifest 生成 + 校验
-│   ├── event-bus.ts            # 本地事件总线（eventemitter3）
-│   ├── snapshot.ts             # 阶段快照与回退
-│   ├── logger.ts               # 分层日志系统
-│   ├── context-manager.ts      # 上下文管理（工件隔离）
-│   └── llm-provider.ts         # LLM Provider 接口
+│   ├── types.ts                 # 全局类型定义
+│   ├── pipeline.ts              # 流水线状态机引擎
+│   ├── orchestrator.ts          # 全局编排器
+│   ├── agent.ts                 # Agent 基类（BaseAgent, StubAgent）
+│   ├── agent-factory.ts         # Agent 实例工厂
+│   ├── artifact.ts              # 工件磁盘 I/O
+│   ├── manifest.ts              # manifest 读写 + zod schema
+│   ├── context-manager.ts       # 上下文组装（工件隔离 + Skill 注入）
+│   ├── prompt-assembler.ts      # Prompt 拼装
+│   ├── response-parser.ts       # LLM 响应解析
+│   ├── llm-provider.ts          # LLM Provider 接口
+│   ├── provider-factory.ts      # Provider 实例工厂
+│   ├── event-bus.ts             # 本地事件总线
+│   ├── cli-progress.ts          # 终端进度显示
+│   ├── run-manager.ts           # MCP 运行管理
+│   ├── interaction-handler.ts   # 用户交互抽象（CLI/Deferred）
+│   ├── github-interaction-handler.ts  # GitHub 交互实现
+│   ├── security.ts              # 信任模型 + 安全校验
+│   ├── screenshot-renderer.ts   # Playwright 截图渲染
+│   ├── snapshot.ts              # 阶段快照与回退
+│   └── logger.ts                # JSONL 日志系统
 ├── providers/
-│   └── claude-cli.ts           # Claude CLI Provider (MVP)
+│   ├── claude-cli.ts            # Claude CLI Provider
+│   └── anthropic-sdk.ts         # Anthropic SDK Provider
 ├── adapters/
-│   ├── types.ts                # Git 平台适配器接口
-│   └── github.ts               # GitHub 适配器
+│   ├── types.ts                 # Git 平台适配器接口
+│   └── github.ts                # GitHub 适配器
 ├── agents/
-│   ├── researcher.ts           # Researcher Agent
-│   ├── product-owner.ts        # ProductOwner Agent
-│   ├── ux-designer.ts          # UXDesigner Agent
-│   ├── api-designer.ts         # APIDesigner Agent
-│   ├── ui-designer.ts          # UIDesigner Agent
-│   └── validator.ts            # Validator Agent
+│   ├── index.ts                 # Agent 统一导出
+│   ├── llm-agent.ts             # LLMAgent 抽象基类
+│   ├── researcher.ts
+│   ├── product-owner.ts
+│   ├── ux-designer.ts
+│   ├── api-designer.ts
+│   ├── ui-designer.ts
+│   └── validator.ts
 ├── evolution/
-│   ├── engine.ts               # 进化引擎
-│   ├── prompt-versioning.ts    # Prompt 版本管理
-│   └── skill-manager.ts        # Skill 管理（创建/分级/分发）
-└── index.ts                    # CLI 入口
+│   ├── types.ts                 # 进化域类型定义
+│   ├── engine.ts                # 进化引擎
+│   ├── prompt-versioning.ts     # Prompt 版本管理
+│   ├── proposal-handler.ts      # 进化提案处理
+│   └── skill-manager.ts         # Skill 管理（创建/分级/分发）
+└── index.ts                     # CLI 入口
 
 config/
-├── pipeline.yaml               # 流水线配置（阶段/门控/重试/安全/澄清）
-└── agents.yaml                 # Agent 编排配置（输入/输出契约）
+├── pipeline.yaml                # 流水线配置（阶段/门控/重试/安全/进化）
+└── agents.yaml                  # Agent 编排配置（输入/输出契约）
 
 .claude/agents/mosaic/          # Agent Prompt 定义（可进化）
 ├── researcher.md
@@ -690,11 +709,11 @@ config/
 
 | 阶段 | 范围 | 里程碑 |
 |---|---|---|
-| Phase 1 | 核心引擎：Pipeline 状态机 + Agent 基类 + CLI Provider + 事件总线 + 日志系统 | 能跑通空 Pipeline + 日志输出 |
-| Phase 2 | 产品团队：Researcher + ProductOwner Agent + 意图澄清 | 输入指令 → 澄清 → 输出 PRD |
-| Phase 3 | 设计团队：UXDesigner + APIDesigner + UIDesigner + Validator | 输入 PRD → 输出截图 + API 规范 + 校验报告 |
-| Phase 4 | 安全 + 审批：信任验证 + GitHub Issue 持久化 + 人工门控 | 完整审批流程可用 |
-| Phase 5 | 自进化：进化引擎 + Prompt 版本管理 + Skill 管理 | Agent 可提出进化提案 + 创建 Skill |
+| Phase 1 ✅ | 核心引擎：Pipeline 状态机 + Agent 基类 + CLI Provider + 事件总线 + 日志系统 | 能跑通空 Pipeline + 日志输出 |
+| Phase 2 ✅ | 产品团队：Researcher + ProductOwner Agent + 意图澄清 | 输入指令 → 澄清 → 输出 PRD |
+| Phase 3 ✅ | 设计团队：UXDesigner + APIDesigner + UIDesigner + Validator | 输入 PRD → 输出截图 + API 规范 + 校验报告 |
+| Phase 4 ✅ | 安全 + 审批：信任验证 + GitHub Issue 持久化 + 人工门控 | 完整审批流程可用 |
+| Phase 5 ✅ | 自进化：进化引擎 + Prompt 版本管理 + Skill 管理 | Agent 可提出进化提案 + 创建 Skill |
 
 ---
 
