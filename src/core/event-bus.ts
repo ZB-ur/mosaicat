@@ -22,6 +22,11 @@ export interface PipelineEvents {
   'artifact:written': (stage: StageName, name: string, size: number) => void;
   'manifest:written': (stage: StageName, name: string) => void;
   'snapshot:created': (stage: StageName, runId: string) => void;
+  'evolution:analyzing': (runId: string) => void;
+  'evolution:proposed': (proposalId: string, stage: StageName) => void;
+  'evolution:approved': (proposalId: string, stage: StageName) => void;
+  'evolution:rejected': (proposalId: string, stage: StageName) => void;
+  'evolution:complete': (runId: string, proposalCount: number) => void;
 }
 
 type EventName = keyof PipelineEvents;

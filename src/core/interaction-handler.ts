@@ -1,9 +1,16 @@
 import readline from 'node:readline';
 import type { StageName } from './types.js';
+import type { EvolutionProposal } from '../evolution/types.js';
+
+export interface EvolutionApprovalResult {
+  approved: boolean;
+  reason?: string;
+}
 
 export interface InteractionHandler {
   onManualGate(stage: StageName, runId: string): Promise<boolean>;
   onClarification(stage: StageName, question: string, runId: string): Promise<string>;
+  onEvolutionProposal?(proposal: EvolutionProposal): Promise<EvolutionApprovalResult>;
 }
 
 export class CLIInteractionHandler implements InteractionHandler {
@@ -31,6 +38,22 @@ export class CLIInteractionHandler implements InteractionHandler {
     console.log(question);
     return this.askUser('\nYour answer: ');
   }
+
+  async onEvolutionProposal(proposal: EvolutionProposal): Promise<EvolutionApprovalResult> {
+    console.log(`\n[evolution] ${proposal.type} proposal for ${proposal.agentStage}:`);
+    console.log(`  Reason: ${proposal.reason}`);
+    if (proposal.skillMetadata) {
+      console.log(`  Skill: ${proposal.skillMetadata.name} (${proposal.skillMetadata.scope})`);
+    }
+    console.log(`  Content preview: ${proposal.proposedContent.slice(0, 200)}...`);
+    const answer = await this.askUser('\nApprove this evolution? (yes/no): ');
+    const approved = answer.toLowerCase().startsWith('y');
+    if (!approved) {
+      const reason = await this.askUser('Rejection reason (optional): ');
+      return { approved: false, reason: reason || undefined };
+    }
+    return { approved: true };
+  }
 }
 
 interface DeferredPromise<T> {
@@ -52,6 +75,7 @@ function createDeferredPromise<T>(): DeferredPromise<T> {
 export class DeferredInteractionHandler implements InteractionHandler {
   private pendingGates = new Map<string, DeferredPromise<boolean>>();
   private pendingClarifications = new Map<string, DeferredPromise<string>>();
+  private pendingEvolutions = new Map<string, DeferredPromise<EvolutionApprovalResult>>();
 
   async onManualGate(_stage: StageName, runId: string): Promise<boolean> {
     const deferred = createDeferredPromise<boolean>();
@@ -95,5 +119,31 @@ export class DeferredInteractionHandler implements InteractionHandler {
 
   hasPendingClarification(runId: string): boolean {
     return this.pendingClarifications.has(runId);
+  }
+
+  async onEvolutionProposal(proposal: EvolutionProposal): Promise<EvolutionApprovalResult> {
+    const deferred = createDeferredPromise<EvolutionApprovalResult>();
+    this.pendingEvolutions.set(proposal.id, deferred);
+    return deferred.promise;
+  }
+
+  approveEvolution(proposalId: string): void {
+    const deferred = this.pendingEvolutions.get(proposalId);
+    if (deferred) {
+      this.pendingEvolutions.delete(proposalId);
+      deferred.resolve({ approved: true });
+    }
+  }
+
+  rejectEvolution(proposalId: string, reason?: string): void {
+    const deferred = this.pendingEvolutions.get(proposalId);
+    if (deferred) {
+      this.pendingEvolutions.delete(proposalId);
+      deferred.resolve({ approved: false, reason });
+    }
+  }
+
+  hasPendingEvolution(proposalId: string): boolean {
+    return this.pendingEvolutions.has(proposalId);
   }
 }
