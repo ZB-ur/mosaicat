@@ -1,4 +1,4 @@
-import type { StageName, GitHubConfig } from './types.js';
+import type { StageName, GitHubConfig, ClarificationOption } from './types.js';
 import type { InteractionHandler } from './interaction-handler.js';
 import type { GitPlatformAdapter, IssueComment } from '../adapters/types.js';
 import type { SecurityConfig } from './security.js';
@@ -40,7 +40,10 @@ export class GitHubInteractionHandler implements InteractionHandler {
     return result;
   }
 
-  async onClarification(stage: StageName, question: string, runId: string): Promise<string> {
+  async onClarification(
+    stage: StageName, question: string, runId: string,
+    _options?: ClarificationOption[], _allowCustom?: boolean
+  ): Promise<string> {
     const issue = await this.adapter.createIssue({
       title: `[${stage}] clarification: ${runId}`,
       body: `## Clarification Needed\n\n**Stage:** ${stage}\n**Run:** ${runId}\n\n### Question\n${question}\n\nPlease respond with your answer.`,
