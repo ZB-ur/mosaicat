@@ -16,7 +16,7 @@ stages:
     gate: auto
     retry_max: 3
   ui_designer:
-    clarification: false
+    clarification: true
     gate: manual
     retry_max: 3
   validator:

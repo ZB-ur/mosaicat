@@ -46,7 +46,9 @@ agents:
       - api-spec.yaml
     outputs:
       - components/
+      - previews/
       - screenshots/
+      - gallery.html
       - components.manifest.json
 
   validator:
