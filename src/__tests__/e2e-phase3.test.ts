@@ -153,8 +153,20 @@ export default function TaskFilter() {
 }
 <!-- END:components/TaskFilter.tsx -->
 
+<!-- ARTIFACT:previews/TaskInput.html -->
+<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script><style>body { margin: 0; padding: 16px; background: #f8fafc; font-family: system-ui, sans-serif; }</style></head><body><div class="flex gap-2 p-4"><input type="text" placeholder="What needs to be done?" class="flex-1 p-2 border rounded" /><button class="bg-blue-500 text-white px-4 py-2 rounded">Add</button></div></body></html>
+<!-- END:previews/TaskInput.html -->
+
+<!-- ARTIFACT:previews/TaskItem.html -->
+<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script><style>body { margin: 0; padding: 16px; background: #f8fafc; font-family: system-ui, sans-serif; }</style></head><body><div class="flex items-center gap-3 p-3 border-b"><input type="checkbox" class="w-5 h-5" /><span class="flex-1">Sample task</span><button class="text-red-500 hover:text-red-700">Delete</button></div></body></html>
+<!-- END:previews/TaskItem.html -->
+
+<!-- ARTIFACT:previews/TaskFilter.html -->
+<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script><style>body { margin: 0; padding: 16px; background: #f8fafc; font-family: system-ui, sans-serif; }</style></head><body><div class="flex gap-2 p-4 border-t"><button class="px-3 py-1 rounded bg-gray-200">All</button><button class="px-3 py-1 rounded">Active</button><button class="px-3 py-1 rounded">Completed</button></div></body></html>
+<!-- END:previews/TaskFilter.html -->
+
 <!-- MANIFEST:components.manifest.json -->
-{"components": [{"name": "TaskInput", "file": "components/TaskInput.tsx", "covers_flow": "task-management"}, {"name": "TaskItem", "file": "components/TaskItem.tsx", "covers_flow": "task-management"}, {"name": "TaskFilter", "file": "components/TaskFilter.tsx", "covers_flow": "task-filtering"}], "screenshots": ["screenshots/TaskInput.png", "screenshots/TaskItem.png", "screenshots/TaskFilter.png"]}
+{"components": [{"name": "TaskInput", "file": "components/TaskInput.tsx", "covers_flow": "task-management"}, {"name": "TaskItem", "file": "components/TaskItem.tsx", "covers_flow": "task-management"}, {"name": "TaskFilter", "file": "components/TaskFilter.tsx", "covers_flow": "task-filtering"}], "screenshots": ["screenshots/TaskInput.png", "screenshots/TaskItem.png", "screenshots/TaskFilter.png"], "previews": ["previews/TaskInput.html", "previews/TaskItem.html", "previews/TaskFilter.html"]}
 <!-- END:MANIFEST -->`,
 
       validator: `<!-- ARTIFACT:validation-report.md -->
@@ -252,7 +264,12 @@ describe('Phase 3 E2E Integration', () => {
     expect(fs.existsSync(`${ARTIFACTS_DIR}/components/TaskItem.tsx`)).toBe(true);
     expect(fs.existsSync(`${ARTIFACTS_DIR}/components/TaskFilter.tsx`)).toBe(true);
 
-    // Screenshots produced by Playwright
+    // Preview HTML files exist
+    expect(fs.existsSync(`${ARTIFACTS_DIR}/previews/TaskInput.html`)).toBe(true);
+    expect(fs.existsSync(`${ARTIFACTS_DIR}/previews/TaskItem.html`)).toBe(true);
+    expect(fs.existsSync(`${ARTIFACTS_DIR}/previews/TaskFilter.html`)).toBe(true);
+
+    // Screenshots produced by Playwright from preview HTML
     expect(fs.existsSync(`${ARTIFACTS_DIR}/screenshots/TaskInput.png`)).toBe(true);
     expect(fs.existsSync(`${ARTIFACTS_DIR}/screenshots/TaskItem.png`)).toBe(true);
     expect(fs.existsSync(`${ARTIFACTS_DIR}/screenshots/TaskFilter.png`)).toBe(true);
@@ -262,6 +279,12 @@ describe('Phase 3 E2E Integration', () => {
       const stat = fs.statSync(`${ARTIFACTS_DIR}/screenshots/${name}.png`);
       expect(stat.size).toBeGreaterThan(0);
     }
+
+    // Gallery HTML exists
+    expect(fs.existsSync(`${ARTIFACTS_DIR}/gallery.html`)).toBe(true);
+    const galleryContent = fs.readFileSync(`${ARTIFACTS_DIR}/gallery.html`, 'utf-8');
+    expect(galleryContent).toContain('Component Gallery');
+    expect(galleryContent).toContain('data:image/png;base64,');
 
     // All 5 manifests are valid JSON
     const manifests = [
