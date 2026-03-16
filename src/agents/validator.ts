@@ -3,6 +3,8 @@ import { ClarificationNeeded } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
 import { assemblePrompt, type OutputSpec } from '../core/prompt-assembler.js';
 import { eventBus } from '../core/event-bus.js';
+import { artifactExists } from '../core/artifact.js';
+import { readManifest, type ComponentsManifest } from '../core/manifest.js';
 
 export class ValidatorAgent extends BaseAgent {
   getOutputSpec(): OutputSpec {
@@ -41,8 +43,92 @@ export class ValidatorAgent extends BaseAgent {
     // Extract artifact by delimiter or use full response as fallback
     const artifactPattern = /<!-- ARTIFACT:validation-report\.md -->\s*([\s\S]*?)\s*<!-- END:validation-report\.md -->/;
     const artifactMatch = raw.match(artifactPattern);
-    const content = artifactMatch ? artifactMatch[1].trim() : raw.trim();
+    let content = artifactMatch ? artifactMatch[1].trim() : raw.trim();
+
+    // Post-LLM: programmatic file integrity check (Check 5)
+    const integrity = this.checkFileIntegrity();
+    content = this.appendIntegrityCheck(content, integrity);
 
     this.writeOutput('validation-report.md', content);
+  }
+
+  private checkFileIntegrity(): { passed: boolean; missing: string[] } {
+    const missing: string[] = [];
+
+    try {
+      const manifest = readManifest<ComponentsManifest>('components.manifest.json');
+
+      // Check component files
+      for (const comp of manifest.components) {
+        if (!artifactExists(comp.file)) {
+          missing.push(comp.file);
+        }
+      }
+
+      // Check screenshots
+      for (const screenshot of manifest.screenshots) {
+        if (!artifactExists(screenshot)) {
+          missing.push(screenshot);
+        }
+      }
+
+      // Check previews (optional field)
+      if (manifest.previews) {
+        for (const preview of manifest.previews) {
+          if (!artifactExists(preview)) {
+            missing.push(preview);
+          }
+        }
+      }
+    } catch (err) {
+      // If manifest doesn't exist or is invalid, report as missing
+      missing.push('components.manifest.json (unreadable)');
+    }
+
+    return { passed: missing.length === 0, missing };
+  }
+
+  private appendIntegrityCheck(
+    content: string,
+    integrity: { passed: boolean; missing: string[] },
+  ): string {
+    const status = integrity.passed ? 'PASS' : 'FAIL';
+    const details = integrity.passed
+      ? '- All referenced files exist on disk'
+      : `- Missing files:\n${integrity.missing.map((f) => `  - \`${f}\``).join('\n')}`;
+
+    const check5 = `\n\n### Check 5: File Integrity\n- Status: ${status}\n${details}`;
+
+    // Append Check 5 to the report
+    let result = content + check5;
+
+    // If Check 5 failed, override overall status to FAIL
+    if (!integrity.passed) {
+      // Update "Checks passed: N/M" to include Check 5
+      result = result.replace(
+        /- Checks passed: (\d+)\/(\d+)/,
+        (_, passed, total) => {
+          const newTotal = parseInt(total) + 1;
+          return `- Checks passed: ${passed}/${newTotal}`;
+        }
+      );
+      // Force status to FAIL
+      result = result.replace(
+        /- Status: PASS\n- Checks passed:/,
+        '- Status: FAIL\n- Checks passed:'
+      );
+    } else {
+      // Update counts to include Check 5 as passing
+      result = result.replace(
+        /- Checks passed: (\d+)\/(\d+)/,
+        (_, passed, total) => {
+          const newPassed = parseInt(passed) + 1;
+          const newTotal = parseInt(total) + 1;
+          return `- Checks passed: ${newPassed}/${newTotal}`;
+        }
+      );
+    }
+
+    return result;
   }
 }

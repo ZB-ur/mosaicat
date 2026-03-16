@@ -334,9 +334,9 @@ describe('Phase 3 E2E Integration', () => {
       expect(comp.covers_flow).toBeDefined();
     }
 
-    // Validation passed
+    // Validation passed (4 LLM checks + 1 programmatic file integrity check = 5)
     const report = fs.readFileSync(`${ARTIFACTS_DIR}/validation-report.md`, 'utf-8');
     expect(report).toContain('PASS');
-    expect(report).toContain('4/4');
+    expect(report).toContain('Check 5: File Integrity');
   }, 60000);
 });
