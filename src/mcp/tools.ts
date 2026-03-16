@@ -4,8 +4,13 @@ import path from 'node:path';
 import yaml from 'js-yaml';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RunManager } from '../core/run-manager.js';
-import type { PipelineConfig } from '../core/types.js';
+import type { PipelineConfig, StageName } from '../core/types.js';
+import { STAGE_NAMES } from '../core/types.js';
 import { validateGitHubEnv } from '../core/security.js';
+import { EvolutionEngine } from '../evolution/engine.js';
+import { listPromptVersions, rollbackPrompt } from '../evolution/prompt-versioning.js';
+import { StubProvider } from '../core/llm-provider.js';
+import { Logger } from '../core/logger.js';
 
 const ARTIFACTS_DIR = '.mosaic/artifacts';
 
@@ -172,6 +177,162 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
           }],
           isError: true,
         };
+      }
+    }
+  );
+
+  // --- Evolution Tools ---
+
+  server.tool(
+    'mosaic_evolution_list',
+    'List evolution proposals. Optionally filter by status (pending/approved/rejected) or show all.',
+    {
+      status: z.enum(['pending', 'approved', 'rejected', 'all']).optional().describe('Filter by status (default: all)'),
+    },
+    async ({ status }) => {
+      try {
+        const logger = new Logger('mcp-evolution');
+        const engine = new EvolutionEngine(new StubProvider(), logger);
+        const state = engine.loadState();
+        await logger.close();
+
+        let proposals = state.proposals;
+        if (status && status !== 'all') {
+          proposals = proposals.filter((p) => p.status === status);
+        }
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ proposals: proposals.map((p) => ({
+              id: p.id,
+              type: p.type,
+              agentStage: p.agentStage,
+              reason: p.reason,
+              status: p.status,
+              createdAt: p.createdAt,
+              resolvedAt: p.resolvedAt,
+            })) }),
+          }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }) }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  server.tool(
+    'mosaic_evolution_approve',
+    'Approve a pending evolution proposal by ID.',
+    {
+      proposal_id: z.string().describe('The proposal ID to approve'),
+    },
+    async ({ proposal_id }) => {
+      try {
+        const logger = new Logger('mcp-evolution');
+        const engine = new EvolutionEngine(new StubProvider(), logger);
+        const state = engine.loadState();
+        await logger.close();
+
+        const proposal = state.proposals.find((p) => p.id === proposal_id);
+        if (!proposal) {
+          return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `Proposal ${proposal_id} not found` }) }], isError: true };
+        }
+        if (proposal.status !== 'pending') {
+          return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `Proposal is already ${proposal.status}` }) }], isError: true };
+        }
+
+        // Apply the proposal
+        if (proposal.type === 'prompt_modification') {
+          const { applyPromptVersion } = await import('../evolution/prompt-versioning.js');
+          applyPromptVersion(proposal.agentStage, proposal.proposedContent, proposal.id);
+        } else if (proposal.type === 'skill_creation') {
+          const { persistSkill } = await import('../evolution/skill-manager.js');
+          persistSkill(proposal);
+        }
+
+        proposal.status = 'approved';
+        proposal.resolvedAt = new Date().toISOString();
+        proposal.resolvedBy = 'mcp';
+        engine.saveState(state);
+
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ status: 'approved', proposal_id }) }] };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }) }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    'mosaic_evolution_reject',
+    'Reject a pending evolution proposal by ID with an optional reason.',
+    {
+      proposal_id: z.string().describe('The proposal ID to reject'),
+      reason: z.string().optional().describe('Reason for rejection'),
+    },
+    async ({ proposal_id, reason }) => {
+      try {
+        const logger = new Logger('mcp-evolution');
+        const engine = new EvolutionEngine(new StubProvider(), logger);
+        const state = engine.loadState();
+        await logger.close();
+
+        const proposal = state.proposals.find((p) => p.id === proposal_id);
+        if (!proposal) {
+          return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `Proposal ${proposal_id} not found` }) }], isError: true };
+        }
+        if (proposal.status !== 'pending') {
+          return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `Proposal is already ${proposal.status}` }) }], isError: true };
+        }
+
+        proposal.status = 'rejected';
+        proposal.resolvedAt = new Date().toISOString();
+        proposal.rejectionReason = reason;
+        engine.saveState(state);
+
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ status: 'rejected', proposal_id }) }] };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }) }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    'mosaic_evolution_history',
+    'View prompt version history for a specific agent stage.',
+    {
+      agent_stage: z.enum(STAGE_NAMES).describe('The agent stage to view history for'),
+    },
+    async ({ agent_stage }) => {
+      try {
+        const versions = listPromptVersions(agent_stage as StageName);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ agent_stage, versions }) }],
+        };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }) }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    'mosaic_evolution_rollback',
+    'Rollback an agent prompt to a previous version.',
+    {
+      agent_stage: z.enum(STAGE_NAMES).describe('The agent stage to rollback'),
+      version: z.number().int().min(1).describe('The version number to rollback to'),
+    },
+    async ({ agent_stage, version }) => {
+      try {
+        rollbackPrompt(agent_stage as StageName, version);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'rolled_back', agent_stage, version }) }],
+        };
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }) }], isError: true };
       }
     }
   );

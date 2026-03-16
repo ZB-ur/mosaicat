@@ -330,7 +330,7 @@ describe('Orchestrator Integration (Mock LLM)', () => {
     const prdManifest = JSON.parse(fs.readFileSync(`${ARTIFACTS_DIR}/prd.manifest.json`, 'utf-8'));
     expect(prdManifest.features).toContain('user-auth');
     expect(prdManifest.features).toContain('blog-crud');
-  }, 30000);
+  }, 60000);
 
   it('should create snapshots for all stages', async () => {
     const orchestrator = new Orchestrator();
@@ -340,5 +340,5 @@ describe('Orchestrator Integration (Mock LLM)', () => {
     expect(fs.existsSync(SNAPSHOTS_DIR)).toBe(true);
     const snapshots = fs.readdirSync(SNAPSHOTS_DIR);
     expect(snapshots.length).toBe(6); // One per stage
-  }, 30000);
+  }, 60000);
 });

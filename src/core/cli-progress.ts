@@ -160,6 +160,31 @@ export function attachCLIProgress(): () => void {
     console.log(`  ${DIM}📋 issue #${issueNumber} created${RESET}`);
   });
 
+  // ── Evolution ──
+
+  on('evolution:analyzing', (_runId) => {
+    console.log(`\n${BOLD}${MAGENTA}◆ evolution: analyzing pipeline results...${RESET}`);
+  });
+
+  on('evolution:proposed', (proposalId, stage) => {
+    const label = AGENT_LABELS[stage];
+    console.log(`  ${YELLOW}→ proposal: [${label}] ${proposalId}${RESET}`);
+  });
+
+  on('evolution:approved', (proposalId, stage) => {
+    const label = AGENT_LABELS[stage];
+    console.log(`  ${GREEN}✓ approved: [${label}] ${proposalId}${RESET}`);
+  });
+
+  on('evolution:rejected', (proposalId, stage) => {
+    const label = AGENT_LABELS[stage];
+    console.log(`  ${RED}✗ rejected: [${label}] ${proposalId}${RESET}`);
+  });
+
+  on('evolution:complete', (_runId, proposalCount) => {
+    console.log(`  ${DIM}evolution complete — ${proposalCount} proposal(s) processed${RESET}\n`);
+  });
+
   // Return cleanup function
   return () => {
     for (const [event, handler] of handlers) {

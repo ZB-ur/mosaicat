@@ -14,12 +14,13 @@ const command = args[0];
 if (command === 'run') {
   const instruction = args[1];
   if (!instruction) {
-    console.error('Usage: mosaicat run <instruction> [--auto-approve] [--github]');
+    console.error('Usage: mosaicat run <instruction> [--auto-approve] [--github] [--evolve]');
     process.exit(1);
   }
 
   const autoApprove = args.includes('--auto-approve');
   const useGitHub = args.includes('--github');
+  const useEvolve = args.includes('--evolve');
 
   // Attach rich CLI progress output
   const detach = attachCLIProgress();
@@ -50,6 +51,11 @@ if (command === 'run') {
     orchestrator = new Orchestrator();
   }
 
+  if (useEvolve) {
+    orchestrator.enableEvolution();
+    console.log('[mosaicat] Evolution mode enabled — proposals after pipeline completes');
+  }
+
   console.log(`\x1b[2mInstruction: ${instruction}\x1b[0m`);
   console.log(`\x1b[2mAuto-approve: ${autoApprove}\x1b[0m`);
 
@@ -68,5 +74,5 @@ if (command === 'run') {
     });
 } else {
   console.log('Usage:');
-  console.log('  mosaicat run <instruction> [--auto-approve] [--github]');
+  console.log('  mosaicat run <instruction> [--auto-approve] [--github] [--evolve]');
 }
