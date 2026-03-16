@@ -45,6 +45,9 @@ export class ValidatorAgent extends BaseAgent {
     const artifactMatch = raw.match(artifactPattern);
     let content = artifactMatch ? artifactMatch[1].trim() : raw.trim();
 
+    // Strip any LLM-generated Check 5 (we generate it programmatically)
+    content = content.replace(/\n*### Check 5: File Integrity[\s\S]*$/, '').trimEnd();
+
     // Post-LLM: programmatic file integrity check (Check 5)
     const integrity = this.checkFileIntegrity();
     content = this.appendIntegrityCheck(content, integrity);

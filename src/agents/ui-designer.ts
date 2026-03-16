@@ -142,7 +142,10 @@ export class UIDesignerAgent extends BaseAgent {
 
         while ((match = artifactPattern.exec(raw)) !== null) {
           const name = match[1];
-          const content = match[2].trim();
+          // Strip markdown code fences that LLM may wrap around content
+          const content = match[2].trim()
+            .replace(/^```(?:tsx|html|json)?\s*\n?/, '')
+            .replace(/\n?```\s*$/, '');
           this.writeOutput(name, content);
 
           if (name === comp.file) {
