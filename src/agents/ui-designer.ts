@@ -37,11 +37,15 @@ export class UIDesignerAgent extends BaseAgent {
 
     // Dynamically extract all ARTIFACT blocks (component files have dynamic names)
     const artifactPattern = /<!-- ARTIFACT:([\S]+) -->\s*([\s\S]*?)\s*<!-- END:\1 -->/g;
+    const componentFiles: string[] = [];
     let match;
     while ((match = artifactPattern.exec(raw)) !== null) {
       const name = match[1];
       const content = match[2].trim();
       this.writeOutput(name, content);
+      if (name.endsWith('.tsx')) {
+        componentFiles.push(name);
+      }
     }
 
     // Extract manifest
@@ -57,6 +61,26 @@ export class UIDesignerAgent extends BaseAgent {
       } catch {
         throw new Error('Failed to parse components.manifest.json from LLM response');
       }
+    }
+
+    // Post-processing: render screenshots (graceful degradation)
+    if (componentFiles.length > 0) {
+      await this.renderScreenshots(componentFiles);
+    }
+  }
+
+  private async renderScreenshots(componentFiles: string[]): Promise<void> {
+    try {
+      const { renderScreenshots } = await import('../core/screenshot-renderer.js');
+      const results = await renderScreenshots(componentFiles, '.mosaic/artifacts');
+      this.logger.agent(this.stage, 'info', 'screenshots:rendered', {
+        count: results.length,
+        files: results.map((r) => r.screenshotPath),
+      });
+    } catch (err) {
+      this.logger.agent(this.stage, 'warn', 'screenshots:skipped', {
+        reason: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 }
