@@ -60,7 +60,21 @@ Wrap each output using HTML comment delimiters. The pipeline parser depends on t
 ```
 
 **Clarification (if needed):**
-If you cannot proceed without more information, output ONLY:
+If you cannot proceed without more information, output ONLY a CLARIFICATION block. Prefer structured JSON with selectable options when possible:
+```
+<!-- CLARIFICATION -->
+{
+  "question": "Which domain does this product target?",
+  "options": [
+    { "label": "B2C Consumer", "description": "Mass market consumer app" },
+    { "label": "B2B SaaS", "description": "Business tools and workflows" },
+    { "label": "Internal Tool", "description": "Company-internal use only" }
+  ],
+  "allow_custom": true
+}
+<!-- END:CLARIFICATION -->
+```
+You may also use plain text if the question doesn't suit a multiple-choice format:
 ```
 <!-- CLARIFICATION -->
 Your question to the user here.
