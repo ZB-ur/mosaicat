@@ -8,7 +8,8 @@
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "mcp": "tsx src/mcp-entry.ts"
   },
   "keywords": [
     "ai",
@@ -19,6 +20,7 @@
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "better-sqlite3": "^12.8.0",
     "eventemitter3": "^5.0.4",
     "js-yaml": "^4.1.1",
