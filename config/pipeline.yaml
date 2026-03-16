@@ -31,3 +31,12 @@ pipeline:
 security:
   initiator: ""
   reject_policy: silent
+
+github:
+  enabled: false
+  poll_interval_ms: 10000
+  poll_timeout_ms: 3600000
+  approve_keywords:
+    - "/approve"
+  reject_keywords:
+    - "/reject"

@@ -60,6 +60,14 @@ export interface StageConfig {
   retry_max: number;
 }
 
+export interface GitHubConfig {
+  enabled: boolean;
+  poll_interval_ms: number;
+  poll_timeout_ms: number;
+  approve_keywords: string[];
+  reject_keywords: string[];
+}
+
 export interface PipelineConfig {
   stages: Record<StageName, StageConfig>;
   pipeline: {
@@ -70,6 +78,7 @@ export interface PipelineConfig {
     initiator: string;
     reject_policy: string;
   };
+  github: GitHubConfig;
 }
 
 export interface AgentOutputConfig {
