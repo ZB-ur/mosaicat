@@ -12,6 +12,8 @@ export interface PipelineEvents {
   'pipeline:start': (runId: string) => void;
   'pipeline:complete': (runId: string) => void;
   'pipeline:failed': (runId: string, error: string) => void;
+  'issue:created': (issueNumber: number, stage: StageName, runId: string) => void;
+  'issue:closed': (issueNumber: number, stage: StageName, runId: string) => void;
 }
 
 type EventName = keyof PipelineEvents;
