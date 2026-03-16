@@ -120,24 +120,39 @@ Evolution: Orchestrator(post-run) → Engine → ProposalHandler
 src/
 ├── mcp/
 │   ├── server.ts                # MCP Server 入口
-│   └── tools.ts                 # MCP 工具定义
+│   └── tools.ts                 # MCP 工具注册（registerTools）
+├── mcp-entry.ts                 # MCP stdio 启动入口
 ├── core/
+│   ├── types.ts                 # 全局类型定义
 │   ├── pipeline.ts              # 流水线状态机引擎
 │   ├── orchestrator.ts          # 全局编排器
-│   ├── agent.ts                 # Agent 基类
-│   ├── artifact.ts              # 工件定义 + 契约校验
-│   ├── manifest.ts              # manifest 生成 + 校验
+│   ├── agent.ts                 # Agent 基类（BaseAgent, StubAgent）
+│   ├── agent-factory.ts         # Agent 实例工厂
+│   ├── artifact.ts              # 工件磁盘 I/O
+│   ├── manifest.ts              # manifest 读写 + zod schema
+│   ├── context-manager.ts       # 上下文组装（工件隔离 + Skill 注入）
+│   ├── prompt-assembler.ts      # Prompt 拼装
+│   ├── response-parser.ts       # LLM 响应解析
+│   ├── llm-provider.ts          # LLM Provider 接口
+│   ├── provider-factory.ts      # Provider 实例工厂
 │   ├── event-bus.ts             # 本地事件总线
+│   ├── cli-progress.ts          # 终端进度显示
+│   ├── run-manager.ts           # MCP 运行管理
+│   ├── interaction-handler.ts   # 用户交互抽象（CLI/Deferred）
+│   ├── github-interaction-handler.ts  # GitHub 交互实现
+│   ├── security.ts              # 信任模型 + 安全校验
+│   ├── screenshot-renderer.ts   # Playwright 截图渲染
 │   ├── snapshot.ts              # 阶段快照与回退
-│   ├── logger.ts                # 日志系统
-│   ├── context-manager.ts       # 上下文管理（工件隔离）
-│   └── llm-provider.ts          # LLM Provider 接口
+│   └── logger.ts                # JSONL 日志系统
 ├── providers/
-│   └── claude-cli.ts            # Claude CLI Provider (MVP)
+│   ├── claude-cli.ts            # Claude CLI Provider
+│   └── anthropic-sdk.ts         # Anthropic SDK Provider
 ├── adapters/
 │   ├── types.ts                 # Git 平台适配器接口
 │   └── github.ts                # GitHub 适配器
 ├── agents/
+│   ├── index.ts                 # Agent 统一导出
+│   ├── llm-agent.ts             # LLMAgent 抽象基类
 │   ├── researcher.ts
 │   ├── product-owner.ts
 │   ├── ux-designer.ts
@@ -145,13 +160,15 @@ src/
 │   ├── ui-designer.ts
 │   └── validator.ts
 ├── evolution/
+│   ├── types.ts                 # 进化域类型定义
 │   ├── engine.ts                # 进化引擎
 │   ├── prompt-versioning.ts     # Prompt 版本管理
+│   ├── proposal-handler.ts      # 进化提案处理
 │   └── skill-manager.ts         # Skill 管理（创建/分级/分发）
 └── index.ts                     # CLI 入口
 
 config/
-├── pipeline.yaml                # 流水线配置（阶段/门控/重试/安全）
+├── pipeline.yaml                # 流水线配置（阶段/门控/重试/安全/进化）
 └── agents.yaml                  # Agent 编排配置（输入/输出契约）
 
 .claude/agents/mosaic/           # Agent Prompt 定义（可进化）
