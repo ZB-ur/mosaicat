@@ -99,33 +99,62 @@ Deliverables ready for human review
 
 - TypeScript / Node.js
 - `@modelcontextprotocol/sdk` — MCP integration
-- `claude` CLI — LLM calls (zero API key)
+- `@anthropic-ai/sdk` — Anthropic API (recommended provider)
+- `claude` CLI — LLM calls (zero API key, alternative provider)
 - `@octokit/rest` — GitHub adapter
-- React + Tailwind + Playwright — UI output
+- React + Tailwind + Playwright — UI output + screenshots
 - `better-sqlite3` — state persistence
 - `eventemitter3` — local event bus
 - `zod` — artifact validation
 - `p-queue` — serial execution queue
 
-## Usage (Planned)
+## Quick Start
+
+### CLI 模式
 
 ```bash
-# Start a project
-mosaicat run "Build a blog system with user auth and markdown editor"
+npm install
 
-# Check progress
-mosaicat status
+# 全自动运行（跳过手动审批）
+npx tsx src/index.ts run "Build a blog system" --auto-approve
 
-# Approve a stage
-mosaicat approve design
-
-# View run logs for retrospective
-mosaicat logs --run latest
+# 交互模式（在 ProductOwner / UIDesigner 阶段暂停审批）
+npx tsx src/index.ts run "Build a blog system"
 ```
+
+### MCP 模式（Claude Code 集成）
+
+在 Claude Code 的 MCP 设置中添加：
+
+```json
+{
+  "mcpServers": {
+    "mosaicat": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp-entry.ts"],
+      "cwd": "/path/to/mosaicat"
+    }
+  }
+}
+```
+
+然后在 Claude Code 中直接使用 `mosaic_run`、`mosaic_status`、`mosaic_approve`、`mosaic_artifacts` 四个工具。
+
+产出位于 `.mosaic/artifacts/` 目录，包括 PRD、交互流程、API 规范、React 组件和截图。
+
+## Documentation
+
+- **[Playbook](docs/playbook.md)** — 完整实战指南，含旅游咨询平台演示
 
 ## Project Status
 
-🚧 **Phase 1 — In Progress**: Building core engine (pipeline state machine, agent base class, CLI provider, event bus, logging system)
+**Phase 3 — Complete**. Core capabilities:
+- Pipeline state machine with 6 agents (Researcher → Validator)
+- Artifact-isolated context management + manifest-based validation
+- Three LLM providers: Anthropic SDK, Claude CLI, Stub
+- MCP Server with 4 tools for Claude Code integration
+- Playwright screenshot rendering for UI components
+- Layered logging + stage snapshots + rollback
 
 ## License
 
