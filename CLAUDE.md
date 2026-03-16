@@ -22,15 +22,18 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 
 ---
 
-## 核心设计原则
+## 设计原则 & 开发规范
 
-- 工件隔离：Agent 只看契约内 Artifact，不看 pipeline 历史
+- 工件隔离：Agent 只看契约内 Artifact，不看 pipeline 历史；Agent 间通信只通过磁盘文件，禁止内存传递
 - 用户原始指令只传递到 ProductOwner 为止，下游唯一信息源是 `prd.md`
 - 意图澄清：Agent 级可选，每次最多一轮，结果标注 `[source: user]`
 - Validator 只消费 manifest（~3k token），不消费全量 Artifact
 - 回退策略：固定回退上一阶段，每阶段最多重试 3 次
 - 自进化需人工 approve，进化机制本身不可进化
-- Agent 间通信只通过磁盘文件，禁止内存传递
+- 使用 TypeScript 严格模式；所有 Artifact 结构用 zod schema 校验
+- LLM 调用统一走 llm-provider 接口，不直接调用 CLI
+- 每个 Agent 实现必须继承 Agent 基类；manifest 由基类自动生成，不手写
+- 日志调用统一走 logger 模块
 
 ---
 
@@ -41,87 +44,88 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 | 语言 | TypeScript / Node.js |
 | MCP SDK | @modelcontextprotocol/sdk |
 | LLM 调用 (MVP) | Claude CLI (`claude --print`) + PQueue 串行队列 |
-| LLM 调用 (Phase 2) | @anthropic-ai/sdk |
+| LLM 调用 | @anthropic-ai/sdk |
 | Git 操作 | @octokit/rest |
 | UI 输出 | React + Tailwind CSS + Playwright |
 | 工件校验 | zod |
-| 状态持久化 | better-sqlite3 |
-| 向量检索 (Phase 2) | sqlite-vec |
 | 事件驱动 | eventemitter3 |
 | 串行队列 | p-queue |
 
 ---
 
-## 文件结构
+## 模块边界速查（改代码前先看这里）
 
+### 冻结模块（FROZEN — 接口稳定，不需要改动）
+| 模块 | 职责 | 关键导出 |
+|------|------|----------|
+| `core/pipeline.ts` | 状态机引擎 | `createPipelineRun()`, `transitionStage()` |
+| `core/agent.ts` | Agent 基类 | `BaseAgent`, `StubAgent` |
+| `core/artifact.ts` | 工件磁盘 I/O | `writeArtifact()`, `readArtifact()` |
+| `core/manifest.ts` | manifest 读写 + zod schema | `writeManifest()`, `readManifest()` |
+| `core/llm-provider.ts` | LLM 接口定义 | `LLMProvider` interface, `StubProvider` |
+| `core/prompt-assembler.ts` | Prompt 拼装 | `assemblePrompt()` |
+| `core/response-parser.ts` | 响应解析 | `parseResponse()` |
+| `core/event-bus.ts` | 事件总线 | `eventBus` singleton, `PipelineEvents` |
+| `core/logger.ts` | JSONL 日志 | `Logger` class |
+| `core/snapshot.ts` | 阶段快照 | `createSnapshot()` |
+| `agents/llm-agent.ts` | Agent 模板基类 | `LLMAgent` abstract class |
+| `adapters/types.ts` | Git 适配器接口 | `GitPlatformAdapter` interface |
+| `providers/claude-cli.ts` | Claude CLI 调用 | `ClaudeCLIProvider` |
+| `providers/anthropic-sdk.ts` | Anthropic SDK 调用 | `AnthropicSDKProvider` |
+
+### 活跃模块（ACTIVE — 可能需要修改）
+| 模块 | 职责 | 改动场景 |
+|------|------|----------|
+| `core/orchestrator.ts` | 全局编排 | 新增 pipeline 钩子 |
+| `core/context-manager.ts` | 上下文组装 | Skill 注入、输入源变更 |
+| `core/run-manager.ts` | MCP 运行管理 | 新增 MCP 工具 |
+| `core/cli-progress.ts` | 终端进度 | 新增事件监听 |
+| `core/security.ts` | 信任模型 | 新增安全策略 |
+| `core/interaction-handler.ts` | 用户交互抽象 | 新增交互渠道 |
+| `evolution/*` | 自进化系统 | 提案流程、Skill 管理 |
+| `mcp/tools.ts` | MCP 工具注册 | 新增/修改工具 |
+| `agents/*.ts` | 具体 Agent | Prompt 输出格式调整 |
+| `index.ts` | CLI 入口 | 新增命令/Flag |
+
+### 跨模块依赖关系
 ```
-src/
-├── mcp/
-│   ├── server.ts                # MCP Server 入口
-│   └── tools.ts                 # MCP 工具定义
-├── core/
-│   ├── pipeline.ts              # 流水线状态机引擎
-│   ├── orchestrator.ts          # 全局编排器
-│   ├── agent.ts                 # Agent 基类
-│   ├── artifact.ts              # 工件定义 + 契约校验
-│   ├── manifest.ts              # manifest 生成 + 校验
-│   ├── event-bus.ts             # 本地事件总线
-│   ├── snapshot.ts              # 阶段快照与回退
-│   ├── logger.ts                # 日志系统
-│   ├── context-manager.ts       # 上下文管理（工件隔离）
-│   └── llm-provider.ts          # LLM Provider 接口
-├── providers/
-│   └── claude-cli.ts            # Claude CLI Provider (MVP)
-├── adapters/
-│   ├── types.ts                 # Git 平台适配器接口
-│   └── github.ts                # GitHub 适配器
-├── agents/
-│   ├── researcher.ts
-│   ├── product-owner.ts
-│   ├── ux-designer.ts
-│   ├── api-designer.ts
-│   ├── ui-designer.ts
-│   └── validator.ts
-├── evolution/
-│   ├── engine.ts                # 进化引擎
-│   ├── prompt-versioning.ts     # Prompt 版本管理
-│   └── skill-manager.ts         # Skill 管理（创建/分级/分发）
-└── index.ts                     # CLI 入口
+CLI(index.ts) → Orchestrator → Pipeline(状态机)
+                    ↓
+              InteractionHandler → GitHub/CLI/Deferred
+                    ↓
+              AgentFactory → agents/* → LLMAgent → PromptAssembler
+                    ↓
+              ProviderFactory → providers/* → LLMProvider(接口)
+                    ↓
+              ContextManager → SkillManager(evolution)
+                    ↓
+              EventBus ← CLIProgress / MCP
 
-config/
-├── pipeline.yaml                # 流水线配置（阶段/门控/重试/安全）
-└── agents.yaml                  # Agent 编排配置（输入/输出契约）
-
-.claude/agents/mosaic/           # Agent Prompt 定义（可进化）
-├── researcher.md
-├── product-owner.md
-├── ux-designer.md
-├── api-designer.md
-├── ui-designer.md
-└── validator.md
-
-.mosaic/                         # 运行时数据（git ignored）
-├── artifacts/                   # 当前 Pipeline 的工件产出
-├── snapshots/                   # 阶段快照
-├── logs/                        # 运行日志
-└── evolution/
-    ├── prompts/                 # prompt 版本历史
-    └── skills/                  # Agent 自开发的 skill
-        ├── shared/
-        └── {agent-name}/
+MCP: server.ts → RunManager → Orchestrator
+Evolution: Orchestrator(post-run) → Engine → ProposalHandler
 ```
+
+### 关键接口文件（理解模块间通信只需读这几个）
+- `core/types.ts` — 全局类型：StageName, PipelineRun, PipelineConfig, Task, AgentContext
+- `core/llm-provider.ts` — LLM 调用契约：LLMProvider interface
+- `core/interaction-handler.ts` — 用户交互契约：InteractionHandler interface
+- `adapters/types.ts` — Git 平台契约：GitPlatformAdapter interface
+- `evolution/types.ts` — 进化域类型：EvolutionProposal, PromptVersion, SkillMetadata
 
 ---
 
-## 开发规范
+## 项目路径（src/ 模块详见上方速查表）
 
-- 使用 TypeScript 严格模式
-- 所有 Artifact 结构用 zod schema 校验
-- Agent 间通信只通过磁盘文件，禁止内存传递
-- LLM 调用统一走 llm-provider 接口，不直接调用 CLI
-- 每个 Agent 实现必须继承 Agent 基类
-- 日志调用统一走 logger 模块
-- manifest 由 Agent 基类自动生成，不手写
+```
+src/{core,mcp,providers,adapters,agents,evolution}/ + index.ts + mcp-entry.ts
+config/pipeline.yaml             # 流水线配置（阶段/门控/重试/安全/进化）
+config/agents.yaml               # Agent 编排配置（输入/输出契约）
+.claude/agents/mosaic/*.md       # Agent Prompt 定义（可进化）
+.mosaic/artifacts/               # 当前 Pipeline 的工件产出（git ignored）
+.mosaic/snapshots/               # 阶段快照
+.mosaic/logs/                    # 运行日志
+.mosaic/evolution/{prompts,skills/shared,skills/{agent-name}}/  # 进化数据
+```
 
 ---
 
