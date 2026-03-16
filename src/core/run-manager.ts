@@ -1,6 +1,14 @@
-import type { StageName, PipelineRun } from './types.js';
+import fs from 'node:fs';
+import yaml from 'js-yaml';
+import type { StageName, PipelineRun, PipelineConfig } from './types.js';
 import { Orchestrator } from './orchestrator.js';
 import { DeferredInteractionHandler } from './interaction-handler.js';
+import type { InteractionHandler } from './interaction-handler.js';
+import { GitHubInteractionHandler } from './github-interaction-handler.js';
+import { createGitHubAdapter } from '../adapters/github.js';
+import { loadSecurityConfig } from './security.js';
+import { validateGitHubEnv } from './security.js';
+import type { GitPlatformAdapter } from '../adapters/types.js';
 
 export type RunState =
   | 'running'
@@ -23,7 +31,7 @@ export interface RunStatus {
 interface ManagedRun {
   id: string;
   instruction: string;
-  handler: DeferredInteractionHandler;
+  handler?: DeferredInteractionHandler;
   orchestratorRunId?: string;
   pipelineRun?: PipelineRun;
   promise: Promise<PipelineRun>;
@@ -37,17 +45,31 @@ export class RunManager {
 
   async startRun(instruction: string, autoApprove = false): Promise<string> {
     const id = `managed-${Date.now()}`;
-    const handler = new DeferredInteractionHandler();
 
-    // Wrap handler to track state + capture orchestrator's internal runId
-    const wrappedHandler = this.createTrackedHandler(handler, id);
+    const pipelineConfig = yaml.load(
+      fs.readFileSync('config/pipeline.yaml', 'utf-8')
+    ) as PipelineConfig;
 
-    const orchestrator = new Orchestrator(wrappedHandler);
+    const useGitHub = pipelineConfig.github?.enabled && validateGitHubEnv().valid;
+    let handler: InteractionHandler;
+    let deferredHandler: DeferredInteractionHandler | undefined;
+    let adapter: GitPlatformAdapter | undefined;
+
+    if (useGitHub) {
+      adapter = createGitHubAdapter();
+      const securityConfig = loadSecurityConfig(pipelineConfig);
+      handler = new GitHubInteractionHandler(adapter, pipelineConfig.github, securityConfig);
+    } else {
+      deferredHandler = new DeferredInteractionHandler();
+      handler = this.createTrackedHandler(deferredHandler, id);
+    }
+
+    const orchestrator = new Orchestrator(handler, adapter);
 
     const managedRun: ManagedRun = {
       id,
       instruction,
-      handler,
+      handler: deferredHandler,
       state: 'running',
       promise: null!,
     };
@@ -88,6 +110,7 @@ export class RunManager {
   approve(runId: string): void {
     const managed = this.runs.get(runId);
     if (!managed) throw new Error(`Run ${runId} not found`);
+    if (!managed.handler) throw new Error(`Run ${runId} uses GitHub-based approval — approve via Issue comments`);
     if (managed.state !== 'awaiting_human') {
       throw new Error(`Run ${runId} is not awaiting approval (state: ${managed.state})`);
     }
@@ -101,6 +124,7 @@ export class RunManager {
   reject(runId: string): void {
     const managed = this.runs.get(runId);
     if (!managed) throw new Error(`Run ${runId} not found`);
+    if (!managed.handler) throw new Error(`Run ${runId} uses GitHub-based approval — reject via Issue comments`);
     if (managed.state !== 'awaiting_human') {
       throw new Error(`Run ${runId} is not awaiting approval (state: ${managed.state})`);
     }
@@ -114,6 +138,7 @@ export class RunManager {
   answerClarification(runId: string, answer: string): void {
     const managed = this.runs.get(runId);
     if (!managed) throw new Error(`Run ${runId} not found`);
+    if (!managed.handler) throw new Error(`Run ${runId} uses GitHub-based clarification — answer via Issue comments`);
     if (managed.state !== 'awaiting_clarification') {
       throw new Error(`Run ${runId} is not awaiting clarification (state: ${managed.state})`);
     }

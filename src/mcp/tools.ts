@@ -1,8 +1,11 @@
 import { z } from 'zod';
 import fs from 'node:fs';
 import path from 'node:path';
+import yaml from 'js-yaml';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RunManager } from '../core/run-manager.js';
+import type { PipelineConfig } from '../core/types.js';
+import { validateGitHubEnv } from '../core/security.js';
 
 const ARTIFACTS_DIR = '.mosaic/artifacts';
 
@@ -127,6 +130,47 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
             type: 'text' as const,
             text: JSON.stringify({ artifacts: [], note: 'No artifacts directory found. Run a pipeline first.' }),
           }],
+        };
+      }
+    }
+  );
+
+  server.tool(
+    'mosaic_github_config',
+    'Check the GitHub integration configuration status. Returns whether GitHub mode is enabled, environment variable validation results, and current config values.',
+    {},
+    async () => {
+      try {
+        const pipelineConfig = yaml.load(
+          fs.readFileSync('config/pipeline.yaml', 'utf-8')
+        ) as PipelineConfig;
+
+        const envValidation = validateGitHubEnv();
+        const githubConfig = pipelineConfig.github;
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              enabled: githubConfig?.enabled ?? false,
+              env_valid: envValidation.valid,
+              env_errors: envValidation.errors,
+              config: githubConfig ? {
+                poll_interval_ms: githubConfig.poll_interval_ms,
+                poll_timeout_ms: githubConfig.poll_timeout_ms,
+                approve_keywords: githubConfig.approve_keywords,
+                reject_keywords: githubConfig.reject_keywords,
+              } : null,
+            }),
+          }],
+        };
+      } catch (err) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+          }],
+          isError: true,
         };
       }
     }
