@@ -53,6 +53,67 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 
 ---
 
+## 模块边界速查（改代码前先看这里）
+
+### 冻结模块（FROZEN — 接口稳定，不需要改动）
+| 模块 | 职责 | 关键导出 |
+|------|------|----------|
+| `core/pipeline.ts` | 状态机引擎 | `createPipelineRun()`, `transitionStage()` |
+| `core/agent.ts` | Agent 基类 | `BaseAgent`, `StubAgent` |
+| `core/artifact.ts` | 工件磁盘 I/O | `writeArtifact()`, `readArtifact()` |
+| `core/manifest.ts` | manifest 读写 + zod schema | `writeManifest()`, `readManifest()` |
+| `core/llm-provider.ts` | LLM 接口定义 | `LLMProvider` interface, `StubProvider` |
+| `core/prompt-assembler.ts` | Prompt 拼装 | `assemblePrompt()` |
+| `core/response-parser.ts` | 响应解析 | `parseResponse()` |
+| `core/event-bus.ts` | 事件总线 | `eventBus` singleton, `PipelineEvents` |
+| `core/logger.ts` | JSONL 日志 | `Logger` class |
+| `core/snapshot.ts` | 阶段快照 | `createSnapshot()` |
+| `agents/llm-agent.ts` | Agent 模板基类 | `LLMAgent` abstract class |
+| `adapters/types.ts` | Git 适配器接口 | `GitPlatformAdapter` interface |
+| `providers/claude-cli.ts` | Claude CLI 调用 | `ClaudeCLIProvider` |
+| `providers/anthropic-sdk.ts` | Anthropic SDK 调用 | `AnthropicSDKProvider` |
+
+### 活跃模块（ACTIVE — 可能需要修改）
+| 模块 | 职责 | 改动场景 |
+|------|------|----------|
+| `core/orchestrator.ts` | 全局编排 | 新增 pipeline 钩子 |
+| `core/context-manager.ts` | 上下文组装 | Skill 注入、输入源变更 |
+| `core/run-manager.ts` | MCP 运行管理 | 新增 MCP 工具 |
+| `core/cli-progress.ts` | 终端进度 | 新增事件监听 |
+| `core/security.ts` | 信任模型 | 新增安全策略 |
+| `core/interaction-handler.ts` | 用户交互抽象 | 新增交互渠道 |
+| `evolution/*` | 自进化系统 | 提案流程、Skill 管理 |
+| `mcp/tools.ts` | MCP 工具注册 | 新增/修改工具 |
+| `agents/*.ts` | 具体 Agent | Prompt 输出格式调整 |
+| `index.ts` | CLI 入口 | 新增命令/Flag |
+
+### 跨模块依赖关系
+```
+CLI(index.ts) → Orchestrator → Pipeline(状态机)
+                    ↓
+              InteractionHandler → GitHub/CLI/Deferred
+                    ↓
+              AgentFactory → agents/* → LLMAgent → PromptAssembler
+                    ↓
+              ProviderFactory → providers/* → LLMProvider(接口)
+                    ↓
+              ContextManager → SkillManager(evolution)
+                    ↓
+              EventBus ← CLIProgress / MCP
+
+MCP: server.ts → RunManager → Orchestrator
+Evolution: Orchestrator(post-run) → Engine → ProposalHandler
+```
+
+### 关键接口文件（理解模块间通信只需读这几个）
+- `core/types.ts` — 全局类型：StageName, PipelineRun, PipelineConfig, Task, AgentContext
+- `core/llm-provider.ts` — LLM 调用契约：LLMProvider interface
+- `core/interaction-handler.ts` — 用户交互契约：InteractionHandler interface
+- `adapters/types.ts` — Git 平台契约：GitPlatformAdapter interface
+- `evolution/types.ts` — 进化域类型：EvolutionProposal, PromptVersion, SkillMetadata
+
+---
+
 ## 文件结构
 
 ```
