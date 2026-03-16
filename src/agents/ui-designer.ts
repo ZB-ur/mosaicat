@@ -7,7 +7,7 @@ import { eventBus } from '../core/event-bus.js';
 export class UIDesignerAgent extends BaseAgent {
   getOutputSpec(): OutputSpec {
     return {
-      artifacts: ['components/'],
+      artifacts: ['components/', 'previews/', 'gallery.html'],
       manifest: 'components.manifest.json',
     };
   }
@@ -40,14 +40,14 @@ export class UIDesignerAgent extends BaseAgent {
 
     // Dynamically extract all ARTIFACT blocks (component files have dynamic names)
     const artifactPattern = /<!-- ARTIFACT:([\S]+) -->\s*([\s\S]*?)\s*<!-- END:\1 -->/g;
-    const componentFiles: string[] = [];
+    const previewFiles: string[] = [];
     let match;
     while ((match = artifactPattern.exec(raw)) !== null) {
       const name = match[1];
       const content = match[2].trim();
       this.writeOutput(name, content);
-      if (name.endsWith('.tsx')) {
-        componentFiles.push(name);
+      if (name.startsWith('previews/') && name.endsWith('.html')) {
+        previewFiles.push(name);
       }
     }
 
@@ -66,20 +66,27 @@ export class UIDesignerAgent extends BaseAgent {
       }
     }
 
-    // Post-processing: render screenshots (graceful degradation)
-    if (componentFiles.length > 0) {
-      await this.renderScreenshots(componentFiles);
+    // Post-processing: render preview screenshots + gallery (graceful degradation)
+    if (previewFiles.length > 0) {
+      await this.renderPreviewsAndGallery(previewFiles);
     }
   }
 
-  private async renderScreenshots(componentFiles: string[]): Promise<void> {
+  private async renderPreviewsAndGallery(previewFiles: string[]): Promise<void> {
     try {
-      const { renderScreenshots } = await import('../core/screenshot-renderer.js');
-      const results = await renderScreenshots(componentFiles, '.mosaic/artifacts');
+      const { renderPreviewScreenshots, generateGallery } = await import('../core/screenshot-renderer.js');
+      const results = await renderPreviewScreenshots(previewFiles, '.mosaic/artifacts');
       this.logger.agent(this.stage, 'info', 'screenshots:rendered', {
         count: results.length,
         files: results.map((r) => r.screenshotPath),
       });
+
+      if (results.length > 0) {
+        const galleryPath = generateGallery(results, '.mosaic/artifacts');
+        this.logger.agent(this.stage, 'info', 'gallery:generated', {
+          path: galleryPath,
+        });
+      }
     } catch (err) {
       this.logger.agent(this.stage, 'warn', 'screenshots:skipped', {
         reason: err instanceof Error ? err.message : String(err),
