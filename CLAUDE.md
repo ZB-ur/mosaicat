@@ -22,15 +22,18 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 
 ---
 
-## 核心设计原则
+## 设计原则 & 开发规范
 
-- 工件隔离：Agent 只看契约内 Artifact，不看 pipeline 历史
+- 工件隔离：Agent 只看契约内 Artifact，不看 pipeline 历史；Agent 间通信只通过磁盘文件，禁止内存传递
 - 用户原始指令只传递到 ProductOwner 为止，下游唯一信息源是 `prd.md`
 - 意图澄清：Agent 级可选，每次最多一轮，结果标注 `[source: user]`
 - Validator 只消费 manifest（~3k token），不消费全量 Artifact
 - 回退策略：固定回退上一阶段，每阶段最多重试 3 次
 - 自进化需人工 approve，进化机制本身不可进化
-- Agent 间通信只通过磁盘文件，禁止内存传递
+- 使用 TypeScript 严格模式；所有 Artifact 结构用 zod schema 校验
+- LLM 调用统一走 llm-provider 接口，不直接调用 CLI
+- 每个 Agent 实现必须继承 Agent 基类；manifest 由基类自动生成，不手写
+- 日志调用统一走 logger 模块
 
 ---
 
@@ -41,12 +44,10 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 | 语言 | TypeScript / Node.js |
 | MCP SDK | @modelcontextprotocol/sdk |
 | LLM 调用 (MVP) | Claude CLI (`claude --print`) + PQueue 串行队列 |
-| LLM 调用 (Phase 2) | @anthropic-ai/sdk |
+| LLM 调用 | @anthropic-ai/sdk |
 | Git 操作 | @octokit/rest |
 | UI 输出 | React + Tailwind CSS + Playwright |
 | 工件校验 | zod |
-| 状态持久化 | better-sqlite3 |
-| 向量检索 (Phase 2) | sqlite-vec |
 | 事件驱动 | eventemitter3 |
 | 串行队列 | p-queue |
 
@@ -110,18 +111,6 @@ config/
         ├── shared/
         └── {agent-name}/
 ```
-
----
-
-## 开发规范
-
-- 使用 TypeScript 严格模式
-- 所有 Artifact 结构用 zod schema 校验
-- Agent 间通信只通过磁盘文件，禁止内存传递
-- LLM 调用统一走 llm-provider 接口，不直接调用 CLI
-- 每个 Agent 实现必须继承 Agent 基类
-- 日志调用统一走 logger 模块
-- manifest 由 Agent 基类自动生成，不手写
 
 ---
 
