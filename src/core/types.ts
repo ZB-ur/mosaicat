@@ -68,6 +68,11 @@ export interface GitHubConfig {
   reject_keywords: string[];
 }
 
+export interface EvolutionConfig {
+  enabled: boolean;
+  cooldown_hours: number;
+}
+
 export interface PipelineConfig {
   stages: Record<StageName, StageConfig>;
   pipeline: {
@@ -79,6 +84,7 @@ export interface PipelineConfig {
     reject_policy: string;
   };
   github: GitHubConfig;
+  evolution?: EvolutionConfig;
 }
 
 export interface AgentOutputConfig {

@@ -40,3 +40,7 @@ github:
     - "/approve"
   reject_keywords:
     - "/reject"
+
+evolution:
+  enabled: false
+  cooldown_hours: 24
