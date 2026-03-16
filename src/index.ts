@@ -3,6 +3,7 @@ import { GitHubInteractionHandler } from './core/github-interaction-handler.js';
 import { createGitHubAdapter } from './adapters/github.js';
 import { loadSecurityConfig } from './core/security.js';
 import { validateGitHubEnv } from './core/security.js';
+import { attachCLIProgress } from './core/cli-progress.js';
 import type { PipelineConfig } from './core/types.js';
 import fs from 'node:fs';
 import yaml from 'js-yaml';
@@ -19,6 +20,9 @@ if (command === 'run') {
 
   const autoApprove = args.includes('--auto-approve');
   const useGitHub = args.includes('--github');
+
+  // Attach rich CLI progress output
+  const detach = attachCLIProgress();
 
   let orchestrator: Orchestrator;
 
@@ -46,23 +50,20 @@ if (command === 'run') {
     orchestrator = new Orchestrator();
   }
 
-  console.log(`[mosaicat] Starting pipeline...`);
-  console.log(`[mosaicat] Instruction: ${instruction}`);
-  console.log(`[mosaicat] Auto-approve: ${autoApprove}`);
-  console.log('');
+  console.log(`\x1b[2mInstruction: ${instruction}\x1b[0m`);
+  console.log(`\x1b[2mAuto-approve: ${autoApprove}\x1b[0m`);
 
   orchestrator
     .run(instruction, autoApprove)
     .then((result) => {
-      console.log('');
-      console.log(`[mosaicat] Pipeline complete!`);
-      console.log(`[mosaicat] Run ID: ${result.id}`);
-      console.log(`[mosaicat] Duration: ${new Date(result.completedAt!).getTime() - new Date(result.createdAt).getTime()}ms`);
-      console.log(`[mosaicat] Artifacts: .mosaic/artifacts/`);
-      console.log(`[mosaicat] Logs: .mosaic/logs/${result.id}/`);
+      console.log(`\x1b[2mRun ID: ${result.id}\x1b[0m`);
+      console.log(`\x1b[2mArtifacts: .mosaic/artifacts/\x1b[0m`);
+      console.log(`\x1b[2mLogs: .mosaic/logs/${result.id}/\x1b[0m`);
+      detach();
     })
     .catch((err) => {
-      console.error(`[mosaicat] Pipeline failed: ${err instanceof Error ? err.message : err}`);
+      console.error(`\n\x1b[31m[mosaicat] Pipeline failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
+      detach();
       process.exit(1);
     });
 } else {

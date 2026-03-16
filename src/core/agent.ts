@@ -3,6 +3,7 @@ import type { LLMProvider } from './llm-provider.js';
 import type { Logger } from './logger.js';
 import { writeArtifact } from './artifact.js';
 import { writeManifest } from './manifest.js';
+import { eventBus } from './event-bus.js';
 
 export abstract class BaseAgent {
   protected provider: LLMProvider;
@@ -16,9 +17,9 @@ export abstract class BaseAgent {
   }
 
   async execute(context: AgentContext): Promise<void> {
-    this.logger.agent(this.stage, 'info', 'agent:start', {
-      inputs: Array.from(context.inputArtifacts.keys()),
-    });
+    const inputs = Array.from(context.inputArtifacts.keys());
+    this.logger.agent(this.stage, 'info', 'agent:start', { inputs });
+    eventBus.emit('agent:context', this.stage, inputs);
 
     try {
       await this.run(context);
@@ -35,11 +36,13 @@ export abstract class BaseAgent {
   protected writeOutput(name: string, content: string): void {
     writeArtifact(name, content);
     this.logger.agent(this.stage, 'info', 'artifact:written', { name });
+    eventBus.emit('artifact:written', this.stage, name, content.length);
   }
 
   protected writeOutputManifest(name: string, data: unknown): void {
     writeManifest(name, data);
     this.logger.agent(this.stage, 'info', 'manifest:written', { name });
+    eventBus.emit('manifest:written', this.stage, name);
   }
 }
 

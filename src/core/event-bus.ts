@@ -9,11 +9,19 @@ export interface PipelineEvents {
   'stage:approved': (stage: StageName, runId: string) => void;
   'stage:rejected': (stage: StageName, runId: string) => void;
   'stage:rollback': (from: StageName, to: StageName, runId: string) => void;
+  'stage:retry': (stage: StageName, runId: string, attempt: number) => void;
   'pipeline:start': (runId: string) => void;
   'pipeline:complete': (runId: string) => void;
   'pipeline:failed': (runId: string, error: string) => void;
   'issue:created': (issueNumber: number, stage: StageName, runId: string) => void;
   'issue:closed': (issueNumber: number, stage: StageName, runId: string) => void;
+  'agent:context': (stage: StageName, inputs: string[]) => void;
+  'agent:thinking': (stage: StageName, promptLength: number) => void;
+  'agent:response': (stage: StageName, responseLength: number) => void;
+  'agent:clarification': (stage: StageName, question: string) => void;
+  'artifact:written': (stage: StageName, name: string, size: number) => void;
+  'manifest:written': (stage: StageName, name: string) => void;
+  'snapshot:created': (stage: StageName, runId: string) => void;
 }
 
 type EventName = keyof PipelineEvents;

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import PQueue from 'p-queue';
 import type { LLMProvider, LLMCallOptions } from '../core/llm-provider.js';
 
-const TIMEOUT_MS = 120_000;
+const TIMEOUT_MS = 600_000; // 10 minutes — complex stages (ui_designer) need time for large outputs
 const MAX_BUFFER = 10 * 1024 * 1024; // 10MB
 
 export class ClaudeCLIProvider implements LLMProvider {

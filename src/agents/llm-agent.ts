@@ -3,6 +3,7 @@ import { ClarificationNeeded } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
 import { assemblePrompt, type OutputSpec } from '../core/prompt-assembler.js';
 import { parseResponse } from '../core/response-parser.js';
+import { eventBus } from '../core/event-bus.js';
 
 export abstract class LLMAgent extends BaseAgent {
   abstract getOutputSpec(): OutputSpec;
@@ -15,6 +16,7 @@ export abstract class LLMAgent extends BaseAgent {
       promptLength: prompt.length,
       expectedArtifacts: spec.artifacts,
     });
+    eventBus.emit('agent:thinking', this.stage, prompt.length);
 
     const raw = await this.provider.call(prompt, {
       systemPrompt: context.systemPrompt,
@@ -23,11 +25,13 @@ export abstract class LLMAgent extends BaseAgent {
     this.logger.agent(this.stage, 'info', 'llm:response', {
       responseLength: raw.length,
     });
+    eventBus.emit('agent:response', this.stage, raw.length);
 
     const parsed = parseResponse(raw, spec.artifacts, spec.manifest);
 
     // Clarification signal
     if (parsed.clarification) {
+      eventBus.emit('agent:clarification', this.stage, parsed.clarification);
       throw new ClarificationNeeded(parsed.clarification);
     }
 

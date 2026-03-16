@@ -118,6 +118,7 @@ export class Orchestrator {
       // Snapshot (include issue numbers in metadata)
       const issueNumbers = Object.fromEntries(this.stageIssues);
       createSnapshot(stage, run.id, issueNumbers);
+      eventBus.emit('snapshot:created', stage, run.id);
 
       // Create informational Issue on stage complete
       await this.createStageIssue(stage, run.id);
@@ -134,6 +135,7 @@ export class Orchestrator {
         transitionStage(run, stage, 'failed');
         transitionStage(run, stage, 'idle');
         logger.pipeline('warn', 'stage:retry', { stage, retry: stageStatus.retryCount });
+        eventBus.emit('stage:retry', stage, run.id, stageStatus.retryCount);
         return this.executeStage(run, stage, provider, logger);
       }
 
