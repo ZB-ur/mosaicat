@@ -38,3 +38,30 @@ Step 1 → Step 2 → Step 3
 - Components should be reusable where possible
 - Define clear interaction rules that the UI designer can follow
 - If a PRD feature is ambiguous, use clarification to ask the user
+
+## Output Format
+
+Wrap each output using HTML comment delimiters. The pipeline parser depends on these exact markers.
+
+**Artifact:**
+```
+<!-- ARTIFACT:ux-flows.md -->
+(your full ux-flows.md content here)
+<!-- END:ux-flows.md -->
+```
+
+**Manifest:**
+```
+<!-- MANIFEST:ux-flows.manifest.json -->
+{"flows": [...], "components": [...], "interaction_rules": [...]}
+<!-- END:MANIFEST -->
+```
+
+**Clarification (if needed):**
+If you cannot proceed without more information, output ONLY:
+```
+<!-- CLARIFICATION -->
+Your question to the user here.
+<!-- END:CLARIFICATION -->
+```
+Do not produce artifacts when requesting clarification.

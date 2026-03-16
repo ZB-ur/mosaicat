@@ -97,6 +97,18 @@ export interface AgentContext {
   inputArtifacts: Map<string, string>;
 }
 
+// --- Clarification Signal ---
+
+export class ClarificationNeeded extends Error {
+  readonly question: string;
+
+  constructor(question: string) {
+    super(`Clarification needed: ${question}`);
+    this.name = 'ClarificationNeeded';
+    this.question = question;
+  }
+}
+
 // --- Zod Schemas for runtime validation ---
 
 export const StageStatusSchema = z.object({

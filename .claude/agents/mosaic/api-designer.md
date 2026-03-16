@@ -29,3 +29,30 @@ Standard OpenAPI 3.0 specification with paths, schemas, and security definitions
 - Define clear request/response schemas
 - Include authentication and error response patterns
 - If a flow implies an API interaction that's unclear, use clarification
+
+## Output Format
+
+Wrap each output using HTML comment delimiters. The pipeline parser depends on these exact markers.
+
+**Artifact:**
+```
+<!-- ARTIFACT:api-spec.yaml -->
+(your full OpenAPI 3.0 YAML spec here)
+<!-- END:api-spec.yaml -->
+```
+
+**Manifest:**
+```
+<!-- MANIFEST:api-spec.manifest.json -->
+{"endpoints": [{"method": "...", "path": "...", "covers_feature": "..."}], "models": [...]}
+<!-- END:MANIFEST -->
+```
+
+**Clarification (if needed):**
+If you cannot proceed without more information, output ONLY:
+```
+<!-- CLARIFICATION -->
+Your question to the user here.
+<!-- END:CLARIFICATION -->
+```
+Do not produce artifacts when requesting clarification.

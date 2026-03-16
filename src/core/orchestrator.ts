@@ -1,15 +1,17 @@
 import fs from 'node:fs';
+import readline from 'node:readline';
 import yaml from 'js-yaml';
-import type { PipelineConfig, AgentsConfig, StageName, PipelineRun } from './types.js';
-import { STAGE_ORDER } from './types.js';
+import type { PipelineConfig, AgentsConfig, StageName, PipelineRun, AgentContext } from './types.js';
+import { STAGE_ORDER, ClarificationNeeded } from './types.js';
 import {
   createPipelineRun,
   transitionStage,
   shouldAutoApprove,
   getPreviousStage,
 } from './pipeline.js';
-import { StubAgent } from './agent.js';
-import { StubProvider } from './llm-provider.js';
+import type { LLMProvider } from './llm-provider.js';
+import { createProvider } from './provider-factory.js';
+import { createAgent } from './agent-factory.js';
 import { buildContext } from './context-manager.js';
 import { createSnapshot } from './snapshot.js';
 import { eventBus } from './event-bus.js';
@@ -32,7 +34,7 @@ export class Orchestrator {
     const runId = `run-${Date.now()}`;
     const pipelineRun = createPipelineRun(runId, instruction, autoApprove);
     const logger = new Logger(runId);
-    const provider = new StubProvider();
+    const provider = createProvider();
 
     logger.pipeline('info', 'pipeline:start', { runId, instruction });
     eventBus.emit('pipeline:start', runId);
@@ -60,7 +62,7 @@ export class Orchestrator {
   private async executeStage(
     run: PipelineRun,
     stage: StageName,
-    provider: StubProvider,
+    provider: LLMProvider,
     logger: Logger
   ): Promise<void> {
     const stageConfig = this.pipelineConfig.stages[stage];
@@ -76,18 +78,34 @@ export class Orchestrator {
       const task = { runId: run.id, stage, instruction: run.instruction };
       const context = buildContext(this.agentsConfig, task);
 
-      // Create and execute agent
-      const agent = new StubAgent(stage, provider, logger);
-      await agent.execute(context);
+      // Create and execute agent (with clarification handling)
+      await this.executeAgent(run, stage, provider, logger, context);
 
       // Gate check
       if (shouldAutoApprove(run, stageConfig)) {
         transitionStage(run, stage, 'done');
       } else {
-        // Manual gate — in Phase 1 with --auto-approve, this won't happen
+        // Manual gate
         transitionStage(run, stage, 'awaiting_human');
-        transitionStage(run, stage, 'approved');
-        transitionStage(run, stage, 'done');
+        eventBus.emit('stage:awaiting_human', stage, run.id);
+        logger.pipeline('info', 'stage:awaiting_human', { stage });
+
+        const decision = await this.askUser(
+          `[${stage}] Review artifacts and approve? (yes/no): `
+        );
+
+        if (decision.toLowerCase().startsWith('y')) {
+          transitionStage(run, stage, 'approved');
+          eventBus.emit('stage:approved', stage, run.id);
+          transitionStage(run, stage, 'done');
+        } else {
+          transitionStage(run, stage, 'rejected');
+          eventBus.emit('stage:rejected', stage, run.id);
+          logger.pipeline('info', 'stage:rejected', { stage });
+          // Re-run the stage after rejection
+          transitionStage(run, stage, 'idle');
+          return this.executeStage(run, stage, provider, logger);
+        }
       }
 
       // Snapshot
@@ -96,6 +114,7 @@ export class Orchestrator {
       logger.pipeline('info', 'stage:complete', { stage });
       eventBus.emit('stage:complete', stage, run.id);
     } catch (err) {
+      // ClarificationNeeded is handled inside executeAgent, not here
       const message = err instanceof Error ? err.message : String(err);
       const stageStatus = run.stages[stage];
 
@@ -118,5 +137,63 @@ export class Orchestrator {
       eventBus.emit('stage:failed', stage, run.id, message);
       throw err;
     }
+  }
+
+  private async executeAgent(
+    run: PipelineRun,
+    stage: StageName,
+    provider: LLMProvider,
+    logger: Logger,
+    context: AgentContext
+  ): Promise<void> {
+    const agent = createAgent(stage, provider, logger);
+
+    try {
+      await agent.execute(context);
+    } catch (err) {
+      if (!(err instanceof ClarificationNeeded)) {
+        throw err;
+      }
+
+      const stageConfig = this.pipelineConfig.stages[stage];
+      if (!stageConfig.clarification) {
+        // Stage doesn't support clarification, re-throw
+        throw err;
+      }
+
+      // Handle clarification: one round
+      transitionStage(run, stage, 'awaiting_clarification');
+      logger.pipeline('info', 'stage:clarification', { stage, question: err.question });
+
+      console.log(`\n[${stage}] Agent needs clarification:`);
+      console.log(err.question);
+      const answer = await this.askUser('\nYour answer: ');
+
+      // Augment context with user answer
+      context.inputArtifacts.set(
+        'clarification_answer',
+        `[source: user] ${answer}`
+      );
+
+      transitionStage(run, stage, 'running');
+
+      // Re-run agent with augmented context
+      const retryAgent = createAgent(stage, provider, logger);
+      await retryAgent.execute(context);
+    }
+  }
+
+  private askUser(question: string): Promise<string> {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    return new Promise((resolve) => {
+      rl.question(question, (answer) => {
+        rl.close();
+        resolve(answer);
+      });
+    });
   }
 }

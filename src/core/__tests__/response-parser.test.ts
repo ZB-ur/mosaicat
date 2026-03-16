@@ -1,0 +1,134 @@
+import { describe, it, expect } from 'vitest';
+import { parseResponse } from '../response-parser.js';
+
+describe('parseResponse', () => {
+  it('should parse a normal response with artifact and manifest', () => {
+    const raw = `
+Some preamble text.
+
+<!-- ARTIFACT:research.md -->
+## Market Overview
+This is market research content.
+<!-- END:research.md -->
+
+<!-- MANIFEST:research.manifest.json -->
+{"competitors": ["a", "b"], "key_insights": ["insight1"], "feasibility": "high", "risks": ["risk1"]}
+<!-- END:MANIFEST -->
+`;
+
+    const result = parseResponse(raw, ['research.md'], 'research.manifest.json');
+
+    expect(result.artifacts.get('research.md')).toBe(
+      '## Market Overview\nThis is market research content.'
+    );
+    expect(result.manifest).toEqual({
+      name: 'research.manifest.json',
+      data: { competitors: ['a', 'b'], key_insights: ['insight1'], feasibility: 'high', risks: ['risk1'] },
+    });
+    expect(result.clarification).toBeUndefined();
+  });
+
+  it('should parse multiple artifacts', () => {
+    const raw = `
+<!-- ARTIFACT:components/LoginForm.tsx -->
+export function LoginForm() { return <div>Login</div>; }
+<!-- END:components/LoginForm.tsx -->
+
+<!-- ARTIFACT:components/Header.tsx -->
+export function Header() { return <header>Header</header>; }
+<!-- END:components/Header.tsx -->
+`;
+
+    const result = parseResponse(raw, ['components/LoginForm.tsx', 'components/Header.tsx']);
+
+    expect(result.artifacts.size).toBe(2);
+    expect(result.artifacts.get('components/LoginForm.tsx')).toContain('LoginForm');
+    expect(result.artifacts.get('components/Header.tsx')).toContain('Header');
+  });
+
+  it('should detect clarification and return early', () => {
+    const raw = `
+<!-- CLARIFICATION -->
+I need to understand: do you want a blog with comments or without?
+<!-- END:CLARIFICATION -->
+`;
+
+    const result = parseResponse(raw, ['research.md'], 'research.manifest.json');
+
+    expect(result.clarification).toBe(
+      'I need to understand: do you want a blog with comments or without?'
+    );
+    expect(result.artifacts.size).toBe(0);
+    expect(result.manifest).toBeUndefined();
+  });
+
+  it('should fallback for single artifact without delimiters', () => {
+    const raw = `## Market Overview
+This is the full response content.
+
+## Competitors
+- CompA
+- CompB
+
+\`\`\`json
+{"competitors": ["CompA", "CompB"], "key_insights": ["insight"], "feasibility": "medium", "risks": []}
+\`\`\``;
+
+    const result = parseResponse(raw, ['research.md'], 'research.manifest.json');
+
+    expect(result.artifacts.get('research.md')).toContain('## Market Overview');
+    expect(result.artifacts.get('research.md')).not.toContain('```json');
+    expect(result.manifest?.data).toEqual({
+      competitors: ['CompA', 'CompB'],
+      key_insights: ['insight'],
+      feasibility: 'medium',
+      risks: [],
+    });
+  });
+
+  it('should handle manifest with code fences inside delimiters', () => {
+    const raw = `
+<!-- ARTIFACT:prd.md -->
+## Goal
+Build a blog.
+<!-- END:prd.md -->
+
+<!-- MANIFEST:prd.manifest.json -->
+\`\`\`json
+{"features": ["f1"], "constraints": ["c1"], "out_of_scope": ["x1"]}
+\`\`\`
+<!-- END:MANIFEST -->
+`;
+
+    const result = parseResponse(raw, ['prd.md'], 'prd.manifest.json');
+
+    expect(result.manifest?.data).toEqual({
+      features: ['f1'],
+      constraints: ['c1'],
+      out_of_scope: ['x1'],
+    });
+  });
+
+  it('should throw on malformed manifest JSON', () => {
+    const raw = `
+<!-- ARTIFACT:prd.md -->
+Content
+<!-- END:prd.md -->
+
+<!-- MANIFEST:prd.manifest.json -->
+{invalid json here}
+<!-- END:MANIFEST -->
+`;
+
+    expect(() => parseResponse(raw, ['prd.md'], 'prd.manifest.json')).toThrow(
+      'Failed to parse manifest JSON'
+    );
+  });
+
+  it('should return empty artifacts when no delimiters match and multiple expected', () => {
+    const raw = 'Some random text without any delimiters';
+    const result = parseResponse(raw, ['a.md', 'b.md']);
+
+    expect(result.artifacts.size).toBe(0);
+  });
+});
