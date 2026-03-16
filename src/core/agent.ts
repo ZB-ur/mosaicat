@@ -115,6 +115,7 @@ const STUB_OUTPUTS: Record<StageName, StubOutputDef> = {
           { name: 'MainComponent', file: 'components/MainComponent.tsx', covers_flow: 'main-flow' },
         ],
         screenshots: ['screenshots/MainComponent.png'],
+        previews: ['previews/MainComponent.html'],
       },
     },
   },
@@ -132,8 +133,9 @@ export class StubAgent extends BaseAgent {
       this.writeOutputManifest(def.manifest.name, def.manifest.data);
     }
 
-    // UIDesigner also writes a screenshot placeholder
+    // UIDesigner also writes preview HTML and screenshot placeholders
     if (this.stage === 'ui_designer') {
+      this.writeOutput('previews/MainComponent.html', '<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4">Placeholder Component</div></body></html>');
       this.writeOutput('screenshots/MainComponent.png', '[stub screenshot]');
     }
   }

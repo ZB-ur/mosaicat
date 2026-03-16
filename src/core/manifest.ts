@@ -42,6 +42,7 @@ export const ComponentsManifestSchema = z.object({
     })
   ),
   screenshots: z.array(z.string()),
+  previews: z.array(z.string()).optional(),
 });
 
 // Schema registry by manifest name
