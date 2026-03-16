@@ -114,13 +114,22 @@ export interface AgentContext {
 
 // --- Clarification Signal ---
 
+export interface ClarificationOption {
+  label: string;
+  description?: string;
+}
+
 export class ClarificationNeeded extends Error {
   readonly question: string;
+  readonly options?: ClarificationOption[];
+  readonly allowCustom?: boolean;
 
-  constructor(question: string) {
+  constructor(question: string, options?: ClarificationOption[], allowCustom?: boolean) {
     super(`Clarification needed: ${question}`);
     this.name = 'ClarificationNeeded';
     this.question = question;
+    this.options = options;
+    this.allowCustom = allowCustom;
   }
 }
 

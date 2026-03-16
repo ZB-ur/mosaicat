@@ -13,12 +13,29 @@ import type { LLMProvider, LLMCallOptions } from '../core/llm-provider.js';
 import { STAGE_ORDER } from '../core/types.js';
 
 // Mock provider with formatted responses for all 6 stages
+// UIDesigner uses multi-pass: 1 planner call + N builder calls
+// We detect the phase by system prompt content
 class MockLLMProvider implements LLMProvider {
   callCount = 0;
+  private uiBuilderCallCount = 0;
 
   async call(_prompt: string, _options?: LLMCallOptions): Promise<string> {
     this.callCount++;
-    const stage = STAGE_ORDER[this.callCount - 1];
+
+    // Detect UIDesigner sub-phases by system prompt
+    const sys = _options?.systemPrompt ?? '';
+    if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
+      return this.plannerResponse();
+    }
+    if (sys.includes('UIBuilder') || sys.includes('builder phase of the UI designer')) {
+      return this.builderResponse();
+    }
+
+    // Sequential stage dispatch for non-UIDesigner stages
+    // Count only non-UI calls for stage mapping
+    const nonUIStages = STAGE_ORDER.filter((s) => s !== 'ui_designer');
+    const nonUICallIndex = this.callCount - 1 - (this.uiBuilderCallCount > 0 ? this.uiBuilderCallCount + 1 : 0);
+    const stage = nonUIStages[nonUICallIndex] ?? STAGE_ORDER[this.callCount - 1];
 
     const responses: Record<string, string> = {
       researcher: `<!-- ARTIFACT:research.md -->
@@ -118,57 +135,6 @@ paths:
 {"endpoints": [{"method": "GET", "path": "/tasks", "covers_feature": "task-crud"}, {"method": "POST", "path": "/tasks", "covers_feature": "task-crud"}, {"method": "PATCH", "path": "/tasks/{id}", "covers_feature": "task-crud"}, {"method": "DELETE", "path": "/tasks/{id}", "covers_feature": "task-crud"}], "models": ["Task"]}
 <!-- END:MANIFEST -->`,
 
-      ui_designer: `<!-- ARTIFACT:components/TaskInput.tsx -->
-export default function TaskInput() {
-  return (
-    <div className="flex gap-2 p-4">
-      <input type="text" placeholder="What needs to be done?" className="flex-1 p-2 border rounded" />
-      <button className="bg-blue-500 text-white px-4 py-2 rounded">Add</button>
-    </div>
-  );
-}
-<!-- END:components/TaskInput.tsx -->
-
-<!-- ARTIFACT:components/TaskItem.tsx -->
-export default function TaskItem() {
-  return (
-    <div className="flex items-center gap-3 p-3 border-b">
-      <input type="checkbox" className="w-5 h-5" />
-      <span className="flex-1">Sample task</span>
-      <button className="text-red-500 hover:text-red-700">Delete</button>
-    </div>
-  );
-}
-<!-- END:components/TaskItem.tsx -->
-
-<!-- ARTIFACT:components/TaskFilter.tsx -->
-export default function TaskFilter() {
-  return (
-    <div className="flex gap-2 p-4 border-t">
-      <button className="px-3 py-1 rounded bg-gray-200">All</button>
-      <button className="px-3 py-1 rounded">Active</button>
-      <button className="px-3 py-1 rounded">Completed</button>
-    </div>
-  );
-}
-<!-- END:components/TaskFilter.tsx -->
-
-<!-- ARTIFACT:previews/TaskInput.html -->
-<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script><style>body { margin: 0; padding: 16px; background: #f8fafc; font-family: system-ui, sans-serif; }</style></head><body><div class="flex gap-2 p-4"><input type="text" placeholder="What needs to be done?" class="flex-1 p-2 border rounded" /><button class="bg-blue-500 text-white px-4 py-2 rounded">Add</button></div></body></html>
-<!-- END:previews/TaskInput.html -->
-
-<!-- ARTIFACT:previews/TaskItem.html -->
-<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script><style>body { margin: 0; padding: 16px; background: #f8fafc; font-family: system-ui, sans-serif; }</style></head><body><div class="flex items-center gap-3 p-3 border-b"><input type="checkbox" class="w-5 h-5" /><span class="flex-1">Sample task</span><button class="text-red-500 hover:text-red-700">Delete</button></div></body></html>
-<!-- END:previews/TaskItem.html -->
-
-<!-- ARTIFACT:previews/TaskFilter.html -->
-<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script><style>body { margin: 0; padding: 16px; background: #f8fafc; font-family: system-ui, sans-serif; }</style></head><body><div class="flex gap-2 p-4 border-t"><button class="px-3 py-1 rounded bg-gray-200">All</button><button class="px-3 py-1 rounded">Active</button><button class="px-3 py-1 rounded">Completed</button></div></body></html>
-<!-- END:previews/TaskFilter.html -->
-
-<!-- MANIFEST:components.manifest.json -->
-{"components": [{"name": "TaskInput", "file": "components/TaskInput.tsx", "covers_flow": "task-management"}, {"name": "TaskItem", "file": "components/TaskItem.tsx", "covers_flow": "task-management"}, {"name": "TaskFilter", "file": "components/TaskFilter.tsx", "covers_flow": "task-filtering"}], "screenshots": ["screenshots/TaskInput.png", "screenshots/TaskItem.png", "screenshots/TaskFilter.png"], "previews": ["previews/TaskInput.html", "previews/TaskItem.html", "previews/TaskFilter.html"]}
-<!-- END:MANIFEST -->`,
-
       validator: `<!-- ARTIFACT:validation-report.md -->
 ## Validation Summary
 - Status: PASS
@@ -191,6 +157,43 @@ export default function TaskFilter() {
     };
 
     return responses[stage!] ?? '[mock] unknown';
+  }
+
+  private plannerResponse(): string {
+    return `<!-- ARTIFACT:ui-plan.json -->
+{
+  "design_tokens": {"primary": "blue-600", "background": "slate-50"},
+  "components": [
+    {"name": "TaskInput", "file": "components/TaskInput.tsx", "preview": "previews/TaskInput.html", "purpose": "Add new task", "covers_flow": "task-management", "parent": null, "children": [], "props": ["onAdd: (text: string) => void"], "priority": 1},
+    {"name": "TaskItem", "file": "components/TaskItem.tsx", "preview": "previews/TaskItem.html", "purpose": "Single task row", "covers_flow": "task-management", "parent": null, "children": [], "props": ["task: Task", "onToggle: () => void"], "priority": 2},
+    {"name": "TaskFilter", "file": "components/TaskFilter.tsx", "preview": "previews/TaskFilter.html", "purpose": "Filter buttons", "covers_flow": "task-filtering", "parent": null, "children": [], "props": ["filter: string", "onChange: (f: string) => void"], "priority": 3}
+  ]
+}
+<!-- END:ui-plan.json -->`;
+  }
+
+  private builderResponse(): string {
+    this.uiBuilderCallCount++;
+    const components: Record<number, { name: string; tsx: string; html: string }> = {
+      1: {
+        name: 'TaskInput',
+        tsx: `export default function TaskInput() {\n  return (\n    <div className="flex gap-2 p-4">\n      <input type="text" placeholder="What needs to be done?" className="flex-1 p-2 border rounded" />\n      <button className="bg-blue-500 text-white px-4 py-2 rounded">Add</button>\n    </div>\n  );\n}`,
+        html: `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script><style>body { margin: 0; padding: 16px; background: #f8fafc; font-family: system-ui, sans-serif; }</style></head><body><div class="flex gap-2 p-4"><input type="text" placeholder="What needs to be done?" class="flex-1 p-2 border rounded" /><button class="bg-blue-500 text-white px-4 py-2 rounded">Add</button></div></body></html>`,
+      },
+      2: {
+        name: 'TaskItem',
+        tsx: `export default function TaskItem() {\n  return (\n    <div className="flex items-center gap-3 p-3 border-b">\n      <input type="checkbox" className="w-5 h-5" />\n      <span className="flex-1">Sample task</span>\n      <button className="text-red-500 hover:text-red-700">Delete</button>\n    </div>\n  );\n}`,
+        html: `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script><style>body { margin: 0; padding: 16px; background: #f8fafc; font-family: system-ui, sans-serif; }</style></head><body><div class="flex items-center gap-3 p-3 border-b"><input type="checkbox" class="w-5 h-5" /><span class="flex-1">Sample task</span><button class="text-red-500 hover:text-red-700">Delete</button></div></body></html>`,
+      },
+      3: {
+        name: 'TaskFilter',
+        tsx: `export default function TaskFilter() {\n  return (\n    <div className="flex gap-2 p-4 border-t">\n      <button className="px-3 py-1 rounded bg-gray-200">All</button>\n      <button className="px-3 py-1 rounded">Active</button>\n      <button className="px-3 py-1 rounded">Completed</button>\n    </div>\n  );\n}`,
+        html: `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script><style>body { margin: 0; padding: 16px; background: #f8fafc; font-family: system-ui, sans-serif; }</style></head><body><div class="flex gap-2 p-4 border-t"><button class="px-3 py-1 rounded bg-gray-200">All</button><button class="px-3 py-1 rounded">Active</button><button class="px-3 py-1 rounded">Completed</button></div></body></html>`,
+      },
+    };
+
+    const comp = components[this.uiBuilderCallCount] ?? components[1];
+    return `<!-- ARTIFACT:components/${comp.name}.tsx -->\n${comp.tsx}\n<!-- END:components/${comp.name}.tsx -->\n\n<!-- ARTIFACT:previews/${comp.name}.html -->\n${comp.html}\n<!-- END:previews/${comp.name}.html -->`;
   }
 }
 
@@ -285,6 +288,9 @@ describe('Phase 3 E2E Integration', () => {
     const galleryContent = fs.readFileSync(`${ARTIFACTS_DIR}/gallery.html`, 'utf-8');
     expect(galleryContent).toContain('Component Gallery');
     expect(galleryContent).toContain('data:image/png;base64,');
+
+    // ui-plan.json exists (new multi-pass artifact)
+    expect(fs.existsSync(`${ARTIFACTS_DIR}/ui-plan.json`)).toBe(true);
 
     // All 5 manifests are valid JSON
     const manifests = [

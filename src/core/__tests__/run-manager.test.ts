@@ -3,12 +3,23 @@ import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions } from '../llm-provider.js';
 import { STAGE_ORDER } from '../types.js';
 
-// Mock provider returning formatted responses for all 6 stages
+// Mock provider — routes UIDesigner sub-phases by system prompt
 class MockLLMProvider implements LLMProvider {
   callCount = 0;
 
   async call(_prompt: string, _options?: LLMCallOptions): Promise<string> {
     this.callCount++;
+    const sys = _options?.systemPrompt ?? '';
+
+    // UIDesigner planner sub-phase
+    if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
+      return `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "Test", "covers_flow": "main-flow", "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->`;
+    }
+    // UIDesigner builder sub-phase
+    if (sys.includes('UIBuilder') || sys.includes('builder phase of the UI designer')) {
+      return `<!-- ARTIFACT:components/CompA.tsx -->\nexport default function CompA() {\n  return <div className="p-4">Test</div>;\n}\n<!-- END:components/CompA.tsx -->\n\n<!-- ARTIFACT:previews/CompA.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4">Test</div></body></html>\n<!-- END:previews/CompA.html -->`;
+    }
+
     const stage = STAGE_ORDER[this.callCount - 1];
 
     const responses: Record<string, string> = {
@@ -16,7 +27,6 @@ class MockLLMProvider implements LLMProvider {
       product_owner: `<!-- ARTIFACT:prd.md -->\n## Goal\nTest goal\n## Features\n- feat-a\n<!-- END:prd.md -->\n<!-- MANIFEST:prd.manifest.json -->\n{"features": ["feat-a"], "constraints": [], "out_of_scope": []}\n<!-- END:MANIFEST -->`,
       ux_designer: `<!-- ARTIFACT:ux-flows.md -->\n## User Journeys\n### Flow 1: main-flow\nStep 1 → Step 2\n## Component Inventory\n- CompA\n<!-- END:ux-flows.md -->\n<!-- MANIFEST:ux-flows.manifest.json -->\n{"flows": ["main-flow"], "components": ["CompA"], "interaction_rules": []}\n<!-- END:MANIFEST -->`,
       api_designer: `<!-- ARTIFACT:api-spec.yaml -->\nopenapi: "3.0.0"\ninfo:\n  title: Test\npaths:\n  /test:\n    get:\n      summary: Test\n<!-- END:api-spec.yaml -->\n<!-- MANIFEST:api-spec.manifest.json -->\n{"endpoints": [{"method": "GET", "path": "/test", "covers_feature": "feat-a"}], "models": ["TestModel"]}\n<!-- END:MANIFEST -->`,
-      ui_designer: `<!-- ARTIFACT:components/CompA.tsx -->\nexport default function CompA() {\n  return <div className="p-4">Test</div>;\n}\n<!-- END:components/CompA.tsx -->\n<!-- MANIFEST:components.manifest.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "covers_flow": "main-flow"}], "screenshots": []}\n<!-- END:MANIFEST -->`,
       validator: `<!-- ARTIFACT:validation-report.md -->\n## Validation Summary\n- Status: PASS\n- Checks passed: 4/4\n<!-- END:validation-report.md -->`,
     };
 

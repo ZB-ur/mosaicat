@@ -3,24 +3,43 @@ import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions } from '../../core/llm-provider.js';
 import { STAGE_ORDER } from '../../core/types.js';
 
-// Mock provider returning formatted responses for all 6 stages
+// Mock provider — routes UIDesigner sub-phases by system prompt
 class MockLLMProvider implements LLMProvider {
   callCount = 0;
 
   async call(_prompt: string, _options?: LLMCallOptions): Promise<string> {
     this.callCount++;
-    const stage = STAGE_ORDER[this.callCount - 1];
+    const sys = _options?.systemPrompt ?? '';
 
-    const responses: Record<string, string> = {
+    // UIDesigner planner sub-phase
+    if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
+      return `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "C1", "file": "components/C1.tsx", "preview": "previews/C1.html", "purpose": "Test", "covers_flow": "main", "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->`;
+    }
+    // UIDesigner builder sub-phase
+    if (sys.includes('UIBuilder') || sys.includes('builder phase of the UI designer')) {
+      return `<!-- ARTIFACT:components/C1.tsx -->\nexport default function C1() { return <div>T</div>; }\n<!-- END:components/C1.tsx -->\n\n<!-- ARTIFACT:previews/C1.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div>T</div></body></html>\n<!-- END:previews/C1.html -->`;
+    }
+
+    const stageResponses: Record<string, string> = {
       researcher: `<!-- ARTIFACT:research.md -->\n## Market Overview\nTest\n<!-- END:research.md -->\n<!-- MANIFEST:research.manifest.json -->\n{"competitors": ["A"], "key_insights": ["t"], "feasibility": "high", "risks": []}\n<!-- END:MANIFEST -->`,
       product_owner: `<!-- ARTIFACT:prd.md -->\n## Goal\nTest\n## Features\n- f1\n<!-- END:prd.md -->\n<!-- MANIFEST:prd.manifest.json -->\n{"features": ["f1"], "constraints": [], "out_of_scope": []}\n<!-- END:MANIFEST -->`,
       ux_designer: `<!-- ARTIFACT:ux-flows.md -->\n## User Journeys\n### Flow 1: main\nA → B\n## Component Inventory\n- C1\n<!-- END:ux-flows.md -->\n<!-- MANIFEST:ux-flows.manifest.json -->\n{"flows": ["main"], "components": ["C1"], "interaction_rules": []}\n<!-- END:MANIFEST -->`,
       api_designer: `<!-- ARTIFACT:api-spec.yaml -->\nopenapi: "3.0.0"\ninfo:\n  title: T\npaths:\n  /t:\n    get:\n      summary: T\n<!-- END:api-spec.yaml -->\n<!-- MANIFEST:api-spec.manifest.json -->\n{"endpoints": [{"method": "GET", "path": "/t", "covers_feature": "f1"}], "models": ["M"]}\n<!-- END:MANIFEST -->`,
-      ui_designer: `<!-- ARTIFACT:components/C1.tsx -->\nexport default function C1() { return <div>T</div>; }\n<!-- END:components/C1.tsx -->\n<!-- MANIFEST:components.manifest.json -->\n{"components": [{"name": "C1", "file": "components/C1.tsx", "covers_flow": "main"}], "screenshots": []}\n<!-- END:MANIFEST -->`,
       validator: `<!-- ARTIFACT:validation-report.md -->\n## Validation Summary\n- Status: PASS\n<!-- END:validation-report.md -->`,
     };
 
-    return responses[stage!] ?? '[mock] unknown';
+    // Detect stage from prompt content
+    for (const [stage, response] of Object.entries(stageResponses)) {
+      const artifactName = stage === 'researcher' ? 'research.md' : stage === 'product_owner' ? 'prd.md' : stage === 'ux_designer' ? 'ux-flows.md' : stage === 'api_designer' ? 'api-spec.yaml' : 'validation-report.md';
+      if (_prompt.includes(artifactName) || sys.includes(stage.replace('_', ' '))) {
+        return response;
+      }
+    }
+
+    // Fallback
+    const nonUIStages = STAGE_ORDER.filter((s) => s !== 'ui_designer');
+    const stage = nonUIStages[this.callCount - 1];
+    return stageResponses[stage] ?? '[mock] unknown';
   }
 }
 

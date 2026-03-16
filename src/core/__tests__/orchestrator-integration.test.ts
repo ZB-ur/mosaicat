@@ -4,14 +4,42 @@ import type { LLMProvider, LLMCallOptions } from '../llm-provider.js';
 import { Orchestrator } from '../orchestrator.js';
 import { STAGE_ORDER } from '../types.js';
 
-// Mock provider that returns properly formatted responses
+// Mock provider — routes UIDesigner sub-phases by system prompt
 class MockLLMProvider implements LLMProvider {
   callCount = 0;
+  private uiBuilderCallCount = 0;
 
   async call(_prompt: string, _options?: LLMCallOptions): Promise<string> {
     this.callCount++;
+    const sys = _options?.systemPrompt ?? '';
 
-    // Determine which stage based on call count
+    // UIDesigner planner sub-phase
+    if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
+      return `<!-- ARTIFACT:ui-plan.json -->
+{
+  "components": [
+    {"name": "AuthForm", "file": "components/AuthForm.tsx", "preview": "previews/AuthForm.html", "purpose": "Login/register form", "covers_flow": "auth-flow", "parent": null, "children": [], "props": [], "priority": 1},
+    {"name": "PostEditor", "file": "components/PostEditor.tsx", "preview": "previews/PostEditor.html", "purpose": "Markdown editor", "covers_flow": "blog-management", "parent": null, "children": [], "props": [], "priority": 2},
+    {"name": "PostList", "file": "components/PostList.tsx", "preview": "previews/PostList.html", "purpose": "Blog listing", "covers_flow": "reader-flow", "parent": null, "children": [], "props": [], "priority": 3},
+    {"name": "CommentSection", "file": "components/CommentSection.tsx", "preview": "previews/CommentSection.html", "purpose": "Comment thread", "covers_flow": "reader-flow", "parent": null, "children": [], "props": [], "priority": 4}
+  ]
+}
+<!-- END:ui-plan.json -->`;
+    }
+
+    // UIDesigner builder sub-phase
+    if (sys.includes('UIBuilder') || sys.includes('builder phase of the UI designer')) {
+      this.uiBuilderCallCount++;
+      const builders: Record<number, string> = {
+        1: `<!-- ARTIFACT:components/AuthForm.tsx -->\nexport default function AuthForm() {\n  return (\n    <form className="p-4 max-w-md mx-auto">\n      <input type="email" placeholder="Email" className="w-full p-2 border rounded mb-2" />\n      <input type="password" placeholder="Password" className="w-full p-2 border rounded mb-2" />\n      <button className="w-full bg-blue-500 text-white p-2 rounded">Login</button>\n    </form>\n  );\n}\n<!-- END:components/AuthForm.tsx -->\n\n<!-- ARTIFACT:previews/AuthForm.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><form class="p-4 max-w-md mx-auto"><input type="email" placeholder="Email" class="w-full p-2 border rounded mb-2" /><input type="password" placeholder="Password" class="w-full p-2 border rounded mb-2" /><button class="w-full bg-blue-500 text-white p-2 rounded">Login</button></form></body></html>\n<!-- END:previews/AuthForm.html -->`,
+        2: `<!-- ARTIFACT:components/PostEditor.tsx -->\nexport default function PostEditor() {\n  return (\n    <div className="p-4 max-w-2xl mx-auto">\n      <input type="text" placeholder="Post title" className="w-full p-2 border rounded mb-2 text-xl" />\n      <textarea placeholder="Write in markdown..." className="w-full p-2 border rounded h-64" />\n      <button className="mt-2 bg-green-500 text-white p-2 rounded">Publish</button>\n    </div>\n  );\n}\n<!-- END:components/PostEditor.tsx -->\n\n<!-- ARTIFACT:previews/PostEditor.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4 max-w-2xl mx-auto"><input type="text" placeholder="Post title" class="w-full p-2 border rounded mb-2 text-xl" /><textarea placeholder="Write in markdown..." class="w-full p-2 border rounded h-64"></textarea><button class="mt-2 bg-green-500 text-white p-2 rounded">Publish</button></div></body></html>\n<!-- END:previews/PostEditor.html -->`,
+        3: `<!-- ARTIFACT:components/PostList.tsx -->\nexport default function PostList() {\n  return (\n    <div className="p-4 max-w-2xl mx-auto">\n      <h1 className="text-2xl font-bold mb-4">Blog Posts</h1>\n      <div className="space-y-4"><div className="p-4 border rounded"><h2 className="text-xl">Sample Post</h2><p className="text-gray-600">Post preview...</p></div></div>\n    </div>\n  );\n}\n<!-- END:components/PostList.tsx -->\n\n<!-- ARTIFACT:previews/PostList.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4 max-w-2xl mx-auto"><h1 class="text-2xl font-bold mb-4">Blog Posts</h1><div class="space-y-4"><div class="p-4 border rounded"><h2 class="text-xl">Sample Post</h2><p class="text-gray-600">Post preview...</p></div></div></div></body></html>\n<!-- END:previews/PostList.html -->`,
+        4: `<!-- ARTIFACT:components/CommentSection.tsx -->\nexport default function CommentSection() {\n  return (\n    <div className="p-4 border-t mt-4">\n      <h3 className="text-lg font-bold mb-2">Comments</h3>\n      <textarea placeholder="Add a comment..." className="w-full p-2 border rounded mb-2" />\n      <button className="bg-blue-500 text-white px-4 py-1 rounded">Submit</button>\n    </div>\n  );\n}\n<!-- END:components/CommentSection.tsx -->\n\n<!-- ARTIFACT:previews/CommentSection.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4 border-t mt-4"><h3 class="text-lg font-bold mb-2">Comments</h3><textarea placeholder="Add a comment..." class="w-full p-2 border rounded mb-2"></textarea><button class="bg-blue-500 text-white px-4 py-1 rounded">Submit</button></div></body></html>\n<!-- END:previews/CommentSection.html -->`,
+      };
+      return builders[this.uiBuilderCallCount] ?? builders[1]!;
+    }
+
+    // Determine which stage based on call count (non-UI stages)
     const stageIndex = this.callCount - 1;
     const stage = STAGE_ORDER[stageIndex];
 
@@ -133,64 +161,6 @@ paths:
 
 <!-- MANIFEST:api-spec.manifest.json -->
 {"endpoints": [{"method": "POST", "path": "/auth/register", "covers_feature": "user-auth"}, {"method": "POST", "path": "/auth/login", "covers_feature": "user-auth"}, {"method": "GET", "path": "/posts", "covers_feature": "blog-crud"}, {"method": "POST", "path": "/posts", "covers_feature": "blog-crud"}, {"method": "POST", "path": "/posts/{id}/comments", "covers_feature": "blog-comments"}], "models": ["User", "Post", "Comment"]}
-<!-- END:MANIFEST -->`;
-
-      case 'ui_designer':
-        return `
-<!-- ARTIFACT:components/AuthForm.tsx -->
-export default function AuthForm() {
-  return (
-    <form className="p-4 max-w-md mx-auto">
-      <input type="email" placeholder="Email" className="w-full p-2 border rounded mb-2" />
-      <input type="password" placeholder="Password" className="w-full p-2 border rounded mb-2" />
-      <button className="w-full bg-blue-500 text-white p-2 rounded">Login</button>
-    </form>
-  );
-}
-<!-- END:components/AuthForm.tsx -->
-
-<!-- ARTIFACT:components/PostEditor.tsx -->
-export default function PostEditor() {
-  return (
-    <div className="p-4 max-w-2xl mx-auto">
-      <input type="text" placeholder="Post title" className="w-full p-2 border rounded mb-2 text-xl" />
-      <textarea placeholder="Write in markdown..." className="w-full p-2 border rounded h-64" />
-      <button className="mt-2 bg-green-500 text-white p-2 rounded">Publish</button>
-    </div>
-  );
-}
-<!-- END:components/PostEditor.tsx -->
-
-<!-- ARTIFACT:components/PostList.tsx -->
-export default function PostList() {
-  return (
-    <div className="p-4 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Blog Posts</h1>
-      <div className="space-y-4">
-        <div className="p-4 border rounded">
-          <h2 className="text-xl">Sample Post</h2>
-          <p className="text-gray-600">Post preview...</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-<!-- END:components/PostList.tsx -->
-
-<!-- ARTIFACT:components/CommentSection.tsx -->
-export default function CommentSection() {
-  return (
-    <div className="p-4 border-t mt-4">
-      <h3 className="text-lg font-bold mb-2">Comments</h3>
-      <textarea placeholder="Add a comment..." className="w-full p-2 border rounded mb-2" />
-      <button className="bg-blue-500 text-white px-4 py-1 rounded">Submit</button>
-    </div>
-  );
-}
-<!-- END:components/CommentSection.tsx -->
-
-<!-- MANIFEST:components.manifest.json -->
-{"components": [{"name": "AuthForm", "file": "components/AuthForm.tsx", "covers_flow": "auth-flow"}, {"name": "PostEditor", "file": "components/PostEditor.tsx", "covers_flow": "blog-management"}, {"name": "PostList", "file": "components/PostList.tsx", "covers_flow": "reader-flow"}, {"name": "CommentSection", "file": "components/CommentSection.tsx", "covers_flow": "reader-flow"}], "screenshots": ["screenshots/AuthForm.png", "screenshots/PostEditor.png"]}
 <!-- END:MANIFEST -->`;
 
       case 'validator':
