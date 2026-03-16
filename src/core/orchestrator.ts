@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import readline from 'node:readline';
 import yaml from 'js-yaml';
 import type { PipelineConfig, AgentsConfig, StageName, PipelineRun, AgentContext } from './types.js';
 import { STAGE_ORDER, ClarificationNeeded } from './types.js';
@@ -16,18 +15,22 @@ import { buildContext } from './context-manager.js';
 import { createSnapshot } from './snapshot.js';
 import { eventBus } from './event-bus.js';
 import { Logger } from './logger.js';
+import type { InteractionHandler } from './interaction-handler.js';
+import { CLIInteractionHandler } from './interaction-handler.js';
 
 export class Orchestrator {
   private pipelineConfig: PipelineConfig;
   private agentsConfig: AgentsConfig;
+  private handler: InteractionHandler;
 
-  constructor() {
+  constructor(handler?: InteractionHandler) {
     this.pipelineConfig = yaml.load(
       fs.readFileSync('config/pipeline.yaml', 'utf-8')
     ) as PipelineConfig;
     this.agentsConfig = yaml.load(
       fs.readFileSync('config/agents.yaml', 'utf-8')
     ) as AgentsConfig;
+    this.handler = handler ?? new CLIInteractionHandler();
   }
 
   async run(instruction: string, autoApprove = false): Promise<PipelineRun> {
@@ -90,11 +93,9 @@ export class Orchestrator {
         eventBus.emit('stage:awaiting_human', stage, run.id);
         logger.pipeline('info', 'stage:awaiting_human', { stage });
 
-        const decision = await this.askUser(
-          `[${stage}] Review artifacts and approve? (yes/no): `
-        );
+        const approved = await this.handler.onManualGate(stage, run.id);
 
-        if (decision.toLowerCase().startsWith('y')) {
+        if (approved) {
           transitionStage(run, stage, 'approved');
           eventBus.emit('stage:approved', stage, run.id);
           transitionStage(run, stage, 'done');
@@ -165,9 +166,7 @@ export class Orchestrator {
       transitionStage(run, stage, 'awaiting_clarification');
       logger.pipeline('info', 'stage:clarification', { stage, question: err.question });
 
-      console.log(`\n[${stage}] Agent needs clarification:`);
-      console.log(err.question);
-      const answer = await this.askUser('\nYour answer: ');
+      const answer = await this.handler.onClarification(stage, err.question, run.id);
 
       // Augment context with user answer
       context.inputArtifacts.set(
@@ -181,19 +180,5 @@ export class Orchestrator {
       const retryAgent = createAgent(stage, provider, logger);
       await retryAgent.execute(context);
     }
-  }
-
-  private askUser(question: string): Promise<string> {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
-    return new Promise((resolve) => {
-      rl.question(question, (answer) => {
-        rl.close();
-        resolve(answer);
-      });
-    });
   }
 }
