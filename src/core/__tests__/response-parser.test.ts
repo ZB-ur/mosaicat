@@ -46,7 +46,7 @@ export function Header() { return <header>Header</header>; }
     expect(result.artifacts.get('components/Header.tsx')).toContain('Header');
   });
 
-  it('should detect clarification and return early', () => {
+  it('should detect plain text clarification and return early', () => {
     const raw = `
 <!-- CLARIFICATION -->
 I need to understand: do you want a blog with comments or without?
@@ -58,8 +58,55 @@ I need to understand: do you want a blog with comments or without?
     expect(result.clarification).toBe(
       'I need to understand: do you want a blog with comments or without?'
     );
+    expect(result.structuredClarification).toBeUndefined();
     expect(result.artifacts.size).toBe(0);
     expect(result.manifest).toBeUndefined();
+  });
+
+  it('should parse structured JSON clarification with options', () => {
+    const raw = `
+<!-- CLARIFICATION -->
+{
+  "question": "请确认设计方向：",
+  "options": [
+    { "label": "极简清爽", "description": "Apple 风格，大量留白" },
+    { "label": "Material Design", "description": "Google 卡片式" },
+    { "label": "使用默认", "description": "slate + blue-600 配色" }
+  ],
+  "allow_custom": true
+}
+<!-- END:CLARIFICATION -->
+`;
+
+    const result = parseResponse(raw, ['components/'], 'components.manifest.json');
+
+    expect(result.clarification).toBeDefined();
+    expect(result.structuredClarification).toBeDefined();
+    expect(result.structuredClarification!.question).toBe('请确认设计方向：');
+    expect(result.structuredClarification!.options).toHaveLength(3);
+    expect(result.structuredClarification!.options![0].label).toBe('极简清爽');
+    expect(result.structuredClarification!.options![0].description).toBe('Apple 风格，大量留白');
+    expect(result.structuredClarification!.allowCustom).toBe(true);
+    expect(result.artifacts.size).toBe(0);
+  });
+
+  it('should default allowCustom to true when not specified in JSON clarification', () => {
+    const raw = `
+<!-- CLARIFICATION -->
+{
+  "question": "Pick a style:",
+  "options": [
+    { "label": "Option A" },
+    { "label": "Option B" }
+  ]
+}
+<!-- END:CLARIFICATION -->
+`;
+
+    const result = parseResponse(raw, ['test.md']);
+
+    expect(result.structuredClarification).toBeDefined();
+    expect(result.structuredClarification!.allowCustom).toBe(true);
   });
 
   it('should fallback for single artifact without delimiters', () => {

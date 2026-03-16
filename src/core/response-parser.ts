@@ -1,7 +1,16 @@
+import type { ClarificationOption } from './types.js';
+
+export interface ParsedClarification {
+  question: string;
+  options?: ClarificationOption[];
+  allowCustom?: boolean;
+}
+
 export interface ParsedResponse {
   artifacts: Map<string, string>;
   manifest?: { name: string; data: unknown };
   clarification?: string;
+  structuredClarification?: ParsedClarification;
 }
 
 export function parseResponse(raw: string, expectedArtifacts: string[], manifestName?: string): ParsedResponse {
@@ -14,7 +23,23 @@ export function parseResponse(raw: string, expectedArtifacts: string[], manifest
     /<!-- CLARIFICATION -->\s*([\s\S]*?)\s*<!-- END:CLARIFICATION -->/
   );
   if (clarificationMatch) {
-    result.clarification = clarificationMatch[1].trim();
+    const content = clarificationMatch[1].trim();
+    result.clarification = content;
+
+    // Try to parse as structured JSON clarification
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed.question && Array.isArray(parsed.options)) {
+        result.structuredClarification = {
+          question: parsed.question,
+          options: parsed.options,
+          allowCustom: parsed.allow_custom ?? true,
+        };
+      }
+    } catch {
+      // Not JSON — plain text clarification, keep as-is
+    }
+
     return result;
   }
 
