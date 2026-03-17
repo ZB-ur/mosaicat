@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
-import type { LLMProvider, LLMCallOptions } from '../../core/llm-provider.js';
+import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-provider.js';
 import { Logger } from '../../core/logger.js';
 import { EvolutionEngine } from '../engine.js';
 
@@ -10,8 +10,8 @@ const STATE_FILE = '.mosaic/evolution/state.json';
 class StubEvolutionProvider implements LLMProvider {
   response: string = '[]';
 
-  async call(_prompt: string, _options?: LLMCallOptions): Promise<string> {
-    return this.response;
+  async call(_prompt: string, _options?: LLMCallOptions): Promise<LLMResponse> {
+    return { content: this.response };
   }
 }
 
@@ -234,7 +234,7 @@ describe('EvolutionEngine', () => {
     setupArtifacts(runId);
 
     const failingProvider: LLMProvider = {
-      async call() { throw new Error('LLM unavailable'); },
+      async call(): Promise<LLMResponse> { throw new Error('LLM unavailable'); },
     };
 
     const engine = new EvolutionEngine(failingProvider, logger);

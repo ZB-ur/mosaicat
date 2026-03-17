@@ -1,6 +1,7 @@
 import type { StageName } from './types.js';
 import { STAGE_ORDER } from './types.js';
 import { eventBus } from './event-bus.js';
+import type { LLMUsage } from './llm-provider.js';
 
 const AGENT_LABELS: Record<StageName, string> = {
   researcher: 'Researcher',
@@ -44,12 +45,22 @@ function formatDuration(ms: number): string {
   return `${min}m${sec}s`;
 }
 
+function formatTokens(n: number): string {
+  if (n < 1000) return `${n}`;
+  return `${(n / 1000).toFixed(1)}k`;
+}
+
+function formatCost(usd: number): string {
+  return `$${usd.toFixed(2)}`;
+}
+
 function stageIndex(stage: StageName): number {
   return STAGE_ORDER.indexOf(stage) + 1;
 }
 
 export function attachCLIProgress(): () => void {
   const stageTimers = new Map<StageName, number>();
+  const stageUsage = new Map<StageName, LLMUsage>();
   const pipelineStart = Date.now();
 
   const handlers: Array<[string, (...args: any[]) => void]> = [];
@@ -72,7 +83,20 @@ export function attachCLIProgress(): () => void {
 
   on('pipeline:complete', (_runId) => {
     const elapsed = formatDuration(Date.now() - pipelineStart);
-    console.log(`\n${BOLD}${GREEN}✓ Pipeline complete${RESET} ${DIM}(${elapsed})${RESET}\n`);
+    // Sum all stage usage for total
+    let totalCost: number | undefined;
+    let totalIn = 0;
+    let totalOut = 0;
+    for (const usage of stageUsage.values()) {
+      totalIn += usage.input_tokens;
+      totalOut += usage.output_tokens;
+      if (usage.cost_usd != null) {
+        totalCost = (totalCost ?? 0) + usage.cost_usd;
+      }
+    }
+    const costPart = totalCost != null ? ` — total: ${formatCost(totalCost)}` : '';
+    const tokenPart = totalIn > 0 ? ` — in: ${formatTokens(totalIn)} / out: ${formatTokens(totalOut)}` : '';
+    console.log(`\n${BOLD}${GREEN}✓ Pipeline complete${RESET} ${DIM}(${elapsed})${tokenPart}${costPart}${RESET}\n`);
   });
 
   on('pipeline:failed', (_runId, error) => {
@@ -94,7 +118,12 @@ export function attachCLIProgress(): () => void {
   on('stage:complete', (stage, _runId) => {
     const start = stageTimers.get(stage);
     const elapsed = start ? formatDuration(Date.now() - start) : '?';
-    console.log(`  ${GREEN}✓ done${RESET} ${DIM}(${elapsed})${RESET}\n`);
+    const usage = stageUsage.get(stage);
+    const usagePart = usage
+      ? ` — in: ${formatTokens(usage.input_tokens)} / out: ${formatTokens(usage.output_tokens)} tokens` +
+        (usage.cost_usd != null ? ` — ${formatCost(usage.cost_usd)}` : '')
+      : '';
+    console.log(`  ${GREEN}✓ done${RESET} ${DIM}(${elapsed})${usagePart}${RESET}\n`);
   });
 
   on('stage:failed', (stage, _runId, error) => {
@@ -138,6 +167,12 @@ export function attachCLIProgress(): () => void {
 
   on('agent:clarification', (stage, question) => {
     console.log(`  ${YELLOW}? clarification needed:${RESET} ${question}`);
+  });
+
+  // ── Usage ──
+
+  on('agent:usage', (stage, usage) => {
+    stageUsage.set(stage, usage);
   });
 
   // ── Artifacts ──

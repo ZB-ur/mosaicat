@@ -1,23 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
-import type { LLMProvider, LLMCallOptions } from '../llm-provider.js';
+import type { LLMProvider, LLMCallOptions, LLMResponse } from '../llm-provider.js';
 import { STAGE_ORDER } from '../types.js';
 
 // Mock provider — routes UIDesigner sub-phases by system prompt
 class MockLLMProvider implements LLMProvider {
   callCount = 0;
 
-  async call(_prompt: string, _options?: LLMCallOptions): Promise<string> {
+  async call(_prompt: string, _options?: LLMCallOptions): Promise<LLMResponse> {
     this.callCount++;
     const sys = _options?.systemPrompt ?? '';
 
     // UIDesigner planner sub-phase
     if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
-      return `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "Test", "covers_flow": "main-flow", "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->`;
+      return { content: `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "Test", "covers_flow": "main-flow", "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->` };
     }
     // UIDesigner builder sub-phase
     if (sys.includes('UIBuilder') || sys.includes('builder phase of the UI designer')) {
-      return `<!-- ARTIFACT:components/CompA.tsx -->\nexport default function CompA() {\n  return <div className="p-4">Test</div>;\n}\n<!-- END:components/CompA.tsx -->\n\n<!-- ARTIFACT:previews/CompA.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4">Test</div></body></html>\n<!-- END:previews/CompA.html -->`;
+      return { content: `<!-- ARTIFACT:components/CompA.tsx -->\nexport default function CompA() {\n  return <div className="p-4">Test</div>;\n}\n<!-- END:components/CompA.tsx -->\n\n<!-- ARTIFACT:previews/CompA.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4">Test</div></body></html>\n<!-- END:previews/CompA.html -->` };
     }
 
     const stage = STAGE_ORDER[this.callCount - 1];
@@ -30,7 +30,7 @@ class MockLLMProvider implements LLMProvider {
       validator: `<!-- ARTIFACT:validation-report.md -->\n## Validation Summary\n- Status: PASS\n- Checks passed: 4/4\n<!-- END:validation-report.md -->`,
     };
 
-    return responses[stage!] ?? '[mock] unknown stage';
+    return { content: responses[stage!] ?? '[mock] unknown stage' };
   }
 }
 

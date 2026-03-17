@@ -1,5 +1,6 @@
 import { EventEmitter } from 'eventemitter3';
 import type { StageName } from './types.js';
+import type { LLMUsage } from './llm-provider.js';
 
 export interface PipelineEvents {
   'stage:start': (stage: StageName, runId: string) => void;
@@ -19,6 +20,8 @@ export interface PipelineEvents {
   'agent:thinking': (stage: StageName, promptLength: number) => void;
   'agent:response': (stage: StageName, responseLength: number) => void;
   'agent:clarification': (stage: StageName, question: string) => void;
+  'agent:usage': (stage: StageName, usage: LLMUsage) => void;
+  'pipeline:usage': (totalUsage: LLMUsage) => void;
   'artifact:written': (stage: StageName, name: string, size: number) => void;
   'manifest:written': (stage: StageName, name: string) => void;
   'snapshot:created': (stage: StageName, runId: string) => void;

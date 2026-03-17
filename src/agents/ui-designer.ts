@@ -5,6 +5,7 @@ import { ClarificationNeeded } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
 import type { OutputSpec } from '../core/prompt-assembler.js';
 import { eventBus } from '../core/event-bus.js';
+import type { LLMUsage } from '../core/llm-provider.js';
 import { UIPlanSchema, type UIPlan, type UIPlanComponent } from './ui-plan-schema.js';
 
 const PLANNER_PROMPT_PATH = '.claude/agents/mosaic/ui-planner.md';
@@ -16,6 +17,8 @@ const FULL_SIBLING_COUNT = 2;
 const SIBLING_SUMMARY_LINES = 15;
 
 export class UIDesignerAgent extends BaseAgent {
+  private totalUsage: LLMUsage = { input_tokens: 0, output_tokens: 0 };
+
   getOutputSpec(): OutputSpec {
     return {
       artifacts: ['components/', 'previews/', 'gallery.html'],
@@ -23,7 +26,26 @@ export class UIDesignerAgent extends BaseAgent {
     };
   }
 
+  private accumulateUsage(usage?: LLMUsage): void {
+    if (!usage) return;
+    this.totalUsage.input_tokens += usage.input_tokens;
+    this.totalUsage.output_tokens += usage.output_tokens;
+    if (usage.cache_creation_input_tokens) {
+      this.totalUsage.cache_creation_input_tokens =
+        (this.totalUsage.cache_creation_input_tokens ?? 0) + usage.cache_creation_input_tokens;
+    }
+    if (usage.cache_read_input_tokens) {
+      this.totalUsage.cache_read_input_tokens =
+        (this.totalUsage.cache_read_input_tokens ?? 0) + usage.cache_read_input_tokens;
+    }
+    if (usage.cost_usd != null) {
+      this.totalUsage.cost_usd = (this.totalUsage.cost_usd ?? 0) + usage.cost_usd;
+    }
+  }
+
   protected async run(context: AgentContext): Promise<void> {
+    this.totalUsage = { input_tokens: 0, output_tokens: 0 };
+
     // Phase A: Plan
     const plan = await this.runPlanner(context);
 
@@ -32,6 +54,11 @@ export class UIDesignerAgent extends BaseAgent {
 
     // Phase C: Post-processing (no LLM)
     await this.postProcess(plan, builtComponents);
+
+    // Emit accumulated usage for entire UIDesigner stage
+    if (this.totalUsage.input_tokens > 0 || this.totalUsage.output_tokens > 0) {
+      eventBus.emit('agent:usage', this.stage, this.totalUsage);
+    }
   }
 
   private async runPlanner(context: AgentContext): Promise<UIPlan> {
@@ -43,12 +70,15 @@ export class UIDesignerAgent extends BaseAgent {
     });
     eventBus.emit('agent:thinking', this.stage, userPrompt.length);
 
-    const raw = await this.provider.call(userPrompt, {
+    const response = await this.provider.call(userPrompt, {
       systemPrompt: plannerPrompt,
     });
+    const raw = response.content;
+    this.accumulateUsage(response.usage);
 
     this.logger.agent(this.stage, 'info', 'planner:response', {
       responseLength: raw.length,
+      usage: response.usage,
     });
     eventBus.emit('agent:response', this.stage, raw.length);
 
@@ -125,13 +155,16 @@ export class UIDesignerAgent extends BaseAgent {
         });
         eventBus.emit('agent:thinking', this.stage, userPrompt.length);
 
-        const raw = await this.provider.call(userPrompt, {
+        const response = await this.provider.call(userPrompt, {
           systemPrompt: builderPrompt,
         });
+        const raw = response.content;
+        this.accumulateUsage(response.usage);
 
         this.logger.agent(this.stage, 'info', 'builder:response', {
           component: comp.name,
           responseLength: raw.length,
+          usage: response.usage,
         });
 
         // Extract tsx and html artifacts

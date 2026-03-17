@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
-import type { LLMProvider, LLMCallOptions } from '../core/llm-provider.js';
+import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
 import { STAGE_ORDER } from '../core/types.js';
 
 // Mock provider with formatted responses for all 6 stages
@@ -19,16 +19,16 @@ class MockLLMProvider implements LLMProvider {
   callCount = 0;
   private uiBuilderCallCount = 0;
 
-  async call(_prompt: string, _options?: LLMCallOptions): Promise<string> {
+  async call(_prompt: string, _options?: LLMCallOptions): Promise<LLMResponse> {
     this.callCount++;
 
     // Detect UIDesigner sub-phases by system prompt
     const sys = _options?.systemPrompt ?? '';
     if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
-      return this.plannerResponse();
+      return { content: this.plannerResponse() };
     }
     if (sys.includes('UIBuilder') || sys.includes('builder phase of the UI designer')) {
-      return this.builderResponse();
+      return { content: this.builderResponse() };
     }
 
     // Sequential stage dispatch for non-UIDesigner stages
@@ -156,7 +156,7 @@ paths:
 <!-- END:validation-report.md -->`,
     };
 
-    return responses[stage!] ?? '[mock] unknown';
+    return { content: responses[stage!] ?? '[mock] unknown' };
   }
 
   private plannerResponse(): string {

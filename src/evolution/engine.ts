@@ -70,11 +70,12 @@ export class EvolutionEngine {
     }
 
     // Call LLM for analysis
-    let rawResponse: string;
+    let rawContent: string;
     try {
-      rawResponse = await this.provider.call(summary, {
+      const response = await this.provider.call(summary, {
         systemPrompt: EVOLUTION_ANALYST_PROMPT,
       });
+      rawContent = response.content;
     } catch (err) {
       this.logger.pipeline('error', 'evolution:analyze:llm-error', {
         error: err instanceof Error ? err.message : String(err),
@@ -83,7 +84,7 @@ export class EvolutionEngine {
     }
 
     // Parse LLM response
-    const candidates = this.parseCandidates(rawResponse);
+    const candidates = this.parseCandidates(rawContent);
     if (candidates.length === 0) {
       this.logger.pipeline('info', 'evolution:analyze:no-proposals', { runId });
       return [];
