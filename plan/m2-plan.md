@@ -75,7 +75,20 @@
 | `GitHubAdapter` 构造函数接受 `TokenProvider`（支持自动刷新） | adapter + 测试 mock |
 | `index.ts` 新增 `login` / `logout` 命令 | CLI 入口 |
 
+### Phase 9 后续优化（Step 9-12）
+
+| Step | 改动 | 文件 |
+|------|------|------|
+| Step 9 | Clarification UX 优化：GitHub PR 评论展示预制选项，CLI 增强提示文案 | interaction-handler, github-interaction-handler, cli-progress |
+| Step 10 | Stage issue 内容丰富化：执行指标、commit 关联、clarification/rejection 标记 | security, orchestrator, git-publisher |
+| Step 11 | GitPublisher 修复：目录输出（components/、previews/）展开为具体文件 | git-publisher |
+| Step 12 | Stage issue 全面重设计：manifest 摘要、可点击 artifact 链接、过程记录、可折叠指标 | security, orchestrator, manifest |
+
+**新增导出**：
+- `manifest.ts`: `extractManifestSummary()` — 按 schema 提取人类可读摘要
+- `security.ts`: `buildStageIssueTitle()`, `buildSummaryIssueTitle()` — 可读的 issue 标题
+
 ## 验证
 
 - `npm run build` 通过
-- 274 tests / 46 test files 全部通过
+- 327 tests / 52 test files 全部通过（其中 9 个 pre-existing 失败：e2e + dist 过期 + token-service URL 不匹配）
