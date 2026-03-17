@@ -20,6 +20,8 @@ import { CLIInteractionHandler } from './interaction-handler.js';
 import type { GitPlatformAdapter } from '../adapters/types.js';
 import { buildIssueBody } from './security.js';
 import { GitPublisher } from './git-publisher.js';
+import { generatePRBody } from './pr-body-generator.js';
+import type { LLMUsage } from './llm-provider.js';
 
 export class Orchestrator {
   private pipelineConfig: PipelineConfig;
@@ -94,7 +96,15 @@ export class Orchestrator {
       // Publish PR (mark ready for review)
       if (this.publisher) {
         try {
-          await this.publisher.publish(`## Pipeline Complete\n\nRun: ${runId}`);
+          // Generate rich PR body with screenshots, preview links, token stats
+          const adapterAny = this.adapter as { getOwner?: () => string; getRepo?: () => string };
+          const owner = adapterAny.getOwner?.() ?? '';
+          const repo = adapterAny.getRepo?.() ?? '';
+          const branch = this.publisher.getBranch() ?? '';
+          const prBody = (owner && repo && branch)
+            ? generatePRBody({ runId, owner, repo, branch })
+            : `## Pipeline Complete\n\nRun: ${runId}`;
+          await this.publisher.publish(prBody);
         } catch (err) {
           logger.pipeline('warn', 'git-publisher:publish-failed', {
             error: err instanceof Error ? err.message : String(err),
