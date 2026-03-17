@@ -184,7 +184,9 @@ export class Orchestrator {
       transitionStage(run, stage, 'awaiting_clarification');
       logger.pipeline('info', 'stage:clarification', { stage, question: err.question });
 
-      const answer = await this.handler.onClarification(stage, err.question, run.id);
+      const answer = await this.handler.onClarification(
+        stage, err.question, run.id, err.options, err.allowCustom
+      );
 
       // Augment context with user answer
       context.inputArtifacts.set(

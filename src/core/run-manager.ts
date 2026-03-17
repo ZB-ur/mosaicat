@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import yaml from 'js-yaml';
-import type { StageName, PipelineRun, PipelineConfig } from './types.js';
+import type { StageName, PipelineRun, PipelineConfig, ClarificationOption } from './types.js';
 import { Orchestrator } from './orchestrator.js';
 import { DeferredInteractionHandler } from './interaction-handler.js';
 import type { InteractionHandler } from './interaction-handler.js';
@@ -190,14 +190,14 @@ export class RunManager {
       return inner.onManualGate(stage, runId);
     };
 
-    tracked.onClarification = async (stage: StageName, question: string, runId: string) => {
+    tracked.onClarification = async (stage: StageName, question: string, runId: string, options?: ClarificationOption[], allowCustom?: boolean) => {
       const m = managed();
       if (m) {
         m.orchestratorRunId = runId;
         m.state = 'awaiting_clarification';
         m.clarificationQuestion = question;
       }
-      return inner.onClarification(stage, question, runId);
+      return inner.onClarification(stage, question, runId, options, allowCustom);
     };
 
     return tracked;

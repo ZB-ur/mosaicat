@@ -106,8 +106,12 @@ const STUB_OUTPUTS: Record<StageName, StubOutputDef> = {
     },
   },
   ui_designer: {
-    artifact: 'components/MainComponent.tsx',
-    content: `export default function MainComponent() {\n  return <div className="p-4">Placeholder Component</div>;\n}`,
+    artifact: 'ui-plan.json',
+    content: JSON.stringify({
+      components: [
+        { name: 'MainComponent', file: 'components/MainComponent.tsx', preview: 'previews/MainComponent.html', purpose: 'Main placeholder', covers_flow: 'main-flow', parent: null, children: [], props: [], priority: 1 },
+      ],
+    }, null, 2),
     manifest: {
       name: 'components.manifest.json',
       data: {
@@ -133,8 +137,9 @@ export class StubAgent extends BaseAgent {
       this.writeOutputManifest(def.manifest.name, def.manifest.data);
     }
 
-    // UIDesigner also writes preview HTML and screenshot placeholders
+    // UIDesigner also writes component tsx, preview HTML and screenshot placeholders
     if (this.stage === 'ui_designer') {
+      this.writeOutput('components/MainComponent.tsx', 'export default function MainComponent() {\n  return <div className="p-4">Placeholder Component</div>;\n}');
       this.writeOutput('previews/MainComponent.html', '<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4">Placeholder Component</div></body></html>');
       this.writeOutput('screenshots/MainComponent.png', '[stub screenshot]');
     }

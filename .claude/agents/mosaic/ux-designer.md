@@ -58,7 +58,21 @@ Wrap each output using HTML comment delimiters. The pipeline parser depends on t
 ```
 
 **Clarification (if needed):**
-If you cannot proceed without more information, output ONLY:
+If you cannot proceed without more information, output ONLY a CLARIFICATION block. Prefer structured JSON with selectable options when possible:
+```
+<!-- CLARIFICATION -->
+{
+  "question": "How should form validation behave?",
+  "options": [
+    { "label": "Inline real-time", "description": "Validate each field on blur" },
+    { "label": "On submit only", "description": "Validate all fields when form is submitted" },
+    { "label": "Progressive", "description": "Validate after first submit, then real-time" }
+  ],
+  "allow_custom": true
+}
+<!-- END:CLARIFICATION -->
+```
+You may also use plain text if the question doesn't suit a multiple-choice format:
 ```
 <!-- CLARIFICATION -->
 Your question to the user here.

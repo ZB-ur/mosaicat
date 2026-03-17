@@ -48,6 +48,16 @@ class EvolutionMockProvider implements LLMProvider {
       return this.evolutionResponse;
     }
 
+    // UIDesigner planner sub-phase
+    const sys = options?.systemPrompt ?? '';
+    if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
+      return `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "Test", "covers_flow": "main-flow", "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->`;
+    }
+    // UIDesigner builder sub-phase
+    if (sys.includes('UIBuilder') || sys.includes('builder phase of the UI designer')) {
+      return `<!-- ARTIFACT:components/CompA.tsx -->\nexport default function CompA() {\n  return <div className="p-4">Test</div>;\n}\n<!-- END:components/CompA.tsx -->\n\n<!-- ARTIFACT:previews/CompA.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4">Test</div></body></html>\n<!-- END:previews/CompA.html -->`;
+    }
+
     // Normal pipeline stage responses
     const stageIdx = this.callCount - 1;
     const stage = STAGE_ORDER[stageIdx % STAGE_ORDER.length];

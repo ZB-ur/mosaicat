@@ -49,7 +49,21 @@ Wrap each output using HTML comment delimiters. The pipeline parser depends on t
 ```
 
 **Clarification (if needed):**
-If you cannot proceed without more information, output ONLY:
+If you cannot proceed without more information, output ONLY a CLARIFICATION block. Prefer structured JSON with selectable options when possible:
+```
+<!-- CLARIFICATION -->
+{
+  "question": "How should authentication work?",
+  "options": [
+    { "label": "JWT Bearer", "description": "Stateless token-based auth" },
+    { "label": "Session Cookie", "description": "Server-side session with cookie" },
+    { "label": "API Key", "description": "Simple API key in header" }
+  ],
+  "allow_custom": true
+}
+<!-- END:CLARIFICATION -->
+```
+You may also use plain text if the question doesn't suit a multiple-choice format:
 ```
 <!-- CLARIFICATION -->
 Your question to the user here.
