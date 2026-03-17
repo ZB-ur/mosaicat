@@ -178,7 +178,14 @@ export class GitHubAdapter implements GitPlatformAdapter {
     const { data } = await this.octokit.git.createCommit({
       owner: this.owner, repo: this.repo, message, tree: treeSha, parents: parentShas,
     });
-    return { sha: data.sha };
+    return { sha: data.sha, treeSha: data.tree.sha };
+  }
+
+  async getCommit(sha: string): Promise<GitCommit> {
+    const { data } = await this.octokit.git.getCommit({
+      owner: this.owner, repo: this.repo, commit_sha: sha,
+    });
+    return { sha: data.sha, treeSha: data.tree.sha };
   }
 
   getOwner(): string { return this.owner; }

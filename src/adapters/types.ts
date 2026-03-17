@@ -56,6 +56,7 @@ export interface GitTree {
 
 export interface GitCommit {
   sha: string;
+  treeSha: string;
 }
 
 export interface GitPlatformAdapter {
@@ -76,4 +77,5 @@ export interface GitPlatformAdapter {
   createBlob(content: string, encoding: 'utf-8' | 'base64'): Promise<GitBlob>;
   createTree(entries: GitTreeEntry[], baseTreeSha?: string): Promise<GitTree>;
   createCommit(message: string, treeSha: string, parentShas: string[]): Promise<GitCommit>;
+  getCommit(sha: string): Promise<GitCommit>;
 }

@@ -78,7 +78,8 @@ class InMemoryAdapter implements GitPlatformAdapter {
   async updateRef(ref: string, sha: string): Promise<GitRef> { return { ref, sha }; }
   async createBlob(_content: string, _encoding: 'utf-8' | 'base64'): Promise<GitBlob> { return { sha: 'blob123' }; }
   async createTree(_entries: GitTreeEntry[], _baseTreeSha?: string): Promise<GitTree> { return { sha: 'tree123' }; }
-  async createCommit(_message: string, _treeSha: string, _parentShas: string[]): Promise<GitCommit> { return { sha: 'commit123' }; }
+  async createCommit(_message: string, _treeSha: string, _parentShas: string[]): Promise<GitCommit> { return { sha: 'commit123', treeSha: 'tree123' }; }
+  async getCommit(_sha: string): Promise<GitCommit> { return { sha: _sha, treeSha: 'tree123' }; }
 
   // Test helper: simulate a user comment
   simulateComment(issueNumber: number, author: string, body: string) {
