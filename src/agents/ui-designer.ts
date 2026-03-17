@@ -215,6 +215,7 @@ export class UIDesignerAgent extends BaseAgent {
       try {
         const parsed = JSON.parse(content);
         if (parsed.question && parsed.options) {
+          eventBus.emit('agent:clarification', this.stage, parsed.question);
           throw new ClarificationNeeded(
             parsed.question,
             parsed.options,
@@ -225,6 +226,7 @@ export class UIDesignerAgent extends BaseAgent {
         if (err instanceof ClarificationNeeded) throw err;
       }
       // Fallback: plain text clarification
+      eventBus.emit('agent:clarification', this.stage, content);
       throw new ClarificationNeeded(content);
     }
 
