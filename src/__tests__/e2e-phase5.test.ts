@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
-import type { StageName } from '../core/types.js';
+import type { StageName, GateResult } from '../core/types.js';
 import { STAGE_ORDER } from '../core/types.js';
 import type { InteractionHandler, EvolutionApprovalResult } from '../core/interaction-handler.js';
 import type { EvolutionProposal } from '../evolution/types.js';
@@ -81,8 +81,8 @@ class AutoApproveEvolutionHandler implements InteractionHandler {
   defaultApproval: EvolutionApprovalResult = { approved: true };
   proposalsSeen: EvolutionProposal[] = [];
 
-  async onManualGate(_stage: StageName, _runId: string): Promise<boolean> {
-    return true;
+  async onManualGate(_stage: StageName, _runId: string): Promise<GateResult> {
+    return { approved: true };
   }
 
   async onClarification(_stage: StageName, _question: string, _runId: string): Promise<string> {

@@ -1,5 +1,5 @@
 import readline from 'node:readline';
-import type { StageName, ClarificationOption } from './types.js';
+import type { StageName, ClarificationOption, GateResult } from './types.js';
 import type { EvolutionProposal } from '../evolution/types.js';
 
 export interface EvolutionApprovalResult {
@@ -8,7 +8,7 @@ export interface EvolutionApprovalResult {
 }
 
 export interface InteractionHandler {
-  onManualGate(stage: StageName, runId: string): Promise<boolean>;
+  onManualGate(stage: StageName, runId: string): Promise<GateResult>;
   onClarification(
     stage: StageName, question: string, runId: string,
     options?: ClarificationOption[], allowCustom?: boolean
@@ -31,9 +31,27 @@ export class CLIInteractionHandler implements InteractionHandler {
     });
   }
 
-  async onManualGate(stage: StageName, _runId: string): Promise<boolean> {
+  async onManualGate(stage: StageName, _runId: string): Promise<GateResult> {
     const answer = await this.askUser(`[${stage}] Review artifacts and approve? (yes/no): `);
-    return answer.toLowerCase().startsWith('y');
+    if (answer.toLowerCase().startsWith('y')) {
+      return { approved: true };
+    }
+
+    // Collect feedback on rejection
+    const feedback = await this.askUser(`[${stage}] What needs to change?\n> `);
+    const result: GateResult = { approved: false, feedback: feedback || undefined };
+
+    // For UIDesigner, offer component selection
+    if (stage === 'ui_designer') {
+      const components = await this.askUser(
+        `[${stage}] Which components need rework? (comma-separated names, or "all"):\n> `
+      );
+      if (components && components.trim().toLowerCase() !== 'all') {
+        result.retryComponents = components.split(',').map((c) => c.trim()).filter(Boolean);
+      }
+    }
+
+    return result;
   }
 
   async onClarification(
@@ -190,13 +208,13 @@ export interface ClarificationMeta {
 }
 
 export class DeferredInteractionHandler implements InteractionHandler {
-  private pendingGates = new Map<string, DeferredPromise<boolean>>();
+  private pendingGates = new Map<string, DeferredPromise<GateResult>>();
   private pendingClarifications = new Map<string, DeferredPromise<string>>();
   private pendingEvolutions = new Map<string, DeferredPromise<EvolutionApprovalResult>>();
   private clarificationMeta = new Map<string, ClarificationMeta>();
 
-  async onManualGate(_stage: StageName, runId: string): Promise<boolean> {
-    const deferred = createDeferredPromise<boolean>();
+  async onManualGate(_stage: StageName, runId: string): Promise<GateResult> {
+    const deferred = createDeferredPromise<GateResult>();
     this.pendingGates.set(runId, deferred);
     return deferred.promise;
   }
@@ -215,15 +233,15 @@ export class DeferredInteractionHandler implements InteractionHandler {
     const deferred = this.pendingGates.get(runId);
     if (deferred) {
       this.pendingGates.delete(runId);
-      deferred.resolve(true);
+      deferred.resolve({ approved: true });
     }
   }
 
-  reject(runId: string): void {
+  reject(runId: string, feedback?: string, retryComponents?: string[]): void {
     const deferred = this.pendingGates.get(runId);
     if (deferred) {
       this.pendingGates.delete(runId);
-      deferred.resolve(false);
+      deferred.resolve({ approved: false, feedback, retryComponents });
     }
   }
 

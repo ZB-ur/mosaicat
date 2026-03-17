@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
-import type { StageName } from '../../core/types.js';
+import type { StageName, GateResult } from '../../core/types.js';
 import type { InteractionHandler, EvolutionApprovalResult } from '../../core/interaction-handler.js';
 import type { EvolutionProposal } from '../types.js';
 import { ProposalHandler } from '../proposal-handler.js';
@@ -15,8 +15,8 @@ const PROMPT_FILE = '.claude/agents/mosaic/researcher.md';
 class TestInteractionHandler implements InteractionHandler {
   approvals = new Map<string, EvolutionApprovalResult>();
 
-  async onManualGate(_stage: StageName, _runId: string): Promise<boolean> {
-    return true;
+  async onManualGate(_stage: StageName, _runId: string): Promise<GateResult> {
+    return { approved: true };
   }
 
   async onClarification(_stage: StageName, _question: string, _runId: string): Promise<string> {

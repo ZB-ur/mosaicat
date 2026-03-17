@@ -147,16 +147,41 @@ export class Orchestrator {
         eventBus.emit('stage:awaiting_human', stage, run.id);
         logger.pipeline('info', 'stage:awaiting_human', { stage });
 
-        const approved = await this.handler.onManualGate(stage, run.id);
+        const gateResult = await this.handler.onManualGate(stage, run.id);
 
-        if (approved) {
+        if (gateResult.approved) {
           transitionStage(run, stage, 'approved');
           eventBus.emit('stage:approved', stage, run.id);
           transitionStage(run, stage, 'done');
         } else {
           transitionStage(run, stage, 'rejected');
           eventBus.emit('stage:rejected', stage, run.id);
-          logger.pipeline('info', 'stage:rejected', { stage });
+          logger.pipeline('info', 'stage:rejected', {
+            stage,
+            feedback: gateResult.feedback,
+            retryComponents: gateResult.retryComponents,
+          });
+
+          // Inject feedback into context for retry
+          if (gateResult.feedback) {
+            context.inputArtifacts.set(
+              'rejection_feedback',
+              `[source: reviewer] ${gateResult.feedback}`
+            );
+          }
+          if (gateResult.retryComponents && gateResult.retryComponents.length > 0) {
+            context.inputArtifacts.set(
+              'retry_components',
+              JSON.stringify(gateResult.retryComponents)
+            );
+          }
+          if (gateResult.comments && gateResult.comments.length > 0) {
+            context.inputArtifacts.set(
+              'review_comments',
+              JSON.stringify(gateResult.comments)
+            );
+          }
+
           // Re-run the stage after rejection
           transitionStage(run, stage, 'idle');
           return this.executeStage(run, stage, provider, logger);

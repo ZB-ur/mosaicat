@@ -61,17 +61,19 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
 
   server.tool(
     'mosaic_approve',
-    'Approve or reject a manual gate in a Mosaicat pipeline run. Use when status shows awaiting_human.',
+    'Approve or reject a manual gate in a Mosaicat pipeline run. Use when status shows awaiting_human. On rejection, provide feedback and optionally specify components to retry.',
     {
       run_id: z.string().describe('The run ID'),
       approved: z.boolean().describe('true to approve, false to reject'),
+      feedback: z.string().optional().describe('Rejection feedback — what needs to change'),
+      retry_components: z.array(z.string()).optional().describe('Component names to rebuild (UIDesigner only). Omit for full retry.'),
     },
-    async ({ run_id, approved }) => {
+    async ({ run_id, approved, feedback, retry_components }) => {
       try {
         if (approved) {
           runManager.approve(run_id);
         } else {
-          runManager.reject(run_id);
+          runManager.reject(run_id, feedback, retry_components);
         }
         return {
           content: [{
