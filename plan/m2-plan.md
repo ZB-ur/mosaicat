@@ -18,7 +18,7 @@
 | 文件 | Track | 职责 |
 |------|-------|------|
 | `src/core/artifact-presenter.ts` | T2 | OSC 8 终端超链接 + GitHub blob URL 格式化 |
-| `src/core/git-publisher.ts` | T3 | Git CLI 封装：分支、commit、push、Draft PR |
+| `src/core/git-publisher.ts` | T3 | GitHub API 封装（纯 API，无本地 git）：分支、commit、push、Draft PR |
 | `src/core/issue-manager.ts` | T4 | Stage/Step Issue 生命周期管理 |
 | `src/core/pr-body-generator.ts` | T5 | PR body 生成：截图、预览链接、token 统计 |
 
@@ -30,6 +30,23 @@
 | `InteractionHandler.onManualGate()` 返回 `GateResult` (非 `boolean`) | 所有 handler + orchestrator + 测试 |
 | `GitPlatformAdapter` 新增 `createPR()` / `markPRReady()` | GitHub adapter + 测试 mock |
 | `DeferredInteractionHandler.reject()` 接受 feedback + retryComponents | RunManager + MCP tools |
+
+## 后续 Phase 记录
+
+| Phase | 目标 | PR | 状态 |
+|-------|------|----|------|
+| Phase 7 | GitPublisher API 化（去除本地 git 依赖） | #120 | :white_check_mark: Done |
+| Phase 8 | PR Review 审批流程（替代 Issue 审批） | #127 | :white_check_mark: Done |
+| Phase 9 | GitHub App Bot 认证（零配置 GitHub 模式） | #128 | :construction: In Progress |
+
+### Phase 7-8 接口变更
+
+| 变更 | 影响范围 |
+|------|----------|
+| `GitPlatformAdapter` 新增 Git Data API（getRef, createRef, createBlob, createTree, createCommit） | GitHub adapter + git-publisher |
+| `GitPlatformAdapter` 新增 PR Review API（listReviews, listReviewComments） | GitHub adapter + interaction-handler |
+| `GitPublisher` 改为纯 API 模式，不使用本地 git | orchestrator + 测试 |
+| `GitHubInteractionHandler` 新增 PR review 审批流程 | orchestrator + security |
 
 ## 验证
 

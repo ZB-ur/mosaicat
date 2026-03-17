@@ -90,10 +90,17 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 | `core/git-publisher.ts` | Git PR 流程（纯 API） | Draft PR + 逐步 commit via GitHub API，不使用本地 git |
 | `core/issue-manager.ts` | Issue 分层管理 | Stage/Step Issue（M2-T4） |
 | `core/pr-body-generator.ts` | PR body 生成 | 截图 + 预览 + token 统计（M2-T5） |
+| `auth/types.ts` | Auth 域类型 | AuthConfig, CachedAuth, InstallationInfo |
+| `auth/auth-store.ts` | 认证持久化 | `~/.mosaicat/auth.json` 读写 |
+| `auth/oauth-device-flow.ts` | OAuth Device Flow | `mosaicat login` 浏览器授权 |
+| `auth/token-service.ts` | 后端通信 | installations 查询 + installation token 交换 |
+| `auth/resolve-auth.ts` | 认证编排 | 自动检测 App/Token 模式 + git remote 匹配 |
 
 ### 跨模块依赖关系
 ```
-CLI(index.ts) → Orchestrator → Pipeline(状态机)
+CLI(index.ts) → resolveGitHubAuth() → TokenService → Backend(api.mosaicat.dev)
+                    ↓
+              Orchestrator → Pipeline(状态机)
                     ↓
               InteractionHandler → GitHub/CLI/Deferred
                     ↓
@@ -105,6 +112,7 @@ CLI(index.ts) → Orchestrator → Pipeline(状态机)
                     ↓
               EventBus ← CLIProgress / MCP
 
+Auth: resolveGitHubAuth() → AuthStore(~/.mosaicat/) + TokenService → Backend
 MCP: server.ts → RunManager → Orchestrator
 Evolution: Orchestrator(post-run) → Engine → ProposalHandler
 ```
@@ -115,13 +123,15 @@ Evolution: Orchestrator(post-run) → Engine → ProposalHandler
 - `core/interaction-handler.ts` — 用户交互契约：InteractionHandler interface
 - `adapters/types.ts` — Git 平台契约：GitPlatformAdapter interface
 - `evolution/types.ts` — 进化域类型：EvolutionProposal, PromptVersion, SkillMetadata
+- `auth/types.ts` — 认证域类型：AuthConfig, CachedAuth, InstallationInfo
 
 ---
 
 ## 项目路径（src/ 模块详见上方速查表）
 
 ```
-src/{core,mcp,providers,adapters,agents,evolution}/ + index.ts + mcp-entry.ts
+src/{core,mcp,providers,adapters,agents,evolution,auth}/ + index.ts + mcp-entry.ts
+backend/src/                     # Cloudflare Worker 后端（GitHub App 认证）
 config/pipeline.yaml             # 流水线配置（阶段/门控/重试/安全/进化）
 config/agents.yaml               # Agent 编排配置（输入/输出契约）
 .claude/agents/mosaic/*.md       # Agent Prompt 定义（可进化）
