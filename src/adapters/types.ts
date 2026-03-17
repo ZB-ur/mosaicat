@@ -78,4 +78,6 @@ export interface GitPlatformAdapter {
   createTree(entries: GitTreeEntry[], baseTreeSha?: string): Promise<GitTree>;
   createCommit(message: string, treeSha: string, parentShas: string[]): Promise<GitCommit>;
   getCommit(sha: string): Promise<GitCommit>;
+  /** Create or update a file via Contents API — works on empty repos */
+  createFileContent(path: string, content: string, message: string): Promise<{ sha: string }>;
 }

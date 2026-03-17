@@ -188,6 +188,15 @@ export class GitHubAdapter implements GitPlatformAdapter {
     return { sha: data.sha, treeSha: data.tree.sha };
   }
 
+  async createFileContent(filePath: string, content: string, message: string): Promise<{ sha: string }> {
+    const { data } = await this.octokit.repos.createOrUpdateFileContents({
+      owner: this.owner, repo: this.repo,
+      path: filePath, message,
+      content: Buffer.from(content).toString('base64'),
+    });
+    return { sha: data.commit.sha! };
+  }
+
   getOwner(): string { return this.owner; }
   getRepo(): string { return this.repo; }
 }
