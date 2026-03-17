@@ -86,7 +86,7 @@ describe('GitPublisher (API mode)', () => {
   });
 
   describe('init', () => {
-    it('should create branch via API and Draft PR', async () => {
+    it('should create branch via API (PR deferred)', async () => {
       const branch = await publisher.init('run-12345', 'Test pipeline');
 
       expect(branch).toBe('mosaicat/run-12345');
@@ -102,35 +102,24 @@ describe('GitPublisher (API mode)', () => {
       expect(createRefCall!.args[0]).toBe('refs/heads/mosaicat/run-12345');
       expect(createRefCall!.args[1]).toBe('main-sha-abc');
 
-      // Should create Draft PR
+      // Should NOT create PR yet (deferred until first commit)
       const createPRCall = adapter.calls.find((c) => c.method === 'createPR');
-      expect(createPRCall).toBeDefined();
-      expect((createPRCall!.args[0] as Record<string, unknown>).draft).toBe(true);
-      expect((createPRCall!.args[0] as Record<string, unknown>).head).toBe('mosaicat/run-12345');
+      expect(createPRCall).toBeUndefined();
     });
 
     it('should NOT call any local git commands', async () => {
-      // This is the key behavioral change — no execFileSync('git', ...)
       await publisher.init('run-99999', 'No local git');
 
-      // Verify only API methods were called
       const methods = adapter.calls.map((c) => c.method);
-      expect(methods).toEqual(['getRef', 'createRef', 'createPR']);
+      expect(methods).toEqual(['getRef', 'createRef']);
     });
   });
 
   describe('init with empty repo', () => {
     it('should bootstrap empty repo via Contents API then create branch', async () => {
-      // Override getRef to throw on first call (simulating 409 empty repo)
-      let getRefCallCount = 0;
-      adapter.getRef = async (ref: string) => {
-        getRefCallCount++;
-        if (getRefCallCount === 1) {
-          throw new Error('Git Repository is empty.');
-        }
-        // After bootstrap, getRef works
-        adapter.calls.push({ method: 'getRef', args: [ref] });
-        return { ref: `refs/${ref}`, sha: 'init-commit-sha' };
+      // Override getRef to throw (simulating 409 empty repo)
+      adapter.getRef = async (_ref: string) => {
+        throw new Error('Git Repository is empty.');
       };
 
       const branch = await publisher.init('run-empty', 'Empty repo test');
@@ -138,8 +127,8 @@ describe('GitPublisher (API mode)', () => {
       expect(branch).toBe('mosaicat/run-empty');
 
       const methods = adapter.calls.map((c) => c.method);
-      // Should: createFileContent (bootstrap) → createRef (branch) → createPR
-      expect(methods).toEqual(['createFileContent', 'createRef', 'createPR']);
+      // Should: createFileContent (bootstrap) → createRef (branch) — no PR yet
+      expect(methods).toEqual(['createFileContent', 'createRef']);
 
       // createFileContent should create README.md
       const fileCall = adapter.calls.find((c) => c.method === 'createFileContent');
@@ -158,8 +147,7 @@ describe('GitPublisher (API mode)', () => {
       adapter.calls = []; // reset to track only commitStage calls
     });
 
-    it('should upload files as blobs and create commit via API', async () => {
-      // Create a temp file to commit
+    it('should upload files, create commit, and create Draft PR on first commit', async () => {
       const tmpFile = '/tmp/mosaicat-test-artifact.txt';
       fs.writeFileSync(tmpFile, 'hello world');
 
@@ -173,12 +161,37 @@ describe('GitPublisher (API mode)', () => {
           'createTree',   // create new tree
           'createCommit', // create commit
           'updateRef',    // update branch ref
+          'createPR',     // Draft PR created after first commit
         ]);
 
         // Verify commit message includes issue ref
         const commitCall = adapter.calls.find((c) => c.method === 'createCommit');
         expect(commitCall!.args[0]).toContain('researcher');
         expect(commitCall!.args[0]).toContain('#10');
+
+        // Verify Draft PR
+        const prCall = adapter.calls.find((c) => c.method === 'createPR');
+        expect((prCall!.args[0] as Record<string, unknown>).draft).toBe(true);
+        expect(publisher.getPR()).not.toBeNull();
+      } finally {
+        fs.unlinkSync(tmpFile);
+      }
+    });
+
+    it('should NOT create PR again on second commit', async () => {
+      const tmpFile = '/tmp/mosaicat-test-artifact2.txt';
+      fs.writeFileSync(tmpFile, 'first');
+
+      try {
+        await publisher.commitStage('researcher', [tmpFile]);
+        adapter.calls = []; // reset
+
+        fs.writeFileSync(tmpFile, 'second');
+        await publisher.commitStage('product_owner', [tmpFile]);
+
+        const methods = adapter.calls.map((c) => c.method);
+        // No createPR — already created on first commit
+        expect(methods).not.toContain('createPR');
       } finally {
         fs.unlinkSync(tmpFile);
       }
@@ -210,6 +223,13 @@ describe('GitPublisher (API mode)', () => {
   describe('publish', () => {
     it('should add comment and mark PR ready', async () => {
       await publisher.init('run-12345', 'Test');
+
+      // Need at least one commit to trigger PR creation
+      const tmpFile = '/tmp/mosaicat-test-publish.txt';
+      fs.writeFileSync(tmpFile, 'data');
+      await publisher.commitStage('researcher', [tmpFile]);
+      fs.unlinkSync(tmpFile);
+
       adapter.calls = [];
 
       const result = await publisher.publish('## PR Body');
@@ -219,6 +239,12 @@ describe('GitPublisher (API mode)', () => {
 
       const methods = adapter.calls.map((c) => c.method);
       expect(methods).toEqual(['addComment', 'markPRReady']);
+    });
+
+    it('should return null if no commits were made', async () => {
+      await publisher.init('run-12345', 'Test');
+      const result = await publisher.publish('## PR Body');
+      expect(result).toBeNull();
     });
 
     it('should return null if init was not called', async () => {

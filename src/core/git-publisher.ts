@@ -7,29 +7,25 @@ export class GitPublisher {
   private branch: string | null = null;
   private prRef: PRRef | null = null;
   private headSha: string | null = null; // current commit SHA on our branch
+  private runId: string | null = null;
+  private title: string | null = null;
 
   constructor(adapter: GitPlatformAdapter) {
     this.adapter = adapter;
   }
 
-  /** Create branch via API and Draft PR at pipeline start. Returns branch name. */
+  /** Create branch via API at pipeline start. PR is deferred until first commit. */
   async init(runId: string, title: string): Promise<string> {
     const timestamp = runId.replace('run-', '');
     this.branch = `mosaicat/run-${timestamp}`;
+    this.runId = runId;
+    this.title = title;
 
     // Get main branch HEAD SHA (handle empty repos)
     this.headSha = await this.getOrCreateMainRef();
 
     // Create branch ref pointing to same commit
     await this.adapter.createRef(`refs/heads/${this.branch}`, this.headSha);
-
-    // Create Draft PR
-    this.prRef = await this.adapter.createPR({
-      title: `[Mosaicat] ${title}`,
-      body: `## Pipeline Run: ${runId}\n\n_Pipeline in progress..._`,
-      head: this.branch,
-      draft: true,
-    });
 
     return this.branch;
   }
@@ -70,6 +66,16 @@ export class GitPublisher {
     // Update branch ref
     await this.adapter.updateRef(`refs/heads/${this.branch}`, commit.sha);
     this.headSha = commit.sha;
+
+    // Create Draft PR after first commit (now there's a diff vs main)
+    if (!this.prRef) {
+      this.prRef = await this.adapter.createPR({
+        title: `[Mosaicat] ${this.title}`,
+        body: `## Pipeline Run: ${this.runId}\n\n_Pipeline in progress..._`,
+        head: this.branch,
+        draft: true,
+      });
+    }
   }
 
   /** Update PR body and mark ready for review at pipeline end */
