@@ -2,6 +2,7 @@ import type { StageName } from './types.js';
 import { STAGE_ORDER } from './types.js';
 import { eventBus } from './event-bus.js';
 import type { LLMUsage } from './llm-provider.js';
+import { CLIArtifactPresenter } from './artifact-presenter.js';
 
 const AGENT_LABELS: Record<StageName, string> = {
   researcher: 'Researcher',
@@ -177,8 +178,10 @@ export function attachCLIProgress(): () => void {
 
   // ── Artifacts ──
 
+  const presenter = new CLIArtifactPresenter();
+
   on('artifact:written', (stage, name, size) => {
-    console.log(`  ${CYAN}→${RESET} ${name} ${DIM}(${formatBytes(size)})${RESET}`);
+    console.log(`  ${CYAN}→${RESET} ${presenter.formatLink(name, size)}`);
   });
 
   on('manifest:written', (stage, name) => {
