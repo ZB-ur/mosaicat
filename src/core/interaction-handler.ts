@@ -32,19 +32,20 @@ export class CLIInteractionHandler implements InteractionHandler {
   }
 
   async onManualGate(stage: StageName, _runId: string): Promise<GateResult> {
-    const answer = await this.askUser(`[${stage}] Review artifacts and approve? (yes/no): `);
+    console.log(`\n\x1b[33m🔍 [${stage}] Review the artifacts above and decide:\x1b[0m`);
+    const answer = await this.askUser(`   Approve? (yes/no): `);
     if (answer.toLowerCase().startsWith('y')) {
       return { approved: true };
     }
 
     // Collect feedback on rejection
-    const feedback = await this.askUser(`[${stage}] What needs to change?\n> `);
+    const feedback = await this.askUser(`   What needs to change?\n   > `);
     const result: GateResult = { approved: false, feedback: feedback || undefined };
 
     // For UIDesigner, offer component selection
     if (stage === 'ui_designer') {
       const components = await this.askUser(
-        `[${stage}] Which components need rework? (comma-separated names, or "all"):\n> `
+        `   Which components need rework? (comma-separated names, or "all"):\n   > `
       );
       if (components && components.trim().toLowerCase() !== 'all') {
         result.retryComponents = components.split(',').map((c) => c.trim()).filter(Boolean);
@@ -58,14 +59,15 @@ export class CLIInteractionHandler implements InteractionHandler {
     stage: StageName, question: string, _runId: string,
     options?: ClarificationOption[], allowCustom?: boolean
   ): Promise<string> {
-    console.log(`\n[${stage}] Agent needs clarification:`);
-    console.log(question);
+    console.log(`\n\x1b[33m❓ [${stage}] Agent needs your input:\x1b[0m`);
+    console.log(`   ${question}`);
 
     if (options && options.length > 0) {
+      console.log(`\x1b[2m   Select an option below${allowCustom !== false ? ', or choose custom input' : ''}:\x1b[0m`);
       return this.showSelection(options, allowCustom ?? true);
     }
 
-    return this.askUser('\nYour answer: ');
+    return this.askUser('\n   Your answer: ');
   }
 
   private showSelection(options: ClarificationOption[], allowCustom: boolean): Promise<string> {
