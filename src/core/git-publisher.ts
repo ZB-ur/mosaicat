@@ -7,30 +7,25 @@ export class GitPublisher {
   private branch: string | null = null;
   private prRef: PRRef | null = null;
   private headSha: string | null = null; // current commit SHA on our branch
+  private runId: string | null = null;
+  private title: string | null = null;
 
   constructor(adapter: GitPlatformAdapter) {
     this.adapter = adapter;
   }
 
-  /** Create branch via API and Draft PR at pipeline start. Returns branch name. */
+  /** Create branch via API at pipeline start. PR is deferred until first commit. */
   async init(runId: string, title: string): Promise<string> {
     const timestamp = runId.replace('run-', '');
     this.branch = `mosaicat/run-${timestamp}`;
+    this.runId = runId;
+    this.title = title;
 
-    // Get main branch HEAD SHA
-    const mainRef = await this.adapter.getRef('heads/main');
-    this.headSha = mainRef.sha;
+    // Get main branch HEAD SHA (handle empty repos)
+    this.headSha = await this.getOrCreateMainRef();
 
     // Create branch ref pointing to same commit
     await this.adapter.createRef(`refs/heads/${this.branch}`, this.headSha);
-
-    // Create Draft PR
-    this.prRef = await this.adapter.createPR({
-      title: `[Mosaicat] ${title}`,
-      body: `## Pipeline Run: ${runId}\n\n_Pipeline in progress..._`,
-      head: this.branch,
-      draft: true,
-    });
 
     return this.branch;
   }
@@ -71,6 +66,16 @@ export class GitPublisher {
     // Update branch ref
     await this.adapter.updateRef(`refs/heads/${this.branch}`, commit.sha);
     this.headSha = commit.sha;
+
+    // Create Draft PR after first commit (now there's a diff vs main)
+    if (!this.prRef) {
+      this.prRef = await this.adapter.createPR({
+        title: `[Mosaicat] ${this.title}`,
+        body: `## Pipeline Run: ${this.runId}\n\n_Pipeline in progress..._`,
+        head: this.branch,
+        draft: true,
+      });
+    }
   }
 
   /** Update PR body and mark ready for review at pipeline end */
@@ -89,6 +94,23 @@ export class GitPublisher {
 
   getPR(): PRRef | null {
     return this.prRef;
+  }
+
+  /** Get main branch HEAD SHA, or initialize empty repo first */
+  private async getOrCreateMainRef(): Promise<string> {
+    try {
+      const mainRef = await this.adapter.getRef('heads/main');
+      return mainRef.sha;
+    } catch {
+      // Repo is likely empty (409) — Git Data API doesn't work on empty repos.
+      // Use Contents API to create an initial file, which initializes the default branch.
+      const result = await this.adapter.createFileContent(
+        'README.md',
+        '# Project\n\n_Initialized by Mosaicat pipeline_\n',
+        'chore: initialize repository',
+      );
+      return result.sha;
+    }
   }
 
   /** Read a file from disk and return base64-encoded content, or null if not found */

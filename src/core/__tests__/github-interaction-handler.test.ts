@@ -80,6 +80,9 @@ class InMemoryAdapter implements GitPlatformAdapter {
   async createTree(_entries: GitTreeEntry[], _baseTreeSha?: string): Promise<GitTree> { return { sha: 'tree123' }; }
   async createCommit(_message: string, _treeSha: string, _parentShas: string[]): Promise<GitCommit> { return { sha: 'commit123', treeSha: 'tree123' }; }
   async getCommit(_sha: string): Promise<GitCommit> { return { sha: _sha, treeSha: 'tree123' }; }
+  async createFileContent(_path: string, _content: string, _message: string): Promise<{ sha: string }> { return { sha: 'file123' }; }
+  async listReviews(_prNumber: number) { return []; }
+  async listReviewComments(_prNumber: number) { return []; }
 
   // Test helper: simulate a user comment
   simulateComment(issueNumber: number, author: string, body: string) {
@@ -134,8 +137,8 @@ describe('GitHubInteractionHandler', () => {
       expect(issue.labels).toContain('status:approved');
       expect(issue.labels).not.toContain('status:review-needed');
 
-      // Issue should be tracked
-      expect(handler.getCreatedIssues().get('run-1:product_owner')).toBe(1);
+      // Issue was created for this gate (fallback Issue flow)
+      expect(adapter.issues.get(1)!.title).toContain('product_owner');
     });
 
     it('should reject when trusted actor comments /reject', async () => {

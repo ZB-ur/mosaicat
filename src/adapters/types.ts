@@ -59,6 +59,25 @@ export interface GitCommit {
   treeSha: string;
 }
 
+// ── PR Review types ──
+
+export interface PRReview {
+  id: number;
+  state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED' | 'PENDING';
+  body: string;
+  author: string;
+  submittedAt: string;
+}
+
+export interface PRReviewComment {
+  id: number;
+  path: string;
+  line?: number;
+  body: string;
+  author: string;
+  diffHunk?: string;
+}
+
 export interface GitPlatformAdapter {
   createIssue(params: CreateIssueParams): Promise<IssueRef>;
   addComment(issueNumber: number, body: string): Promise<void>;
@@ -78,4 +97,10 @@ export interface GitPlatformAdapter {
   createTree(entries: GitTreeEntry[], baseTreeSha?: string): Promise<GitTree>;
   createCommit(message: string, treeSha: string, parentShas: string[]): Promise<GitCommit>;
   getCommit(sha: string): Promise<GitCommit>;
+  /** Create or update a file via Contents API — works on empty repos */
+  createFileContent(path: string, content: string, message: string): Promise<{ sha: string }>;
+
+  // ── PR Review API ──
+  listReviews(prNumber: number): Promise<PRReview[]>;
+  listReviewComments(prNumber: number): Promise<PRReviewComment[]>;
 }
