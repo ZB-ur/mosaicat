@@ -117,7 +117,7 @@ describe('GitHubInteractionHandler', () => {
       adapter.simulateComment(1, 'trusted-user', '/approve');
 
       const result = await gatePromise;
-      expect(result).toBe(true);
+      expect(result.approved).toBe(true);
 
       // Issue should be closed with approved label
       const issue = adapter.issues.get(1)!;
@@ -136,7 +136,7 @@ describe('GitHubInteractionHandler', () => {
       adapter.simulateComment(1, 'trusted-user', '/reject');
 
       const result = await gatePromise;
-      expect(result).toBe(false);
+      expect(result.approved).toBe(false);
 
       const issue = adapter.issues.get(1)!;
       expect(issue.state).toBe('closed');
@@ -155,7 +155,7 @@ describe('GitHubInteractionHandler', () => {
       adapter.simulateComment(1, 'trusted-user', '/reject');
 
       const result = await gatePromise;
-      expect(result).toBe(false);
+      expect(result.approved).toBe(false);
     });
 
     it('should timeout when no decision is made', async () => {

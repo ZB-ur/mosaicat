@@ -1,4 +1,4 @@
-import type { StageName, GitHubConfig, ClarificationOption } from './types.js';
+import type { StageName, GitHubConfig, ClarificationOption, GateResult } from './types.js';
 import type { InteractionHandler } from './interaction-handler.js';
 import type { GitPlatformAdapter, IssueComment } from '../adapters/types.js';
 import type { SecurityConfig } from './security.js';
@@ -20,10 +20,10 @@ export class GitHubInteractionHandler implements InteractionHandler {
     this.securityConfig = securityConfig;
   }
 
-  async onManualGate(stage: StageName, runId: string): Promise<boolean> {
+  async onManualGate(stage: StageName, runId: string): Promise<GateResult> {
     const issue = await this.adapter.createIssue({
       title: `[${stage}] review: ${runId}`,
-      body: `## Manual Gate Review\n\n**Stage:** ${stage}\n**Run:** ${runId}\n\nPlease review the artifacts and respond with \`/approve\` or \`/reject\`.`,
+      body: `## Manual Gate Review\n\n**Stage:** ${stage}\n**Run:** ${runId}\n\nPlease review the artifacts and respond with \`/approve\` or \`/reject [feedback]\`.`,
       labels: [`agent:${stage}`, 'status:review-needed'],
     });
 
@@ -34,7 +34,7 @@ export class GitHubInteractionHandler implements InteractionHandler {
 
     // Update issue labels
     await this.adapter.removeLabel(issue.number, 'status:review-needed').catch(() => {});
-    await this.adapter.addLabels(issue.number, [result ? 'status:approved' : 'status:rejected']);
+    await this.adapter.addLabels(issue.number, [result.approved ? 'status:approved' : 'status:rejected']);
     await this.adapter.closeIssue(issue.number);
 
     return result;
@@ -66,7 +66,7 @@ export class GitHubInteractionHandler implements InteractionHandler {
     return new Map(this.createdIssues);
   }
 
-  private async pollForDecision(issueNumber: number, since: string): Promise<boolean> {
+  private async pollForDecision(issueNumber: number, since: string): Promise<GateResult> {
     const deadline = Date.now() + this.githubConfig.poll_timeout_ms;
 
     while (Date.now() < deadline) {
@@ -100,7 +100,7 @@ export class GitHubInteractionHandler implements InteractionHandler {
     throw new Error(`Clarification timed out after ${this.githubConfig.poll_timeout_ms}ms`);
   }
 
-  private findDecision(comments: IssueComment[]): boolean | null {
+  private findDecision(comments: IssueComment[]): GateResult | null {
     for (const comment of comments) {
       if (!isTrustedActor(comment.author, this.securityConfig)) {
         continue;
@@ -110,13 +110,19 @@ export class GitHubInteractionHandler implements InteractionHandler {
 
       for (const keyword of this.githubConfig.approve_keywords) {
         if (bodyLower.includes(keyword.toLowerCase())) {
-          return true;
+          return { approved: true };
         }
       }
 
       for (const keyword of this.githubConfig.reject_keywords) {
         if (bodyLower.includes(keyword.toLowerCase())) {
-          return false;
+          // Extract feedback: everything after the reject keyword
+          const keywordIdx = bodyLower.indexOf(keyword.toLowerCase());
+          const afterKeyword = comment.body.slice(keywordIdx + keyword.length).trim();
+          return {
+            approved: false,
+            feedback: afterKeyword || undefined,
+          };
         }
       }
     }
