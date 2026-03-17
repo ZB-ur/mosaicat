@@ -77,3 +77,58 @@ export function readManifest<T = unknown>(name: string): T {
   }
   return parsed as T;
 }
+
+/**
+ * Extract human-readable summary lines from a manifest file.
+ * Returns empty array if manifest doesn't exist or can't be parsed.
+ */
+export function extractManifestSummary(manifestName: string): string[] {
+  try {
+    const data = readManifest(manifestName) as Record<string, unknown>;
+    return SUMMARY_EXTRACTORS[manifestName]?.(data) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+const SUMMARY_EXTRACTORS: Record<string, (data: Record<string, unknown>) => string[]> = {
+  'research.manifest.json': (data) => {
+    const m = data as unknown as ResearchManifest;
+    const lines: string[] = [];
+    lines.push(`**Feasibility:** ${m.feasibility}`);
+    if (m.competitors.length > 0) lines.push(`**Competitors:** ${m.competitors.join(', ')}`);
+    for (const insight of m.key_insights.slice(0, 5)) lines.push(insight);
+    if (m.risks.length > 0) lines.push(`**Risks:** ${m.risks.join('; ')}`);
+    return lines;
+  },
+  'prd.manifest.json': (data) => {
+    const m = data as unknown as PrdManifest;
+    const lines: string[] = [];
+    if (m.features.length > 0) lines.push(`**Features (${m.features.length}):** ${m.features.join(', ')}`);
+    if (m.constraints.length > 0) lines.push(`**Constraints:** ${m.constraints.join(', ')}`);
+    if (m.out_of_scope.length > 0) lines.push(`**Out of scope:** ${m.out_of_scope.join(', ')}`);
+    return lines;
+  },
+  'ux-flows.manifest.json': (data) => {
+    const m = data as unknown as UxFlowsManifest;
+    const lines: string[] = [];
+    if (m.flows.length > 0) lines.push(`**Flows (${m.flows.length}):** ${m.flows.join(', ')}`);
+    if (m.components.length > 0) lines.push(`**Components (${m.components.length}):** ${m.components.join(', ')}`);
+    return lines;
+  },
+  'api-spec.manifest.json': (data) => {
+    const m = data as unknown as ApiSpecManifest;
+    const lines: string[] = [];
+    for (const ep of m.endpoints) lines.push(`\`${ep.method} ${ep.path}\` — ${ep.covers_feature}`);
+    if (m.models.length > 0) lines.push(`**Models:** ${m.models.join(', ')}`);
+    return lines;
+  },
+  'components.manifest.json': (data) => {
+    const m = data as unknown as ComponentsManifest;
+    const lines: string[] = [];
+    for (const c of m.components) lines.push(`**${c.name}** (\`${c.file}\`) — ${c.covers_flow}`);
+    if (m.screenshots.length > 0) lines.push(`**Screenshots:** ${m.screenshots.length} captured`);
+    if (m.previews && m.previews.length > 0) lines.push(`**Previews:** ${m.previews.length} generated`);
+    return lines;
+  },
+};

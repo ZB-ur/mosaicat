@@ -39,74 +39,115 @@ export function assertTrustedActor(login: string, config: SecurityConfig): void 
 export interface StageIssueParams {
   agentId: string;
   agentName: string;
+  agentDesc: string;
   taskRef: string;
+  instruction: string;
   inputs: string[];
   outputs: string[];
   durationMs?: number;
   usage?: { input_tokens: number; output_tokens: number; cost_usd?: number };
   retryCount?: number;
-  hadClarification?: boolean;
-  wasRejected?: boolean;
+  // Process log
+  clarificationQA?: { question: string; answer: string };
+  rejectionFeedback?: string;
+  // Manifest summary (extracted from *.manifest.json)
+  manifestSummary?: string[];
+  // GitHub context for links
   commitSha?: string;
+  repoSlug?: string;  // "owner/repo"
+  prNumber?: number;
+}
+
+export function buildStageIssueTitle(params: StageIssueParams): string {
+  return `${params.agentName} — ${params.agentDesc}`;
 }
 
 export function buildIssueBody(params: StageIssueParams): string {
   const lines: string[] = [];
 
-  lines.push(`## ${params.agentName} — Stage Report`);
+  // Header with context
+  const prLink = params.prNumber && params.repoSlug
+    ? ` · PR: [#${params.prNumber}](https://github.com/${params.repoSlug}/pull/${params.prNumber})`
+    : '';
+  lines.push(`> **Run:** \`${params.taskRef}\`${prLink}`);
+  lines.push(`> **Instruction:** ${params.instruction}`);
   lines.push('');
 
-  // Execution summary
+  // Manifest summary — the most valuable section
+  if (params.manifestSummary && params.manifestSummary.length > 0) {
+    lines.push('### Summary');
+    lines.push('');
+    for (const item of params.manifestSummary) {
+      lines.push(`- ${item}`);
+    }
+    lines.push('');
+  }
+
+  // Output files with GitHub links
+  lines.push('### Artifacts');
+  lines.push('');
+  for (const o of params.outputs) {
+    if (params.repoSlug && params.commitSha) {
+      const url = `https://github.com/${params.repoSlug}/blob/${params.commitSha}/.mosaic/artifacts/${o}`;
+      lines.push(`- [\`${o}\`](${url})`);
+    } else {
+      lines.push(`- \`${o}\``);
+    }
+  }
+  lines.push('');
+
+  // Process log — clarification, rejection
+  const hasProcessLog = params.clarificationQA || params.rejectionFeedback;
+  if (hasProcessLog) {
+    lines.push('### Process');
+    lines.push('');
+    if (params.clarificationQA) {
+      lines.push(`> **🔄 Clarification**`);
+      lines.push(`> Q: ${params.clarificationQA.question}`);
+      lines.push(`> A: ${params.clarificationQA.answer}`);
+      lines.push('');
+    }
+    if (params.rejectionFeedback) {
+      lines.push(`> **✏️ Rejected & revised**`);
+      lines.push(`> Feedback: ${params.rejectionFeedback}`);
+      lines.push('');
+    }
+  }
+
+  // Execution metrics — compact row
+  lines.push('<details>');
+  lines.push('<summary>Execution details</summary>');
+  lines.push('');
   const durationStr = params.durationMs != null ? formatDurationForIssue(params.durationMs) : '—';
-  lines.push(`| Item | Value |`);
-  lines.push(`|------|-------|`);
-  lines.push(`| **Agent** | ${params.agentName} (\`${params.agentId}\`) |`);
-  lines.push(`| **Run** | \`${params.taskRef}\` |`);
-  lines.push(`| **Duration** | ${durationStr} |`);
+  const metricsItems: string[] = [`**Duration:** ${durationStr}`];
   if (params.usage) {
     const costStr = params.usage.cost_usd != null ? ` ($${params.usage.cost_usd.toFixed(2)})` : '';
-    lines.push(`| **Tokens** | in: ${params.usage.input_tokens.toLocaleString()} / out: ${params.usage.output_tokens.toLocaleString()}${costStr} |`);
+    metricsItems.push(`**Tokens:** in: ${params.usage.input_tokens.toLocaleString()} / out: ${params.usage.output_tokens.toLocaleString()}${costStr}`);
   }
   if (params.retryCount && params.retryCount > 0) {
-    lines.push(`| **Retries** | ${params.retryCount} |`);
+    metricsItems.push(`**Retries:** ${params.retryCount}`);
   }
-
-  // Status badges
-  const badges: string[] = [];
-  if (params.hadClarification) badges.push('🔄 Clarification');
-  if (params.wasRejected) badges.push('✏️ Revised after rejection');
-  if (params.retryCount && params.retryCount > 0) badges.push(`↻ Retried ${params.retryCount}x`);
-  if (badges.length > 0) {
-    lines.push('');
-    lines.push(badges.join(' · '));
+  if (params.commitSha && params.repoSlug) {
+    const short = params.commitSha.slice(0, 7);
+    metricsItems.push(`**Commit:** [\`${short}\`](https://github.com/${params.repoSlug}/commit/${params.commitSha})`);
   }
-
+  lines.push(metricsItems.join(' · '));
+  lines.push('');
   // Inputs
+  lines.push(`**Inputs:** ${params.inputs.length > 0 ? params.inputs.map((i) => `\`${i}\``).join(', ') : '_none_'}`);
   lines.push('');
-  lines.push('### Inputs');
-  if (params.inputs.length > 0) {
-    lines.push(params.inputs.map((i) => `- \`${i}\``).join('\n'));
-  } else {
-    lines.push('_None_');
-  }
-
-  // Outputs
-  lines.push('');
-  lines.push('### Outputs');
-  lines.push(params.outputs.map((o) => `- \`${o}\``).join('\n'));
-
-  // Commit link
-  if (params.commitSha) {
-    lines.push('');
-    lines.push(`### Commit`);
-    lines.push(`${params.commitSha.slice(0, 7)}`);
-  }
+  lines.push('</details>');
 
   lines.push('');
   lines.push('---');
-  lines.push('_Generated by Mosaicat pipeline_');
+  lines.push('_Generated by [Mosaicat](https://github.com/ZB-ur/mosaicat) pipeline_');
 
   return lines.join('\n');
+}
+
+export function buildSummaryIssueTitle(instruction: string): string {
+  const truncated = instruction.length > 60 ? instruction.slice(0, 57) + '...' : instruction;
+  return `Pipeline 完成 — ${truncated}`;
 }
 
 function formatDurationForIssue(ms: number): string {

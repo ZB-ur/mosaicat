@@ -19,11 +19,21 @@ import type { InteractionHandler } from './interaction-handler.js';
 import { GitHubInteractionHandler } from './github-interaction-handler.js';
 import { CLIInteractionHandler } from './interaction-handler.js';
 import type { GitPlatformAdapter } from '../adapters/types.js';
-import { buildIssueBody } from './security.js';
+import { buildIssueBody, buildStageIssueTitle, buildSummaryIssueTitle } from './security.js';
 import type { StageIssueParams } from './security.js';
 import { GitPublisher } from './git-publisher.js';
 import { generatePRBody } from './pr-body-generator.js';
+import { extractManifestSummary } from './manifest.js';
 import type { LLMUsage } from './llm-provider.js';
+
+const AGENT_DESC: Record<StageName, string> = {
+  researcher: '市场调研 & 竞品分析',
+  product_owner: '产品需求文档',
+  ux_designer: 'UX 流程 & 组件清单',
+  api_designer: 'API 规范设计',
+  ui_designer: 'React 组件 & 截图',
+  validator: '交叉验证报告',
+};
 
 interface StageMetrics {
   startTime: number;
@@ -31,6 +41,8 @@ interface StageMetrics {
   hadClarification: boolean;
   wasRejected: boolean;
   commitSha?: string;
+  clarificationQA?: { question: string; answer: string };
+  rejectionFeedback?: string;
 }
 
 export class Orchestrator {
@@ -87,7 +99,7 @@ export class Orchestrator {
       }
 
       pipelineRun.completedAt = new Date().toISOString();
-      await this.createSummaryIssue(runId);
+      await this.createSummaryIssue(runId, instruction);
 
       // Publish PR (mark ready for review)
       if (this.publisher) {
@@ -189,7 +201,10 @@ export class Orchestrator {
         } else {
           // Track rejection in metrics
           const rejMetrics = this.stageMetrics.get(stage);
-          if (rejMetrics) rejMetrics.wasRejected = true;
+          if (rejMetrics) {
+            rejMetrics.wasRejected = true;
+            rejMetrics.rejectionFeedback = gateResult.feedback;
+          }
 
           transitionStage(run, stage, 'rejected');
           eventBus.emit('stage:rejected', stage, run.id);
@@ -319,6 +334,9 @@ export class Orchestrator {
         stage, err.question, run.id, err.options, err.allowCustom
       );
 
+      // Record Q&A for issue report
+      if (clMetrics) clMetrics.clarificationQA = { question: err.question, answer };
+
       // Augment context with user answer
       context.inputArtifacts.set(
         'clarification_answer',
@@ -339,22 +357,38 @@ export class Orchestrator {
     const agentConfig = this.agentsConfig.agents[stage];
     const metrics = this.stageMetrics.get(stage);
 
+    // Extract manifest summary from disk (zero LLM cost)
+    const manifestName = (agentConfig.outputs ?? []).find((o: string) => o.endsWith('.manifest.json'));
+    const manifestSummary = manifestName ? extractManifestSummary(manifestName) : [];
+
+    // GitHub context for links
+    const adapterAny = this.adapter as { getOwner?: () => string; getRepo?: () => string };
+    const owner = adapterAny.getOwner?.() ?? '';
+    const repo = adapterAny.getRepo?.() ?? '';
+    const repoSlug = owner && repo ? `${owner}/${repo}` : undefined;
+    const prNumber = this.publisher?.getPR()?.number;
+
     const params: StageIssueParams = {
       agentId: stage,
       agentName: agentConfig.name,
+      agentDesc: AGENT_DESC[stage],
       taskRef: run.id,
+      instruction: run.instruction,
       inputs: agentConfig.inputs ?? [],
       outputs: agentConfig.outputs ?? [],
       durationMs: metrics ? Date.now() - metrics.startTime : undefined,
       usage: metrics?.usage,
       retryCount: run.stages[stage].retryCount,
-      hadClarification: metrics?.hadClarification,
-      wasRejected: metrics?.wasRejected,
+      clarificationQA: metrics?.clarificationQA,
+      rejectionFeedback: metrics?.rejectionFeedback,
+      manifestSummary: manifestSummary.length > 0 ? manifestSummary : undefined,
       commitSha: metrics?.commitSha,
+      repoSlug,
+      prNumber,
     };
 
     const issue = await this.adapter.createIssue({
-      title: `[${stage}] ${agentConfig.name} completed: ${run.id}`,
+      title: buildStageIssueTitle(params),
       body: buildIssueBody(params),
       labels: [`agent:${stage}`, 'status:completed'],
     });
@@ -374,20 +408,25 @@ export class Orchestrator {
     eventBus.emit('issue:closed', issueNumber, stage, runId);
   }
 
-  private async createSummaryIssue(runId: string): Promise<void> {
+  private async createSummaryIssue(runId: string, instruction: string): Promise<void> {
     if (!this.adapter) return;
 
     const stageLinks = Array.from(this.stageIssues.entries())
       .filter(([key]) => key.startsWith(runId))
       .map(([key, num]) => {
-        const stage = key.split(':')[1];
-        return `- **${stage}**: #${num}`;
+        const stage = key.split(':')[1] as StageName;
+        const name = this.agentsConfig.agents[stage]?.name ?? stage;
+        const desc = AGENT_DESC[stage] ?? '';
+        return `- **${name}** ${desc} — #${num}`;
       })
       .join('\n');
 
+    const prRef = this.publisher?.getPR();
+    const prLine = prRef ? `\n**PR:** #${prRef.number}` : '';
+
     await this.adapter.createIssue({
-      title: `[pipeline] summary: ${runId}`,
-      body: `## Pipeline Summary\n\n**Run:** ${runId}\n\n### Stage Issues\n${stageLinks}\n\n---\n_Generated by Mosaicat pipeline_`,
+      title: buildSummaryIssueTitle(instruction),
+      body: `## Pipeline Summary\n\n**Run:** \`${runId}\`${prLine}\n**Instruction:** ${instruction}\n\n### Stages\n${stageLinks}\n\n---\n_Generated by [Mosaicat](https://github.com/ZB-ur/mosaicat) pipeline_`,
       labels: ['pipeline:summary'],
     });
   }
