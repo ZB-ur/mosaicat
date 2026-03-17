@@ -34,9 +34,12 @@ export class GitPublisher {
   async commitStage(stage: string, files: string[], issueNumber?: number): Promise<void> {
     if (!this.branch || !this.headSha) return;
 
+    // Expand directory paths into individual files
+    const resolvedFiles = this.resolveFiles(files);
+
     // Read files from disk and create blobs
     const treeEntries: GitTreeEntry[] = [];
-    for (const filePath of files) {
+    for (const filePath of resolvedFiles) {
       const content = this.readFileAsBase64(filePath);
       if (content === null) continue; // file doesn't exist
 
@@ -114,6 +117,39 @@ export class GitPublisher {
         'chore: initialize repository',
       );
       return result.sha;
+    }
+  }
+
+  /** Expand a list of file/directory paths into individual file paths */
+  private resolveFiles(paths: string[]): string[] {
+    const result: string[] = [];
+    for (const p of paths) {
+      const resolved = path.resolve(p);
+      try {
+        const stat = fs.statSync(resolved);
+        if (stat.isDirectory()) {
+          this.walkDir(resolved, p, result);
+        } else {
+          result.push(p);
+        }
+      } catch {
+        // Path doesn't exist — keep it so readFileAsBase64 returns null
+        result.push(p);
+      }
+    }
+    return result;
+  }
+
+  /** Recursively collect all files under a directory */
+  private walkDir(absDir: string, relativeBase: string, out: string[]): void {
+    for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
+      const absPath = path.join(absDir, entry.name);
+      const relPath = path.join(relativeBase, entry.name);
+      if (entry.isDirectory()) {
+        this.walkDir(absPath, relPath, out);
+      } else {
+        out.push(relPath);
+      }
     }
   }
 
