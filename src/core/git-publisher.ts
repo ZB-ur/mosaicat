@@ -90,21 +90,20 @@ export class GitPublisher {
     return this.prRef;
   }
 
-  /** Get main branch HEAD SHA, or initialize empty repo with an initial commit */
+  /** Get main branch HEAD SHA, or initialize empty repo first */
   private async getOrCreateMainRef(): Promise<string> {
     try {
       const mainRef = await this.adapter.getRef('heads/main');
       return mainRef.sha;
     } catch {
-      // Repo is likely empty (409) — bootstrap with an initial commit
-      const emptyTree = await this.adapter.createTree([], undefined);
-      const initialCommit = await this.adapter.createCommit(
+      // Repo is likely empty (409) — Git Data API doesn't work on empty repos.
+      // Use Contents API to create an initial file, which initializes the default branch.
+      const result = await this.adapter.createFileContent(
+        'README.md',
+        '# Project\n\n_Initialized by Mosaicat pipeline_\n',
         'chore: initialize repository',
-        emptyTree.sha,
-        [], // no parents — root commit
       );
-      await this.adapter.createRef('refs/heads/main', initialCommit.sha);
-      return initialCommit.sha;
+      return result.sha;
     }
   }
 

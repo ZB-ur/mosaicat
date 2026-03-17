@@ -112,6 +112,7 @@ class InMemoryGitPlatformAdapter implements GitPlatformAdapter {
   async createTree(_entries: GitTreeEntry[], _baseTreeSha?: string): Promise<GitTree> { return { sha: 'tree123' }; }
   async createCommit(_message: string, _treeSha: string, _parentShas: string[]): Promise<GitCommit> { return { sha: 'commit123', treeSha: 'tree123' }; }
   async getCommit(_sha: string): Promise<GitCommit> { return { sha: _sha, treeSha: 'tree123' }; }
+  async createFileContent(_path: string, _content: string, _message: string): Promise<{ sha: string }> { return { sha: 'file123' }; }
 
   addMockComment(issueNumber: number, author: string, body: string) {
     const comments = this.comments.get(issueNumber) ?? [];

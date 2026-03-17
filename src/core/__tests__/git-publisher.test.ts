@@ -70,6 +70,10 @@ class MockGitAdapter implements GitPlatformAdapter {
     this.record('getCommit', sha);
     return { sha, treeSha: 'parent-tree-sha' };
   }
+  async createFileContent(filePath: string, content: string, message: string): Promise<{ sha: string }> {
+    this.record('createFileContent', filePath, content, message);
+    return { sha: 'init-commit-sha' };
+  }
 }
 
 describe('GitPublisher (API mode)', () => {
@@ -116,10 +120,17 @@ describe('GitPublisher (API mode)', () => {
   });
 
   describe('init with empty repo', () => {
-    it('should bootstrap empty repo with initial commit', async () => {
-      // Override getRef to throw (simulating 409 empty repo)
-      adapter.getRef = async (_ref: string) => {
-        throw new Error('Git Repository is empty.');
+    it('should bootstrap empty repo via Contents API then create branch', async () => {
+      // Override getRef to throw on first call (simulating 409 empty repo)
+      let getRefCallCount = 0;
+      adapter.getRef = async (ref: string) => {
+        getRefCallCount++;
+        if (getRefCallCount === 1) {
+          throw new Error('Git Repository is empty.');
+        }
+        // After bootstrap, getRef works
+        adapter.calls.push({ method: 'getRef', args: [ref] });
+        return { ref: `refs/${ref}`, sha: 'init-commit-sha' };
       };
 
       const branch = await publisher.init('run-empty', 'Empty repo test');
@@ -127,14 +138,17 @@ describe('GitPublisher (API mode)', () => {
       expect(branch).toBe('mosaicat/run-empty');
 
       const methods = adapter.calls.map((c) => c.method);
-      // Should: createTree (empty) → createCommit (root) → createRef (main) → createRef (branch) → createPR
-      expect(methods).toEqual(['createTree', 'createCommit', 'createRef', 'createRef', 'createPR']);
+      // Should: createFileContent (bootstrap) → createRef (branch) → createPR
+      expect(methods).toEqual(['createFileContent', 'createRef', 'createPR']);
 
-      // First createRef should be for main
-      const createRefCalls = adapter.calls.filter((c) => c.method === 'createRef');
-      expect(createRefCalls[0].args[0]).toBe('refs/heads/main');
-      // Second createRef should be for the pipeline branch
-      expect(createRefCalls[1].args[0]).toBe('refs/heads/mosaicat/run-empty');
+      // createFileContent should create README.md
+      const fileCall = adapter.calls.find((c) => c.method === 'createFileContent');
+      expect(fileCall!.args[0]).toBe('README.md');
+
+      // createRef should use the SHA from createFileContent
+      const createRefCall = adapter.calls.find((c) => c.method === 'createRef');
+      expect(createRefCall!.args[0]).toBe('refs/heads/mosaicat/run-empty');
+      expect(createRefCall!.args[1]).toBe('init-commit-sha');
     });
   });
 
