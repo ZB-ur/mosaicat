@@ -52,9 +52,12 @@ export interface StageIssueParams {
   rejectionFeedback?: string;
   // Manifest summary (extracted from *.manifest.json)
   manifestSummary?: string[];
+  // Screenshot file names (relative to artifacts dir, e.g. "screenshots/Calculator.png")
+  screenshots?: string[];
   // GitHub context for links
   commitSha?: string;
   repoSlug?: string;  // "owner/repo"
+  branch?: string;    // for raw.githubusercontent.com URLs
   prNumber?: number;
 }
 
@@ -95,6 +98,22 @@ export function buildIssueBody(params: StageIssueParams): string {
     }
   }
   lines.push('');
+
+  // Screenshots — embedded as images
+  if (params.screenshots && params.screenshots.length > 0 && params.repoSlug && params.branch) {
+    lines.push('### Screenshots');
+    lines.push('');
+    for (const file of params.screenshots) {
+      const name = file.replace(/^screenshots\//, '').replace(/\.png$/, '');
+      const imgUrl = `https://raw.githubusercontent.com/${params.repoSlug}/${params.branch}/.mosaic/artifacts/${file}`;
+      lines.push(`<details><summary>${name}</summary>`);
+      lines.push('');
+      lines.push(`![${name}](${imgUrl})`);
+      lines.push('');
+      lines.push('</details>');
+      lines.push('');
+    }
+  }
 
   // Process log — clarification, rejection
   const hasProcessLog = params.clarificationQA || params.rejectionFeedback;

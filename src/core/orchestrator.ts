@@ -366,7 +366,11 @@ export class Orchestrator {
     const owner = adapterAny.getOwner?.() ?? '';
     const repo = adapterAny.getRepo?.() ?? '';
     const repoSlug = owner && repo ? `${owner}/${repo}` : undefined;
+    const branch = this.publisher?.getBranch() ?? undefined;
     const prNumber = this.publisher?.getPR()?.number;
+
+    // Collect screenshot files for image embedding
+    const screenshots = this.collectScreenshots();
 
     const params: StageIssueParams = {
       agentId: stage,
@@ -382,8 +386,10 @@ export class Orchestrator {
       clarificationQA: metrics?.clarificationQA,
       rejectionFeedback: metrics?.rejectionFeedback,
       manifestSummary: manifestSummary.length > 0 ? manifestSummary : undefined,
+      screenshots: screenshots.length > 0 ? screenshots : undefined,
       commitSha: metrics?.commitSha,
       repoSlug,
+      branch,
       prNumber,
     };
 
@@ -395,6 +401,17 @@ export class Orchestrator {
 
     this.stageIssues.set(`${run.id}:${stage}`, issue.number);
     eventBus.emit('issue:created', issue.number, stage, run.id);
+  }
+
+  private collectScreenshots(): string[] {
+    const dir = '.mosaic/artifacts/screenshots';
+    try {
+      return fs.readdirSync(dir)
+        .filter((f: string) => f.endsWith('.png'))
+        .map((f: string) => `screenshots/${f}`);
+    } catch {
+      return [];
+    }
   }
 
   private async closeRolledBackIssues(stage: StageName, runId: string): Promise<void> {
