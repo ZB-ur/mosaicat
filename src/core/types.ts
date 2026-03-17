@@ -133,6 +133,22 @@ export class ClarificationNeeded extends Error {
   }
 }
 
+// --- Gate Result (approval/rejection with feedback) ---
+
+export interface ReviewComment {
+  file: string;       // e.g. "components/LoginForm.tsx"
+  line?: number;
+  body: string;       // e.g. "配色改成 #3B82F6"
+  context?: string;   // diff_hunk code context
+}
+
+export interface GateResult {
+  approved: boolean;
+  feedback?: string;              // overall feedback (review body)
+  comments?: ReviewComment[];     // line-level comments
+  retryComponents?: string[];     // component names to rebuild (inferred from comments)
+}
+
 // --- Zod Schemas for runtime validation ---
 
 export const StageStatusSchema = z.object({

@@ -121,7 +121,7 @@ export class RunManager {
     managed.state = 'running';
   }
 
-  reject(runId: string): void {
+  reject(runId: string, feedback?: string, retryComponents?: string[]): void {
     const managed = this.runs.get(runId);
     if (!managed) throw new Error(`Run ${runId} not found`);
     if (!managed.handler) throw new Error(`Run ${runId} uses GitHub-based approval — reject via Issue comments`);
@@ -130,7 +130,7 @@ export class RunManager {
     }
     const orchestratorId = managed.orchestratorRunId;
     if (orchestratorId) {
-      managed.handler.reject(orchestratorId);
+      managed.handler.reject(orchestratorId, feedback, retryComponents);
     }
     managed.state = 'running';
   }

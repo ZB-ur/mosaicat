@@ -19,12 +19,16 @@ import type { InteractionHandler } from './interaction-handler.js';
 import { CLIInteractionHandler } from './interaction-handler.js';
 import type { GitPlatformAdapter } from '../adapters/types.js';
 import { buildIssueBody } from './security.js';
+import { GitPublisher } from './git-publisher.js';
+import { generatePRBody } from './pr-body-generator.js';
+import type { LLMUsage } from './llm-provider.js';
 
 export class Orchestrator {
   private pipelineConfig: PipelineConfig;
   private agentsConfig: AgentsConfig;
   private handler: InteractionHandler;
   private adapter?: GitPlatformAdapter;
+  private publisher?: GitPublisher;
   private stageIssues = new Map<string, number>();
 
   constructor(handler?: InteractionHandler, adapter?: GitPlatformAdapter) {
@@ -47,9 +51,38 @@ export class Orchestrator {
     logger.pipeline('info', 'pipeline:start', { runId, instruction });
     eventBus.emit('pipeline:start', runId);
 
+    // Initialize GitPublisher for GitHub mode
+    if (this.adapter) {
+      this.publisher = new GitPublisher(this.adapter);
+      try {
+        await this.publisher.init(runId, instruction.slice(0, 80));
+      } catch (err) {
+        // Git publisher init failure is non-fatal — continue without it
+        logger.pipeline('warn', 'git-publisher:init-failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        this.publisher = undefined;
+      }
+    }
+
     try {
       for (const stage of STAGE_ORDER) {
         await this.executeStage(pipelineRun, stage, provider, logger);
+
+        // Commit stage artifacts to PR branch
+        if (this.publisher) {
+          try {
+            const agentConfig = this.agentsConfig.agents[stage];
+            const files = (agentConfig.outputs ?? []).map((o: string) => `.mosaic/artifacts/${o}`);
+            const issueNumber = this.stageIssues.get(`${runId}:${stage}`);
+            await this.publisher.commitStage(stage, files, issueNumber);
+          } catch (err) {
+            logger.pipeline('warn', 'git-publisher:commit-failed', {
+              stage,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
       }
 
       // Post-run evolution analysis
@@ -59,6 +92,26 @@ export class Orchestrator {
 
       pipelineRun.completedAt = new Date().toISOString();
       await this.createSummaryIssue(runId);
+
+      // Publish PR (mark ready for review)
+      if (this.publisher) {
+        try {
+          // Generate rich PR body with screenshots, preview links, token stats
+          const adapterAny = this.adapter as { getOwner?: () => string; getRepo?: () => string };
+          const owner = adapterAny.getOwner?.() ?? '';
+          const repo = adapterAny.getRepo?.() ?? '';
+          const branch = this.publisher.getBranch() ?? '';
+          const prBody = (owner && repo && branch)
+            ? generatePRBody({ runId, owner, repo, branch })
+            : `## Pipeline Complete\n\nRun: ${runId}`;
+          await this.publisher.publish(prBody);
+        } catch (err) {
+          logger.pipeline('warn', 'git-publisher:publish-failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
       logger.pipeline('info', 'pipeline:complete', { runId });
       eventBus.emit('pipeline:complete', runId);
     } catch (err) {
@@ -104,16 +157,41 @@ export class Orchestrator {
         eventBus.emit('stage:awaiting_human', stage, run.id);
         logger.pipeline('info', 'stage:awaiting_human', { stage });
 
-        const approved = await this.handler.onManualGate(stage, run.id);
+        const gateResult = await this.handler.onManualGate(stage, run.id);
 
-        if (approved) {
+        if (gateResult.approved) {
           transitionStage(run, stage, 'approved');
           eventBus.emit('stage:approved', stage, run.id);
           transitionStage(run, stage, 'done');
         } else {
           transitionStage(run, stage, 'rejected');
           eventBus.emit('stage:rejected', stage, run.id);
-          logger.pipeline('info', 'stage:rejected', { stage });
+          logger.pipeline('info', 'stage:rejected', {
+            stage,
+            feedback: gateResult.feedback,
+            retryComponents: gateResult.retryComponents,
+          });
+
+          // Inject feedback into context for retry
+          if (gateResult.feedback) {
+            context.inputArtifacts.set(
+              'rejection_feedback',
+              `[source: reviewer] ${gateResult.feedback}`
+            );
+          }
+          if (gateResult.retryComponents && gateResult.retryComponents.length > 0) {
+            context.inputArtifacts.set(
+              'retry_components',
+              JSON.stringify(gateResult.retryComponents)
+            );
+          }
+          if (gateResult.comments && gateResult.comments.length > 0) {
+            context.inputArtifacts.set(
+              'review_comments',
+              JSON.stringify(gateResult.comments)
+            );
+          }
+
           // Re-run the stage after rejection
           transitionStage(run, stage, 'idle');
           return this.executeStage(run, stage, provider, logger);

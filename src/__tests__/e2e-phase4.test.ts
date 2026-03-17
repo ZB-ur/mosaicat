@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
 import { STAGE_ORDER } from '../core/types.js';
-import type { GitPlatformAdapter, CreateIssueParams, IssueComment, IssueDetails } from '../adapters/types.js';
+import type { GitPlatformAdapter, CreateIssueParams, IssueComment, IssueDetails, PRRef } from '../adapters/types.js';
 import type { GitHubConfig } from '../core/types.js';
 import type { SecurityConfig } from '../core/security.js';
 import { Orchestrator } from '../core/orchestrator.js';
@@ -97,6 +97,12 @@ class InMemoryGitPlatformAdapter implements GitPlatformAdapter {
       createdAt: new Date().toISOString(),
     };
   }
+
+  async createPR(params: { title: string; body: string; head: string; base?: string; draft?: boolean }): Promise<PRRef> {
+    return { number: 999, url: 'https://example.com/pulls/999', branch: params.head };
+  }
+
+  async markPRReady(_prNumber: number): Promise<void> {}
 
   addMockComment(issueNumber: number, author: string, body: string) {
     const comments = this.comments.get(issueNumber) ?? [];

@@ -43,6 +43,11 @@ If the PRD already specifies design preferences, skip clarification.
     "border": "gray-200",
     "radius": "rounded-xl"
   },
+  "modules": [
+    { "name": "atomic", "label": "基础原子组件", "components": ["TaskInput", "Checkbox"] },
+    { "name": "business", "label": "业务组件", "components": ["TaskList", "TaskItem"] },
+    { "name": "pages", "label": "页面级组件", "components": ["App"] }
+  ],
   "components": [
     {
       "name": "TaskInput",
@@ -70,6 +75,7 @@ If the PRD already specifies design preferences, skip clarification.
 - **props**: TypeScript-style prop signatures
 - **priority**: Build order (1 = build first, higher = later). Leaf components first, containers last.
 - **design_tokens**: Optional design token overrides (when user specifies custom style)
+- **modules**: Optional grouping of components into build modules (atomic → business → pages). This helps organize step-level tracking and partial rebuilds.
 
 ## Guidelines
 

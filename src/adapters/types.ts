@@ -26,6 +26,12 @@ export interface IssueDetails {
   closedAt?: string;
 }
 
+export interface PRRef {
+  number: number;
+  url: string;
+  branch: string;
+}
+
 export interface GitPlatformAdapter {
   createIssue(params: CreateIssueParams): Promise<IssueRef>;
   addComment(issueNumber: number, body: string): Promise<void>;
@@ -34,4 +40,6 @@ export interface GitPlatformAdapter {
   removeLabel(issueNumber: number, label: string): Promise<void>;
   getComments(issueNumber: number, since?: string): Promise<IssueComment[]>;
   getIssue(issueNumber: number): Promise<IssueDetails>;
+  createPR(params: { title: string; body: string; head: string; base?: string; draft?: boolean }): Promise<PRRef>;
+  markPRReady(prNumber: number): Promise<void>;
 }

@@ -62,14 +62,14 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 | `core/agent.ts` | Agent 基类 | `BaseAgent`, `StubAgent` |
 | `core/artifact.ts` | 工件磁盘 I/O | `writeArtifact()`, `readArtifact()` |
 | `core/manifest.ts` | manifest 读写 + zod schema | `writeManifest()`, `readManifest()` |
-| `core/llm-provider.ts` | LLM 接口定义 | `LLMProvider` interface, `StubProvider` |
+| `core/llm-provider.ts` | LLM 接口定义 | `LLMProvider` interface, `LLMResponse`, `LLMUsage`, `StubProvider` |
 | `core/prompt-assembler.ts` | Prompt 拼装 | `assemblePrompt()` |
 | `core/response-parser.ts` | 响应解析 | `parseResponse()` |
-| `core/event-bus.ts` | 事件总线 | `eventBus` singleton, `PipelineEvents` |
+| `core/event-bus.ts` | 事件总线 | `eventBus` singleton, `PipelineEvents` (含 `agent:usage`, `pipeline:usage`) |
 | `core/logger.ts` | JSONL 日志 | `Logger` class |
 | `core/snapshot.ts` | 阶段快照 | `createSnapshot()` |
 | `agents/llm-agent.ts` | Agent 模板基类 | `LLMAgent` abstract class |
-| `adapters/types.ts` | Git 适配器接口 | `GitPlatformAdapter` interface |
+| `adapters/types.ts` | Git 适配器接口 | `GitPlatformAdapter` interface, `PRRef` |
 | `providers/claude-cli.ts` | Claude CLI 调用 | `ClaudeCLIProvider` |
 | `providers/anthropic-sdk.ts` | Anthropic SDK 调用 | `AnthropicSDKProvider` |
 
@@ -86,6 +86,10 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 | `mcp/tools.ts` | MCP 工具注册 | 新增/修改工具 |
 | `agents/*.ts` | 具体 Agent | Prompt 输出格式调整 |
 | `index.ts` | CLI 入口 | 新增命令/Flag |
+| `core/artifact-presenter.ts` | 产出链接格式化 | 新增链接格式（M2-T2） |
+| `core/git-publisher.ts` | Git PR 流程 | Draft PR + 逐步 commit（M2-T3） |
+| `core/issue-manager.ts` | Issue 分层管理 | Stage/Step Issue（M2-T4） |
+| `core/pr-body-generator.ts` | PR body 生成 | 截图 + 预览 + token 统计（M2-T5） |
 
 ### 跨模块依赖关系
 ```
@@ -106,8 +110,8 @@ Evolution: Orchestrator(post-run) → Engine → ProposalHandler
 ```
 
 ### 关键接口文件（理解模块间通信只需读这几个）
-- `core/types.ts` — 全局类型：StageName, PipelineRun, PipelineConfig, Task, AgentContext
-- `core/llm-provider.ts` — LLM 调用契约：LLMProvider interface
+- `core/types.ts` — 全局类型：StageName, PipelineRun, PipelineConfig, Task, AgentContext, GateResult, ReviewComment
+- `core/llm-provider.ts` — LLM 调用契约：LLMProvider interface, LLMResponse, LLMUsage
 - `core/interaction-handler.ts` — 用户交互契约：InteractionHandler interface
 - `adapters/types.ts` — Git 平台契约：GitPlatformAdapter interface
 - `evolution/types.ts` — 进化域类型：EvolutionProposal, PromptVersion, SkillMetadata

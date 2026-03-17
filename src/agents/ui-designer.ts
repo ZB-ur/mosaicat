@@ -6,6 +6,8 @@ import { BaseAgent } from '../core/agent.js';
 import type { OutputSpec } from '../core/prompt-assembler.js';
 import { eventBus } from '../core/event-bus.js';
 import type { LLMUsage } from '../core/llm-provider.js';
+import type { ReviewComment } from '../core/types.js';
+import { readArtifact, artifactExists } from '../core/artifact.js';
 import { UIPlanSchema, type UIPlan, type UIPlanComponent } from './ui-plan-schema.js';
 
 const PLANNER_PROMPT_PATH = '.claude/agents/mosaic/ui-planner.md';
@@ -46,19 +48,140 @@ export class UIDesignerAgent extends BaseAgent {
   protected async run(context: AgentContext): Promise<void> {
     this.totalUsage = { input_tokens: 0, output_tokens: 0 };
 
-    // Phase A: Plan
-    const plan = await this.runPlanner(context);
+    // Check for partial retry
+    const retryComponentsRaw = context.inputArtifacts.get('retry_components');
+    const retryComponents = retryComponentsRaw ? JSON.parse(retryComponentsRaw) as string[] : undefined;
+    const feedback = context.inputArtifacts.get('rejection_feedback');
+    const reviewCommentsRaw = context.inputArtifacts.get('review_comments');
+    const reviewComments: ReviewComment[] | undefined = reviewCommentsRaw
+      ? JSON.parse(reviewCommentsRaw)
+      : undefined;
 
-    // Phase B: Build each component
-    const builtComponents = await this.runBuilders(context, plan);
-
-    // Phase C: Post-processing (no LLM)
-    await this.postProcess(plan, builtComponents);
+    if (retryComponents && retryComponents.length > 0) {
+      // Partial retry: skip planner, only rebuild specified components
+      await this.runPartialRetry(context, retryComponents, reviewComments);
+    } else {
+      // Full run (or full retry with feedback injected into planner)
+      const plan = await this.runPlanner(context);
+      const builtComponents = await this.runBuilders(context, plan);
+      await this.postProcess(plan, builtComponents);
+    }
 
     // Emit accumulated usage for entire UIDesigner stage
     if (this.totalUsage.input_tokens > 0 || this.totalUsage.output_tokens > 0) {
       eventBus.emit('agent:usage', this.stage, this.totalUsage);
     }
+  }
+
+  private async runPartialRetry(
+    context: AgentContext,
+    retryComponents: string[],
+    reviewComments?: ReviewComment[],
+  ): Promise<void> {
+    // Load existing plan from disk
+    if (!artifactExists('ui-plan.json')) {
+      throw new Error('Cannot partial retry: ui-plan.json not found on disk');
+    }
+    const planJson = readArtifact('ui-plan.json');
+    const plan = UIPlanSchema.parse(JSON.parse(planJson));
+
+    this.logger.agent(this.stage, 'info', 'partial-retry:start', {
+      retryComponents,
+      totalComponents: plan.components.length,
+    });
+
+    // Load existing built components from disk (preserve unchanged ones)
+    const builtComponents = new Map<string, string>();
+    for (const comp of plan.components) {
+      if (artifactExists(comp.file)) {
+        builtComponents.set(comp.name, readArtifact(comp.file));
+      }
+    }
+
+    // Only rebuild specified components
+    const builderPrompt = fs.readFileSync(BUILDER_PROMPT_PATH, 'utf-8');
+    const previewFiles: string[] = [];
+
+    for (const compName of retryComponents) {
+      const comp = plan.components.find((c) => c.name === compName);
+      if (!comp) {
+        this.logger.agent(this.stage, 'warn', 'partial-retry:component-not-found', {
+          component: compName,
+        });
+        continue;
+      }
+
+      // Build feedback section for this component
+      const compComments = reviewComments?.filter(
+        (c) => c.file === comp.file || c.file.includes(compName)
+      );
+      const feedbackSection = this.buildComponentFeedback(compName, compComments);
+
+      const userPrompt = this.buildBuilderUserPrompt(context, plan, comp, builtComponents)
+        + (feedbackSection ? `\n\n${feedbackSection}` : '');
+
+      this.logger.agent(this.stage, 'info', 'builder:call', {
+        component: comp.name,
+        promptLength: userPrompt.length,
+        isRetry: true,
+      });
+      eventBus.emit('agent:thinking', this.stage, userPrompt.length);
+
+      try {
+        const response = await this.provider.call(userPrompt, {
+          systemPrompt: builderPrompt,
+        });
+        const raw = response.content;
+        this.accumulateUsage(response.usage);
+
+        // Extract artifacts (same logic as runBuilders)
+        const artifactPattern = /<!-- ARTIFACT:([\S]+) -->\s*([\s\S]*?)\s*<!-- END:\1 -->/g;
+        let match;
+        while ((match = artifactPattern.exec(raw)) !== null) {
+          const name = match[1];
+          const content = match[2].trim()
+            .replace(/^```(?:tsx|html|json)?\s*\n?/, '')
+            .replace(/\n?```\s*$/, '');
+          this.writeOutput(name, content);
+
+          if (name === comp.file) {
+            builtComponents.set(comp.name, content);
+          }
+          if (name === comp.preview) {
+            previewFiles.push(name);
+          }
+        }
+
+        this.logger.agent(this.stage, 'info', 'builder:complete', {
+          component: comp.name,
+          isRetry: true,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.agent(this.stage, 'warn', 'builder:failed', {
+          component: comp.name,
+          error: message,
+          isRetry: true,
+        });
+      }
+    }
+
+    (this as { _previewFiles?: string[] })._previewFiles = previewFiles;
+    await this.postProcess(plan, builtComponents);
+  }
+
+  private buildComponentFeedback(
+    componentName: string,
+    comments?: ReviewComment[],
+  ): string | null {
+    if (!comments || comments.length === 0) return null;
+
+    const lines = comments.map((c) => {
+      const lineRef = c.line ? `Line ${c.line}: ` : '';
+      return `- ${lineRef}${c.body}`;
+    });
+
+    return `## Reviewer Feedback for ${componentName}\n\n${lines.join('\n')}\n\nPlease modify the component according to the feedback above. Keep other parts unchanged.`;
   }
 
   private async runPlanner(context: AgentContext): Promise<UIPlan> {
