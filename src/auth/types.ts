@@ -1,14 +1,9 @@
 export interface AuthConfig {
-  mode: 'app' | 'token';
   userLogin: string;
   owner: string;
   repo: string;
-  /** App mode: installation token for bot operations */
-  installationToken?: string;
-  /** App mode: ISO 8601 expiry of installation token */
-  installationTokenExpiresAt?: string;
-  /** Token mode (legacy): personal access token */
-  personalToken?: string;
+  installationToken: string;
+  installationTokenExpiresAt: string;
 }
 
 export interface CachedAuth {

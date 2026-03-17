@@ -59,12 +59,8 @@ export class RunManager {
       try {
         const authConfig = await resolveGitHubAuth();
         adapter = createGitHubAdapterFromAuth(authConfig);
-        if (authConfig.mode === 'app') {
-          await (adapter as import('../adapters/github.js').GitHubAdapter).refreshToken();
-        }
-        const securityConfig = loadSecurityConfig(pipelineConfig, {
-          initiatorLogin: authConfig.userLogin,
-        });
+        await (adapter as import('../adapters/github.js').GitHubAdapter).refreshToken();
+        const securityConfig = loadSecurityConfig(pipelineConfig, authConfig.userLogin);
         handler = new GitHubInteractionHandler(adapter, pipelineConfig.github, securityConfig);
         useGitHub = true;
       } catch {

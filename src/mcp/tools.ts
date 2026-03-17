@@ -6,7 +6,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RunManager } from '../core/run-manager.js';
 import type { PipelineConfig, StageName } from '../core/types.js';
 import { STAGE_NAMES } from '../core/types.js';
-import { validateGitHubEnv } from '../core/security.js';
+import { loadCachedAuth } from '../auth/auth-store.js';
 import { EvolutionEngine } from '../evolution/engine.js';
 import { listPromptVersions, rollbackPrompt } from '../evolution/prompt-versioning.js';
 import { StubProvider } from '../core/llm-provider.js';
@@ -152,7 +152,7 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
           fs.readFileSync('config/pipeline.yaml', 'utf-8')
         ) as PipelineConfig;
 
-        const envValidation = validateGitHubEnv();
+        const cachedAuth = loadCachedAuth();
         const githubConfig = pipelineConfig.github;
 
         return {
@@ -160,8 +160,8 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
             type: 'text' as const,
             text: JSON.stringify({
               enabled: githubConfig?.enabled ?? false,
-              env_valid: envValidation.valid,
-              env_errors: envValidation.errors,
+              logged_in: cachedAuth !== null,
+              user_login: cachedAuth?.userLogin ?? null,
               config: githubConfig ? {
                 poll_interval_ms: githubConfig.poll_interval_ms,
                 poll_timeout_ms: githubConfig.poll_timeout_ms,

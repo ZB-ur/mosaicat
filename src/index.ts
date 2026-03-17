@@ -1,8 +1,7 @@
 import { Orchestrator } from './core/orchestrator.js';
 import { GitHubInteractionHandler } from './core/github-interaction-handler.js';
-import { createGitHubAdapter, createGitHubAdapterFromAuth } from './adapters/github.js';
+import { createGitHubAdapterFromAuth } from './adapters/github.js';
 import { loadSecurityConfig } from './core/security.js';
-import { validateGitHubEnv } from './core/security.js';
 import { attachCLIProgress } from './core/cli-progress.js';
 import type { PipelineConfig } from './core/types.js';
 import { resolveGitHubAuth } from './auth/resolve-auth.js';
@@ -61,22 +60,12 @@ if (command === 'login') {
 
       try {
         const authConfig = await resolveGitHubAuth();
-
-        if (authConfig.mode === 'app') {
-          console.log(`[mosaicat] GitHub App mode — repo: ${authConfig.owner}/${authConfig.repo} (auto-detected)`);
-        } else {
-          console.log(`[mosaicat] GitHub token mode — repo: ${authConfig.owner}/${authConfig.repo}`);
-        }
+        console.log(`[mosaicat] GitHub App mode — repo: ${authConfig.owner}/${authConfig.repo} (auto-detected)`);
 
         const adapter = createGitHubAdapterFromAuth(authConfig);
-        // For App mode, refresh token to initialize Octokit with a valid token
-        if (authConfig.mode === 'app') {
-          await adapter.refreshToken();
-        }
+        await adapter.refreshToken();
 
-        const securityConfig = loadSecurityConfig(pipelineConfig, {
-          initiatorLogin: authConfig.userLogin,
-        });
+        const securityConfig = loadSecurityConfig(pipelineConfig, authConfig.userLogin);
         const handler = new GitHubInteractionHandler(adapter, pipelineConfig.github, securityConfig);
         orchestrator = new Orchestrator(handler, adapter);
       } catch (err) {

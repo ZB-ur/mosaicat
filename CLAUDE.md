@@ -94,7 +94,7 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 | `auth/auth-store.ts` | 认证持久化 | `~/.mosaicat/auth.json` 读写 |
 | `auth/oauth-device-flow.ts` | OAuth Device Flow | `mosaicat login` 浏览器授权 |
 | `auth/token-service.ts` | 后端通信 | installations 查询 + installation token 交换 |
-| `auth/resolve-auth.ts` | 认证编排 | 自动检测 App/Token 模式 + git remote 匹配 |
+| `auth/resolve-auth.ts` | 认证编排 | GitHub App 认证 + git remote 自动匹配 |
 
 ### 跨模块依赖关系
 ```

@@ -5,7 +5,6 @@ import {
   isTrustedActor,
   assertTrustedActor,
   buildIssueBody,
-  validateGitHubEnv,
 } from '../security.js';
 import type { PipelineConfig } from '../types.js';
 
@@ -23,16 +22,6 @@ const basePipelineConfig: PipelineConfig = {
 };
 
 describe('Security', () => {
-  const originalEnv = process.env;
-
-  beforeEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  afterEach(() => {
-    process.env = originalEnv;
-  });
-
   describe('TrustLevel', () => {
     it('should have correct ordering', () => {
       expect(TrustLevel.Initiator).toBeLessThan(TrustLevel.Orchestrator);
@@ -42,15 +31,13 @@ describe('Security', () => {
   });
 
   describe('loadSecurityConfig', () => {
-    it('should use env var over config', () => {
-      process.env.MOSAIC_INITIATOR_LOGIN = 'env-user';
-      const config = loadSecurityConfig(basePipelineConfig);
-      expect(config.initiatorLogin).toBe('env-user');
+    it('should use explicit initiatorLogin over config', () => {
+      const config = loadSecurityConfig(basePipelineConfig, 'oauth-user');
+      expect(config.initiatorLogin).toBe('oauth-user');
       expect(config.rejectPolicy).toBe('silent');
     });
 
-    it('should fall back to config when env var not set', () => {
-      delete process.env.MOSAIC_INITIATOR_LOGIN;
+    it('should fall back to config when no override provided', () => {
       const config = loadSecurityConfig(basePipelineConfig);
       expect(config.initiatorLogin).toBe('config-user');
     });
@@ -91,35 +78,6 @@ describe('Security', () => {
       expect(body).toContain('**Task:** run-123');
       expect(body).toContain('`research.md`');
       expect(body).toContain('`research.manifest.json`');
-    });
-  });
-
-  describe('validateGitHubEnv', () => {
-    it('should return valid when all env vars set', () => {
-      process.env.GITHUB_TOKEN = 'ghp_test';
-      process.env.MOSAIC_GITHUB_REPO = 'owner/repo';
-      process.env.MOSAIC_INITIATOR_LOGIN = 'alice';
-      const result = validateGitHubEnv();
-      expect(result.valid).toBe(true);
-      expect(result.errors).toHaveLength(0);
-    });
-
-    it('should return errors for missing env vars', () => {
-      delete process.env.GITHUB_TOKEN;
-      delete process.env.MOSAIC_GITHUB_REPO;
-      delete process.env.MOSAIC_INITIATOR_LOGIN;
-      const result = validateGitHubEnv();
-      expect(result.valid).toBe(false);
-      expect(result.errors).toHaveLength(3);
-    });
-
-    it('should validate repo format', () => {
-      process.env.GITHUB_TOKEN = 'ghp_test';
-      process.env.MOSAIC_GITHUB_REPO = 'invalid-format';
-      process.env.MOSAIC_INITIATOR_LOGIN = 'alice';
-      const result = validateGitHubEnv();
-      expect(result.valid).toBe(false);
-      expect(result.errors.some((e) => e.includes('format'))).toBe(true);
     });
   });
 });

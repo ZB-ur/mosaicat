@@ -17,6 +17,7 @@ import type {
 import type { AuthConfig } from '../auth/types.js';
 import { getInstallationToken } from '../auth/token-service.js';
 import { loadCachedAuth } from '../auth/auth-store.js';
+import { listInstallations } from '../auth/token-service.js';
 
 export type TokenProvider = string | (() => Promise<string>);
 
@@ -249,46 +250,19 @@ export class GitHubAdapter implements GitPlatformAdapter {
   getRepo(): string { return this.repo; }
 }
 
-/** Legacy factory — reads from env vars */
-export function createGitHubAdapter(): GitHubAdapter {
-  const token = process.env.GITHUB_TOKEN;
-  const repoSlug = process.env.MOSAIC_GITHUB_REPO;
-
-  if (!token) throw new Error('GITHUB_TOKEN environment variable is required');
-  if (!repoSlug) throw new Error('MOSAIC_GITHUB_REPO environment variable is required (format: owner/repo)');
-
-  const [owner, repo] = repoSlug.split('/');
-  if (!owner || !repo) throw new Error('MOSAIC_GITHUB_REPO must be in format: owner/repo');
-
-  return new GitHubAdapter({ token, owner, repo });
-}
-
 /**
  * Create adapter from resolved AuthConfig.
- * For App mode, uses a token provider that auto-refreshes before expiry.
+ * Uses a token provider that auto-refreshes installation tokens before expiry.
  */
 export function createGitHubAdapterFromAuth(config: AuthConfig): GitHubAdapter {
-  if (config.mode === 'token') {
-    return new GitHubAdapter({
-      token: config.personalToken!,
-      owner: config.owner,
-      repo: config.repo,
-    });
-  }
-
-  // App mode — create a token provider that refreshes on expiry
-  let currentToken = config.installationToken!;
-  let expiresAt = new Date(config.installationTokenExpiresAt!).getTime();
+  let currentToken = config.installationToken;
+  let expiresAt = new Date(config.installationTokenExpiresAt).getTime();
 
   const tokenProvider: TokenProvider = async () => {
     // Refresh if within 5 minutes of expiry
     if (Date.now() > expiresAt - 5 * 60 * 1000) {
       const cached = loadCachedAuth();
       if (!cached) throw new Error('Auth expired. Run `mosaicat login` again.');
-      // Re-resolve installation token via backend
-      // We need the installation ID, but we can re-fetch it from the backend
-      // For now, use the token-service to get a fresh token
-      const { listInstallations } = await import('../auth/token-service.js');
       const installations = await listInstallations(cached.userToken);
       const target = installations
         .flatMap((i) => i.repositories.map((r) => ({ installationId: i.id, fullName: r.full_name })))
