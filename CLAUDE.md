@@ -69,7 +69,7 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 | `core/logger.ts` | JSONL 日志 | `Logger` class |
 | `core/snapshot.ts` | 阶段快照 | `createSnapshot()` |
 | `agents/llm-agent.ts` | Agent 模板基类 | `LLMAgent` abstract class |
-| `adapters/types.ts` | Git 适配器接口 | `GitPlatformAdapter` interface, `PRRef` |
+| `adapters/types.ts` | Git 适配器接口 | `GitPlatformAdapter` interface, `PRRef`, Git Data API types |
 | `providers/claude-cli.ts` | Claude CLI 调用 | `ClaudeCLIProvider` |
 | `providers/anthropic-sdk.ts` | Anthropic SDK 调用 | `AnthropicSDKProvider` |
 
@@ -87,7 +87,7 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 | `agents/*.ts` | 具体 Agent | Prompt 输出格式调整 |
 | `index.ts` | CLI 入口 | 新增命令/Flag |
 | `core/artifact-presenter.ts` | 产出链接格式化 | 新增链接格式（M2-T2） |
-| `core/git-publisher.ts` | Git PR 流程 | Draft PR + 逐步 commit（M2-T3） |
+| `core/git-publisher.ts` | Git PR 流程（纯 API） | Draft PR + 逐步 commit via GitHub API，不使用本地 git |
 | `core/issue-manager.ts` | Issue 分层管理 | Stage/Step Issue（M2-T4） |
 | `core/pr-body-generator.ts` | PR body 生成 | 截图 + 预览 + token 统计（M2-T5） |
 
