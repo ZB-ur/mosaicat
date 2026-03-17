@@ -115,6 +115,29 @@ describe('GitPublisher (API mode)', () => {
     });
   });
 
+  describe('init with empty repo', () => {
+    it('should bootstrap empty repo with initial commit', async () => {
+      // Override getRef to throw (simulating 409 empty repo)
+      adapter.getRef = async (_ref: string) => {
+        throw new Error('Git Repository is empty.');
+      };
+
+      const branch = await publisher.init('run-empty', 'Empty repo test');
+
+      expect(branch).toBe('mosaicat/run-empty');
+
+      const methods = adapter.calls.map((c) => c.method);
+      // Should: createTree (empty) → createCommit (root) → createRef (main) → createRef (branch) → createPR
+      expect(methods).toEqual(['createTree', 'createCommit', 'createRef', 'createRef', 'createPR']);
+
+      // First createRef should be for main
+      const createRefCalls = adapter.calls.filter((c) => c.method === 'createRef');
+      expect(createRefCalls[0].args[0]).toBe('refs/heads/main');
+      // Second createRef should be for the pipeline branch
+      expect(createRefCalls[1].args[0]).toBe('refs/heads/mosaicat/run-empty');
+    });
+  });
+
   describe('commitStage', () => {
     beforeEach(async () => {
       await publisher.init('run-12345', 'Test');

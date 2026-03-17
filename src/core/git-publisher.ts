@@ -17,9 +17,8 @@ export class GitPublisher {
     const timestamp = runId.replace('run-', '');
     this.branch = `mosaicat/run-${timestamp}`;
 
-    // Get main branch HEAD SHA
-    const mainRef = await this.adapter.getRef('heads/main');
-    this.headSha = mainRef.sha;
+    // Get main branch HEAD SHA (handle empty repos)
+    this.headSha = await this.getOrCreateMainRef();
 
     // Create branch ref pointing to same commit
     await this.adapter.createRef(`refs/heads/${this.branch}`, this.headSha);
@@ -89,6 +88,24 @@ export class GitPublisher {
 
   getPR(): PRRef | null {
     return this.prRef;
+  }
+
+  /** Get main branch HEAD SHA, or initialize empty repo with an initial commit */
+  private async getOrCreateMainRef(): Promise<string> {
+    try {
+      const mainRef = await this.adapter.getRef('heads/main');
+      return mainRef.sha;
+    } catch {
+      // Repo is likely empty (409) — bootstrap with an initial commit
+      const emptyTree = await this.adapter.createTree([], undefined);
+      const initialCommit = await this.adapter.createCommit(
+        'chore: initialize repository',
+        emptyTree.sha,
+        [], // no parents — root commit
+      );
+      await this.adapter.createRef('refs/heads/main', initialCommit.sha);
+      return initialCommit.sha;
+    }
   }
 
   /** Read a file from disk and return base64-encoded content, or null if not found */
