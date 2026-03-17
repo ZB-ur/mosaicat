@@ -88,6 +88,10 @@ export class GitPublisher {
     return this.prRef;
   }
 
+  getLastCommitSha(): string | null {
+    return this.headSha;
+  }
+
   getBranch(): string | null {
     return this.branch;
   }

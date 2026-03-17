@@ -20,9 +20,18 @@ import { GitHubInteractionHandler } from './github-interaction-handler.js';
 import { CLIInteractionHandler } from './interaction-handler.js';
 import type { GitPlatformAdapter } from '../adapters/types.js';
 import { buildIssueBody } from './security.js';
+import type { StageIssueParams } from './security.js';
 import { GitPublisher } from './git-publisher.js';
 import { generatePRBody } from './pr-body-generator.js';
 import type { LLMUsage } from './llm-provider.js';
+
+interface StageMetrics {
+  startTime: number;
+  usage?: LLMUsage;
+  hadClarification: boolean;
+  wasRejected: boolean;
+  commitSha?: string;
+}
 
 export class Orchestrator {
   private pipelineConfig: PipelineConfig;
@@ -31,6 +40,7 @@ export class Orchestrator {
   private adapter?: GitPlatformAdapter;
   private publisher?: GitPublisher;
   private stageIssues = new Map<string, number>();
+  private stageMetrics = new Map<StageName, StageMetrics>();
 
   constructor(handler?: InteractionHandler, adapter?: GitPlatformAdapter) {
     this.pipelineConfig = yaml.load(
@@ -126,6 +136,24 @@ export class Orchestrator {
     logger.pipeline('info', 'stage:start', { stage });
     eventBus.emit('stage:start', stage, run.id);
 
+    // Initialize metrics for this stage (only on first entry, not retries)
+    if (!this.stageMetrics.has(stage)) {
+      this.stageMetrics.set(stage, {
+        startTime: Date.now(),
+        hadClarification: false,
+        wasRejected: false,
+      });
+    }
+
+    // Listen for usage events for this stage
+    const usageHandler = (s: StageName, usage: LLMUsage) => {
+      if (s === stage) {
+        const metrics = this.stageMetrics.get(stage);
+        if (metrics) metrics.usage = usage;
+      }
+    };
+    eventBus.on('agent:usage', usageHandler);
+
     try {
       // Build context (artifact isolation)
       const task = { runId: run.id, stage, instruction: run.instruction };
@@ -136,6 +164,12 @@ export class Orchestrator {
 
       // Commit stage artifacts before gate check (so reviewers can see them)
       await this.commitStageArtifacts(stage, run.id, logger);
+
+      // Record commit SHA
+      const metrics = this.stageMetrics.get(stage);
+      if (metrics && this.publisher) {
+        metrics.commitSha = this.publisher.getLastCommitSha() ?? undefined;
+      }
 
       // Gate check
       if (shouldAutoApprove(run, stageConfig)) {
@@ -153,6 +187,10 @@ export class Orchestrator {
           eventBus.emit('stage:approved', stage, run.id);
           transitionStage(run, stage, 'done');
         } else {
+          // Track rejection in metrics
+          const rejMetrics = this.stageMetrics.get(stage);
+          if (rejMetrics) rejMetrics.wasRejected = true;
+
           transitionStage(run, stage, 'rejected');
           eventBus.emit('stage:rejected', stage, run.id);
           logger.pipeline('info', 'stage:rejected', {
@@ -193,11 +231,13 @@ export class Orchestrator {
       eventBus.emit('snapshot:created', stage, run.id);
 
       // Create informational Issue on stage complete
-      await this.createStageIssue(stage, run.id);
+      eventBus.off('agent:usage', usageHandler);
+      await this.createStageIssue(stage, run);
 
       logger.pipeline('info', 'stage:complete', { stage });
       eventBus.emit('stage:complete', stage, run.id);
     } catch (err) {
+      eventBus.off('agent:usage', usageHandler);
       // ClarificationNeeded is handled inside executeAgent, not here
       const message = err instanceof Error ? err.message : String(err);
       const stageStatus = run.stages[stage];
@@ -269,6 +309,9 @@ export class Orchestrator {
       }
 
       // Handle clarification: one round
+      const clMetrics = this.stageMetrics.get(stage);
+      if (clMetrics) clMetrics.hadClarification = true;
+
       transitionStage(run, stage, 'awaiting_clarification');
       logger.pipeline('info', 'stage:clarification', { stage, question: err.question });
 
@@ -290,22 +333,34 @@ export class Orchestrator {
     }
   }
 
-  private async createStageIssue(stage: StageName, runId: string): Promise<void> {
+  private async createStageIssue(stage: StageName, run: PipelineRun): Promise<void> {
     if (!this.adapter) return;
 
     const agentConfig = this.agentsConfig.agents[stage];
+    const metrics = this.stageMetrics.get(stage);
+
+    const params: StageIssueParams = {
+      agentId: stage,
+      agentName: agentConfig.name,
+      taskRef: run.id,
+      inputs: agentConfig.inputs ?? [],
+      outputs: agentConfig.outputs ?? [],
+      durationMs: metrics ? Date.now() - metrics.startTime : undefined,
+      usage: metrics?.usage,
+      retryCount: run.stages[stage].retryCount,
+      hadClarification: metrics?.hadClarification,
+      wasRejected: metrics?.wasRejected,
+      commitSha: metrics?.commitSha,
+    };
+
     const issue = await this.adapter.createIssue({
-      title: `[${stage}] completed: ${runId}`,
-      body: buildIssueBody({
-        agentId: stage,
-        taskRef: runId,
-        outputs: agentConfig.outputs,
-      }),
+      title: `[${stage}] ${agentConfig.name} completed: ${run.id}`,
+      body: buildIssueBody(params),
       labels: [`agent:${stage}`, 'status:completed'],
     });
 
-    this.stageIssues.set(`${runId}:${stage}`, issue.number);
-    eventBus.emit('issue:created', issue.number, stage, runId);
+    this.stageIssues.set(`${run.id}:${stage}`, issue.number);
+    eventBus.emit('issue:created', issue.number, stage, run.id);
   }
 
   private async closeRolledBackIssues(stage: StageName, runId: string): Promise<void> {

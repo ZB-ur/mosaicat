@@ -68,16 +68,58 @@ describe('Security', () => {
   });
 
   describe('buildIssueBody', () => {
-    it('should format issue body correctly', () => {
+    it('should format issue body with full stage details', () => {
       const body = buildIssueBody({
         agentId: 'researcher',
+        agentName: 'Researcher',
         taskRef: 'run-123',
+        inputs: ['user_instruction'],
         outputs: ['research.md', 'research.manifest.json'],
+        durationMs: 38900,
+        usage: { input_tokens: 3, output_tokens: 993, cost_usd: 0.12 },
+        retryCount: 0,
+        hadClarification: false,
+        wasRejected: false,
+        commitSha: 'abc1234567890',
       });
-      expect(body).toContain('**Agent:** researcher');
-      expect(body).toContain('**Task:** run-123');
+      expect(body).toContain('Researcher — Stage Report');
+      expect(body).toContain('`researcher`');
+      expect(body).toContain('`run-123`');
+      expect(body).toContain('38.9s');
+      expect(body).toContain('993');
+      expect(body).toContain('$0.12');
+      expect(body).toContain('`user_instruction`');
       expect(body).toContain('`research.md`');
-      expect(body).toContain('`research.manifest.json`');
+      expect(body).toContain('abc1234');
+    });
+
+    it('should show badges for clarification and rejection', () => {
+      const body = buildIssueBody({
+        agentId: 'product_owner',
+        agentName: 'ProductOwner',
+        taskRef: 'run-456',
+        inputs: ['user_instruction', 'research.md'],
+        outputs: ['prd.md'],
+        hadClarification: true,
+        wasRejected: true,
+        retryCount: 1,
+      });
+      expect(body).toContain('Clarification');
+      expect(body).toContain('Revised after rejection');
+      expect(body).toContain('Retried 1x');
+    });
+
+    it('should handle minimal params', () => {
+      const body = buildIssueBody({
+        agentId: 'validator',
+        agentName: 'Validator',
+        taskRef: 'run-789',
+        inputs: [],
+        outputs: ['validation-report.md'],
+      });
+      expect(body).toContain('Validator — Stage Report');
+      expect(body).toContain('_None_');
+      expect(body).toContain('`validation-report.md`');
     });
   });
 });
