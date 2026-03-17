@@ -5,6 +5,7 @@ import type {
   IssueRef,
   IssueComment,
   IssueDetails,
+  PRRef,
 } from './types.js';
 
 export class GitHubAdapter implements GitPlatformAdapter {
@@ -96,6 +97,39 @@ export class GitHubAdapter implements GitPlatformAdapter {
       closedAt: data.closed_at ?? undefined,
     };
   }
+  async createPR(params: { title: string; body: string; head: string; base?: string; draft?: boolean }): Promise<PRRef> {
+    const { data } = await this.octokit.pulls.create({
+      owner: this.owner,
+      repo: this.repo,
+      title: params.title,
+      body: params.body,
+      head: params.head,
+      base: params.base ?? 'main',
+      draft: params.draft ?? false,
+    });
+    return { number: data.number, url: data.html_url, branch: params.head };
+  }
+
+  async markPRReady(prNumber: number): Promise<void> {
+    // GitHub REST API doesn't support marking as ready — use GraphQL
+    const { data: pr } = await this.octokit.pulls.get({
+      owner: this.owner,
+      repo: this.repo,
+      pull_number: prNumber,
+    });
+    if (pr.draft) {
+      await this.octokit.graphql(`
+        mutation($id: ID!) {
+          markPullRequestReadyForReview(input: { pullRequestId: $id }) {
+            pullRequest { id }
+          }
+        }
+      `, { id: pr.node_id });
+    }
+  }
+
+  getOwner(): string { return this.owner; }
+  getRepo(): string { return this.repo; }
 }
 
 export function createGitHubAdapter(): GitHubAdapter {
