@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { GitHubInteractionHandler } from '../github-interaction-handler.js';
-import type { GitPlatformAdapter, CreateIssueParams, IssueComment, IssueDetails, PRRef } from '../../adapters/types.js';
+import type { GitPlatformAdapter, CreateIssueParams, IssueComment, IssueDetails, PRRef, GitRef, GitBlob, GitTreeEntry, GitTree, GitCommit } from '../../adapters/types.js';
 import type { GitHubConfig } from '../types.js';
 import type { SecurityConfig } from '../security.js';
 
@@ -71,6 +71,14 @@ class InMemoryAdapter implements GitPlatformAdapter {
   }
 
   async markPRReady(_prNumber: number): Promise<void> {}
+
+  // Git Data API stubs
+  async getRef(_ref: string): Promise<GitRef> { return { ref: _ref, sha: 'abc123' }; }
+  async createRef(ref: string, sha: string): Promise<GitRef> { return { ref, sha }; }
+  async updateRef(ref: string, sha: string): Promise<GitRef> { return { ref, sha }; }
+  async createBlob(_content: string, _encoding: 'utf-8' | 'base64'): Promise<GitBlob> { return { sha: 'blob123' }; }
+  async createTree(_entries: GitTreeEntry[], _baseTreeSha?: string): Promise<GitTree> { return { sha: 'tree123' }; }
+  async createCommit(_message: string, _treeSha: string, _parentShas: string[]): Promise<GitCommit> { return { sha: 'commit123' }; }
 
   // Test helper: simulate a user comment
   simulateComment(issueNumber: number, author: string, body: string) {
