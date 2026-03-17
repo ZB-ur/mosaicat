@@ -69,27 +69,6 @@ export class Orchestrator {
     try {
       for (const stage of STAGE_ORDER) {
         await this.executeStage(pipelineRun, stage, provider, logger);
-
-        // Commit stage artifacts to PR branch
-        if (this.publisher) {
-          try {
-            const agentConfig = this.agentsConfig.agents[stage];
-            const files = (agentConfig.outputs ?? []).map((o: string) => `.mosaic/artifacts/${o}`);
-            const issueNumber = this.stageIssues.get(`${runId}:${stage}`);
-            await this.publisher.commitStage(stage, files, issueNumber);
-
-            // Notify handler about PR (created lazily after first commit)
-            const pr = this.publisher.getPR();
-            if (pr && this.handler instanceof GitHubInteractionHandler) {
-              this.handler.setPR(pr.number);
-            }
-          } catch (err) {
-            logger.pipeline('warn', 'git-publisher:commit-failed', {
-              stage,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-        }
       }
 
       // Post-run evolution analysis
@@ -154,6 +133,9 @@ export class Orchestrator {
 
       // Create and execute agent (with clarification handling)
       await this.executeAgent(run, stage, provider, logger, context);
+
+      // Commit stage artifacts before gate check (so reviewers can see them)
+      await this.commitStageArtifacts(stage, run.id, logger);
 
       // Gate check
       if (shouldAutoApprove(run, stageConfig)) {
@@ -240,6 +222,27 @@ export class Orchestrator {
 
       eventBus.emit('stage:failed', stage, run.id, message);
       throw err;
+    }
+  }
+
+  private async commitStageArtifacts(stage: StageName, runId: string, logger: Logger): Promise<void> {
+    if (!this.publisher) return;
+    try {
+      const agentConfig = this.agentsConfig.agents[stage];
+      const files = (agentConfig.outputs ?? []).map((o: string) => `.mosaic/artifacts/${o}`);
+      const issueNumber = this.stageIssues.get(`${runId}:${stage}`);
+      await this.publisher.commitStage(stage, files, issueNumber);
+
+      // Notify handler about PR (created lazily after first commit)
+      const pr = this.publisher.getPR();
+      if (pr && this.handler instanceof GitHubInteractionHandler) {
+        this.handler.setPR(pr.number);
+      }
+    } catch (err) {
+      logger.pipeline('warn', 'git-publisher:commit-failed', {
+        stage,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

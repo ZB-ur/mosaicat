@@ -6,7 +6,7 @@
  */
 
 // GitHub App client_id — public value, safe to hardcode
-const DEFAULT_CLIENT_ID = 'Ov23liMosaicat0000';  // TODO: replace with real App client_id after registration
+const DEFAULT_CLIENT_ID = 'Iv23liQwUyQJuhUhD46S';
 
 const DEVICE_CODE_URL = 'https://github.com/login/device/code';
 const ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token';

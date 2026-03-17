@@ -1,6 +1,6 @@
 import type { InstallationInfo } from './types.js';
 
-const DEFAULT_BACKEND_URL = 'https://api.mosaicat.dev';
+const DEFAULT_BACKEND_URL = 'https://mosaicat-backend.zhangbeifan.workers.dev';
 
 function getBackendUrl(): string {
   return process.env.MOSAICAT_BACKEND_URL ?? DEFAULT_BACKEND_URL;
