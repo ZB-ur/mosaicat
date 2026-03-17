@@ -142,7 +142,8 @@ export class GitHubInteractionHandler implements InteractionHandler {
 
       for (const comment of comments) {
         if (!isTrustedActor(comment.author, this.securityConfig)) continue;
-        // Skip our own bot comments (they start with ##)
+        // Skip bot comments (from mosaicat[bot] or any [bot] account, or starting with ##)
+        if (comment.author.endsWith('[bot]')) continue;
         if (comment.body.startsWith('## ')) continue;
         return comment.body;
       }

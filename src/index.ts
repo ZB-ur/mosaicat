@@ -1,17 +1,43 @@
 import { Orchestrator } from './core/orchestrator.js';
 import { GitHubInteractionHandler } from './core/github-interaction-handler.js';
-import { createGitHubAdapter } from './adapters/github.js';
+import { createGitHubAdapter, createGitHubAdapterFromAuth } from './adapters/github.js';
 import { loadSecurityConfig } from './core/security.js';
 import { validateGitHubEnv } from './core/security.js';
 import { attachCLIProgress } from './core/cli-progress.js';
 import type { PipelineConfig } from './core/types.js';
+import { resolveGitHubAuth } from './auth/resolve-auth.js';
+import { oauthDeviceFlow } from './auth/oauth-device-flow.js';
+import { saveCachedAuth, clearCachedAuth } from './auth/auth-store.js';
 import fs from 'node:fs';
 import yaml from 'js-yaml';
 
 const args = process.argv.slice(2);
 const command = args[0];
 
-if (command === 'run') {
+if (command === 'login') {
+  // ── OAuth Device Flow login ──
+  console.log('[mosaicat] Starting GitHub login...');
+
+  oauthDeviceFlow({
+    onUserCode: (userCode, verificationUri) => {
+      console.log(`\n! Paste this code in your browser: \x1b[1m${userCode}\x1b[0m`);
+      console.log(`  → ${verificationUri}\n`);
+      console.log('Waiting for authorization...');
+    },
+  })
+    .then(({ accessToken, userLogin }) => {
+      saveCachedAuth({ userToken: accessToken, userLogin });
+      console.log(`\x1b[32m✓\x1b[0m Logged in as \x1b[1m@${userLogin}\x1b[0m`);
+    })
+    .catch((err) => {
+      console.error(`\x1b[31m[mosaicat] Login failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
+      process.exit(1);
+    });
+} else if (command === 'logout') {
+  // ── Clear cached auth ──
+  clearCachedAuth();
+  console.log('\x1b[32m✓\x1b[0m Logged out.');
+} else if (command === 'run') {
   const instruction = args[1];
   if (!instruction) {
     console.error('Usage: mosaicat run <instruction> [--auto-approve] [--github] [--evolve]');
@@ -25,54 +51,66 @@ if (command === 'run') {
   // Attach rich CLI progress output
   const detach = attachCLIProgress();
 
-  let orchestrator: Orchestrator;
+  const startRun = async () => {
+    let orchestrator: Orchestrator;
 
-  if (useGitHub) {
-    const envCheck = validateGitHubEnv();
-    if (!envCheck.valid) {
-      console.error('[mosaicat] GitHub mode requires environment variables:');
-      for (const err of envCheck.errors) {
-        console.error(`  - ${err}`);
+    if (useGitHub) {
+      const pipelineConfig = yaml.load(
+        fs.readFileSync('config/pipeline.yaml', 'utf-8')
+      ) as PipelineConfig;
+
+      try {
+        const authConfig = await resolveGitHubAuth();
+
+        if (authConfig.mode === 'app') {
+          console.log(`[mosaicat] GitHub App mode — repo: ${authConfig.owner}/${authConfig.repo} (auto-detected)`);
+        } else {
+          console.log(`[mosaicat] GitHub token mode — repo: ${authConfig.owner}/${authConfig.repo}`);
+        }
+
+        const adapter = createGitHubAdapterFromAuth(authConfig);
+        // For App mode, refresh token to initialize Octokit with a valid token
+        if (authConfig.mode === 'app') {
+          await adapter.refreshToken();
+        }
+
+        const securityConfig = loadSecurityConfig(pipelineConfig, {
+          initiatorLogin: authConfig.userLogin,
+        });
+        const handler = new GitHubInteractionHandler(adapter, pipelineConfig.github, securityConfig);
+        orchestrator = new Orchestrator(handler, adapter);
+      } catch (err) {
+        console.error(`\x1b[31m[mosaicat] GitHub auth failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
+        process.exit(1);
       }
-      process.exit(1);
+    } else {
+      orchestrator = new Orchestrator();
     }
 
-    const pipelineConfig = yaml.load(
-      fs.readFileSync('config/pipeline.yaml', 'utf-8')
-    ) as PipelineConfig;
+    if (useEvolve) {
+      orchestrator.enableEvolution();
+      console.log('[mosaicat] Evolution mode enabled — proposals after pipeline completes');
+    }
 
-    const adapter = createGitHubAdapter();
-    const securityConfig = loadSecurityConfig(pipelineConfig);
-    const handler = new GitHubInteractionHandler(adapter, pipelineConfig.github, securityConfig);
-    orchestrator = new Orchestrator(handler, adapter);
+    console.log(`\x1b[2mInstruction: ${instruction}\x1b[0m`);
+    console.log(`\x1b[2mAuto-approve: ${autoApprove}\x1b[0m`);
 
-    console.log('[mosaicat] GitHub mode enabled — approvals via Issue comments');
-  } else {
-    orchestrator = new Orchestrator();
-  }
+    const result = await orchestrator.run(instruction, autoApprove);
 
-  if (useEvolve) {
-    orchestrator.enableEvolution();
-    console.log('[mosaicat] Evolution mode enabled — proposals after pipeline completes');
-  }
+    console.log(`\x1b[2mRun ID: ${result.id}\x1b[0m`);
+    console.log(`\x1b[2mArtifacts: .mosaic/artifacts/\x1b[0m`);
+    console.log(`\x1b[2mLogs: .mosaic/logs/${result.id}/\x1b[0m`);
+    detach();
+  };
 
-  console.log(`\x1b[2mInstruction: ${instruction}\x1b[0m`);
-  console.log(`\x1b[2mAuto-approve: ${autoApprove}\x1b[0m`);
-
-  orchestrator
-    .run(instruction, autoApprove)
-    .then((result) => {
-      console.log(`\x1b[2mRun ID: ${result.id}\x1b[0m`);
-      console.log(`\x1b[2mArtifacts: .mosaic/artifacts/\x1b[0m`);
-      console.log(`\x1b[2mLogs: .mosaic/logs/${result.id}/\x1b[0m`);
-      detach();
-    })
-    .catch((err) => {
-      console.error(`\n\x1b[31m[mosaicat] Pipeline failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
-      detach();
-      process.exit(1);
-    });
+  startRun().catch((err) => {
+    console.error(`\n\x1b[31m[mosaicat] Pipeline failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
+    detach();
+    process.exit(1);
+  });
 } else {
   console.log('Usage:');
+  console.log('  mosaicat login                                     # One-time GitHub OAuth login');
+  console.log('  mosaicat logout                                    # Clear saved credentials');
   console.log('  mosaicat run <instruction> [--auto-approve] [--github] [--evolve]');
 }
