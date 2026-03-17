@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
-import type { LLMProvider, LLMCallOptions } from '../../core/llm-provider.js';
+import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-provider.js';
 import type { AgentContext } from '../../core/types.js';
 import { ValidatorAgent } from '../validator.js';
 import { Logger } from '../../core/logger.js';
@@ -10,8 +10,8 @@ import { writeManifest } from '../../core/manifest.js';
 const ARTIFACTS_DIR = '.mosaic/artifacts';
 
 class MockValidatorProvider implements LLMProvider {
-  async call(_prompt: string, _options?: LLMCallOptions): Promise<string> {
-    return `<!-- ARTIFACT:validation-report.md -->
+  async call(_prompt: string, _options?: LLMCallOptions): Promise<LLMResponse> {
+    return { content: `<!-- ARTIFACT:validation-report.md -->
 ## Validation Summary
 - Status: PASS
 - Checks passed: 4/4
@@ -27,7 +27,7 @@ class MockValidatorProvider implements LLMProvider {
 
 ### Check 4: Naming Consistency
 - Status: PASS
-<!-- END:validation-report.md -->`;
+<!-- END:validation-report.md -->` };
   }
 }
 

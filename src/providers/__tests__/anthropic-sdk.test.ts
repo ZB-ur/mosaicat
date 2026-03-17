@@ -20,6 +20,8 @@ async function getMockCreate() {
   return mod.__mockCreate as ReturnType<typeof vi.fn>;
 }
 
+const MOCK_USAGE = { input_tokens: 10, output_tokens: 20 };
+
 describe('AnthropicSDKProvider', () => {
   let mockCreate: ReturnType<typeof vi.fn>;
 
@@ -31,12 +33,16 @@ describe('AnthropicSDKProvider', () => {
   it('should call messages.create with correct parameters', async () => {
     mockCreate.mockResolvedValue({
       content: [{ type: 'text', text: 'Hello world' }],
+      usage: MOCK_USAGE,
     });
 
     const provider = new AnthropicSDKProvider('test-key');
     const result = await provider.call('Say hello');
 
-    expect(result).toBe('Hello world');
+    expect(result.content).toBe('Hello world');
+    expect(result.usage).toBeDefined();
+    expect(result.usage!.input_tokens).toBe(10);
+    expect(result.usage!.output_tokens).toBe(20);
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         messages: [{ role: 'user', content: 'Say hello' }],
@@ -48,6 +54,7 @@ describe('AnthropicSDKProvider', () => {
   it('should pass system prompt as native system parameter', async () => {
     mockCreate.mockResolvedValue({
       content: [{ type: 'text', text: 'I am a researcher.' }],
+      usage: MOCK_USAGE,
     });
 
     const provider = new AnthropicSDKProvider('test-key');
@@ -64,6 +71,7 @@ describe('AnthropicSDKProvider', () => {
   it('should omit system field when no system prompt provided', async () => {
     mockCreate.mockResolvedValue({
       content: [{ type: 'text', text: 'response' }],
+      usage: MOCK_USAGE,
     });
 
     const provider = new AnthropicSDKProvider('test-key');
@@ -79,12 +87,13 @@ describe('AnthropicSDKProvider', () => {
         { type: 'text', text: 'Part 1' },
         { type: 'text', text: ' Part 2' },
       ],
+      usage: MOCK_USAGE,
     });
 
     const provider = new AnthropicSDKProvider('test-key');
     const result = await provider.call('Hello');
 
-    expect(result).toBe('Part 1 Part 2');
+    expect(result.content).toBe('Part 1 Part 2');
   });
 
   it('should filter out non-text blocks', async () => {
@@ -94,12 +103,13 @@ describe('AnthropicSDKProvider', () => {
         { type: 'tool_use', id: 'x', name: 'y', input: {} },
         { type: 'text', text: ' World' },
       ],
+      usage: MOCK_USAGE,
     });
 
     const provider = new AnthropicSDKProvider('test-key');
     const result = await provider.call('Hello');
 
-    expect(result).toBe('Hello World');
+    expect(result.content).toBe('Hello World');
   });
 
   it('should propagate API errors', async () => {
@@ -112,6 +122,7 @@ describe('AnthropicSDKProvider', () => {
   it('should use custom model when provided', async () => {
     mockCreate.mockResolvedValue({
       content: [{ type: 'text', text: 'ok' }],
+      usage: MOCK_USAGE,
     });
 
     const provider = new AnthropicSDKProvider('test-key', 'claude-opus-4-20250514');
@@ -122,5 +133,19 @@ describe('AnthropicSDKProvider', () => {
         model: 'claude-opus-4-20250514',
       })
     );
+  });
+
+  it('should calculate cost based on model pricing', async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'ok' }],
+      usage: { input_tokens: 1000, output_tokens: 500 },
+    });
+
+    const provider = new AnthropicSDKProvider('test-key', 'claude-sonnet-4-20250514');
+    const result = await provider.call('Hello');
+
+    // sonnet-4: $3/M input, $15/M output
+    // 1000 * 3/1M + 500 * 15/1M = 0.003 + 0.0075 = 0.0105
+    expect(result.usage!.cost_usd).toBeCloseTo(0.0105, 4);
   });
 });

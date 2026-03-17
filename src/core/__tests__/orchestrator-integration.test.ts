@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
-import type { LLMProvider, LLMCallOptions } from '../llm-provider.js';
+import type { LLMProvider, LLMCallOptions, LLMResponse } from '../llm-provider.js';
 import { Orchestrator } from '../orchestrator.js';
 import { STAGE_ORDER } from '../types.js';
 
@@ -9,13 +9,13 @@ class MockLLMProvider implements LLMProvider {
   callCount = 0;
   private uiBuilderCallCount = 0;
 
-  async call(_prompt: string, _options?: LLMCallOptions): Promise<string> {
+  async call(_prompt: string, _options?: LLMCallOptions): Promise<LLMResponse> {
     this.callCount++;
     const sys = _options?.systemPrompt ?? '';
 
     // UIDesigner planner sub-phase
     if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
-      return `<!-- ARTIFACT:ui-plan.json -->
+      return { content: `<!-- ARTIFACT:ui-plan.json -->
 {
   "components": [
     {"name": "AuthForm", "file": "components/AuthForm.tsx", "preview": "previews/AuthForm.html", "purpose": "Login/register form", "covers_flow": "auth-flow", "parent": null, "children": [], "props": [], "priority": 1},
@@ -24,7 +24,7 @@ class MockLLMProvider implements LLMProvider {
     {"name": "CommentSection", "file": "components/CommentSection.tsx", "preview": "previews/CommentSection.html", "purpose": "Comment thread", "covers_flow": "reader-flow", "parent": null, "children": [], "props": [], "priority": 4}
   ]
 }
-<!-- END:ui-plan.json -->`;
+<!-- END:ui-plan.json -->` };
     }
 
     // UIDesigner builder sub-phase
@@ -36,7 +36,7 @@ class MockLLMProvider implements LLMProvider {
         3: `<!-- ARTIFACT:components/PostList.tsx -->\nexport default function PostList() {\n  return (\n    <div className="p-4 max-w-2xl mx-auto">\n      <h1 className="text-2xl font-bold mb-4">Blog Posts</h1>\n      <div className="space-y-4"><div className="p-4 border rounded"><h2 className="text-xl">Sample Post</h2><p className="text-gray-600">Post preview...</p></div></div>\n    </div>\n  );\n}\n<!-- END:components/PostList.tsx -->\n\n<!-- ARTIFACT:previews/PostList.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4 max-w-2xl mx-auto"><h1 class="text-2xl font-bold mb-4">Blog Posts</h1><div class="space-y-4"><div class="p-4 border rounded"><h2 class="text-xl">Sample Post</h2><p class="text-gray-600">Post preview...</p></div></div></div></body></html>\n<!-- END:previews/PostList.html -->`,
         4: `<!-- ARTIFACT:components/CommentSection.tsx -->\nexport default function CommentSection() {\n  return (\n    <div className="p-4 border-t mt-4">\n      <h3 className="text-lg font-bold mb-2">Comments</h3>\n      <textarea placeholder="Add a comment..." className="w-full p-2 border rounded mb-2" />\n      <button className="bg-blue-500 text-white px-4 py-1 rounded">Submit</button>\n    </div>\n  );\n}\n<!-- END:components/CommentSection.tsx -->\n\n<!-- ARTIFACT:previews/CommentSection.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4 border-t mt-4"><h3 class="text-lg font-bold mb-2">Comments</h3><textarea placeholder="Add a comment..." class="w-full p-2 border rounded mb-2"></textarea><button class="bg-blue-500 text-white px-4 py-1 rounded">Submit</button></div></body></html>\n<!-- END:previews/CommentSection.html -->`,
       };
-      return builders[this.uiBuilderCallCount] ?? builders[1]!;
+      return { content: builders[this.uiBuilderCallCount] ?? builders[1]! };
     }
 
     // Determine which stage based on call count (non-UI stages)
@@ -45,7 +45,7 @@ class MockLLMProvider implements LLMProvider {
 
     switch (stage) {
       case 'researcher':
-        return `
+        return { content: `
 <!-- ARTIFACT:research.md -->
 ## Market Overview
 The blog platform market is mature with established players.
@@ -66,10 +66,10 @@ High feasibility — standard CRUD with auth.
 
 <!-- MANIFEST:research.manifest.json -->
 {"competitors": ["WordPress", "Medium"], "key_insights": ["simplicity-focus", "mobile-first"], "feasibility": "high", "risks": ["market-saturation"]}
-<!-- END:MANIFEST -->`;
+<!-- END:MANIFEST -->` };
 
       case 'product_owner':
-        return `
+        return { content: `
 <!-- ARTIFACT:prd.md -->
 ## Goal
 Build a simple, modern blog platform for individual creators.
@@ -90,10 +90,10 @@ Build a simple, modern blog platform for individual creators.
 
 <!-- MANIFEST:prd.manifest.json -->
 {"features": ["user-auth", "blog-crud", "blog-comments"], "constraints": ["markdown-support", "performance-200ms"], "out_of_scope": ["multi-tenancy", "payments"]}
-<!-- END:MANIFEST -->`;
+<!-- END:MANIFEST -->` };
 
       case 'ux_designer':
-        return `
+        return { content: `
 <!-- ARTIFACT:ux-flows.md -->
 ## User Journeys
 ### Flow 1: auth-flow
@@ -118,10 +118,10 @@ Browse → Read Post → Comment
 
 <!-- MANIFEST:ux-flows.manifest.json -->
 {"flows": ["auth-flow", "blog-management", "reader-flow"], "components": ["AuthForm", "PostEditor", "PostList", "CommentSection"], "interaction_rules": ["form-validation", "loading-states"]}
-<!-- END:MANIFEST -->`;
+<!-- END:MANIFEST -->` };
 
       case 'api_designer':
-        return `
+        return { content: `
 <!-- ARTIFACT:api-spec.yaml -->
 openapi: "3.0.0"
 info:
@@ -161,10 +161,10 @@ paths:
 
 <!-- MANIFEST:api-spec.manifest.json -->
 {"endpoints": [{"method": "POST", "path": "/auth/register", "covers_feature": "user-auth"}, {"method": "POST", "path": "/auth/login", "covers_feature": "user-auth"}, {"method": "GET", "path": "/posts", "covers_feature": "blog-crud"}, {"method": "POST", "path": "/posts", "covers_feature": "blog-crud"}, {"method": "POST", "path": "/posts/{id}/comments", "covers_feature": "blog-comments"}], "models": ["User", "Post", "Comment"]}
-<!-- END:MANIFEST -->`;
+<!-- END:MANIFEST -->` };
 
       case 'validator':
-        return `
+        return { content: `
 <!-- ARTIFACT:validation-report.md -->
 ## Validation Summary
 - Status: PASS
@@ -189,10 +189,10 @@ paths:
 ### Check 4: Naming Consistency
 - Status: PASS
 - Terminology consistent across artifacts
-<!-- END:validation-report.md -->`;
+<!-- END:validation-report.md -->` };
 
       default:
-        return '[mock] Unknown stage';
+        return { content: '[mock] Unknown stage' };
     }
   }
 }

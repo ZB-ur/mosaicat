@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
-import type { LLMProvider, LLMCallOptions } from '../core/llm-provider.js';
+import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
 import { STAGE_ORDER } from '../core/types.js';
 import type { GitPlatformAdapter, CreateIssueParams, IssueComment, IssueDetails } from '../adapters/types.js';
 import type { GitHubConfig } from '../core/types.js';
@@ -118,17 +118,17 @@ class InMemoryGitPlatformAdapter implements GitPlatformAdapter {
 class MockLLMProvider implements LLMProvider {
   callCount = 0;
 
-  async call(_prompt: string, _options?: LLMCallOptions): Promise<string> {
+  async call(_prompt: string, _options?: LLMCallOptions): Promise<LLMResponse> {
     this.callCount++;
     const sys = _options?.systemPrompt ?? '';
 
     // UIDesigner planner sub-phase
     if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
-      return `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "Test component", "covers_flow": "main-flow", "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->`;
+      return { content: `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "Test component", "covers_flow": "main-flow", "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->` };
     }
     // UIDesigner builder sub-phase
     if (sys.includes('UIBuilder') || sys.includes('builder phase of the UI designer')) {
-      return `<!-- ARTIFACT:components/CompA.tsx -->\nexport default function CompA() {\n  return <div className="p-4">Test</div>;\n}\n<!-- END:components/CompA.tsx -->\n\n<!-- ARTIFACT:previews/CompA.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4">Test</div></body></html>\n<!-- END:previews/CompA.html -->`;
+      return { content: `<!-- ARTIFACT:components/CompA.tsx -->\nexport default function CompA() {\n  return <div className="p-4">Test</div>;\n}\n<!-- END:components/CompA.tsx -->\n\n<!-- ARTIFACT:previews/CompA.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4">Test</div></body></html>\n<!-- END:previews/CompA.html -->` };
     }
 
     // Sequential stages (non-UI)
@@ -144,14 +144,14 @@ class MockLLMProvider implements LLMProvider {
     for (const [stage, response] of Object.entries(stageResponses)) {
       const artifactName = stage === 'researcher' ? 'research.md' : stage === 'product_owner' ? 'prd.md' : stage === 'ux_designer' ? 'ux-flows.md' : stage === 'api_designer' ? 'api-spec.yaml' : 'validation-report.md';
       if (_prompt.includes(artifactName) || sys.includes(stage.replace('_', ' '))) {
-        return response;
+        return { content: response };
       }
     }
 
     // Fallback: use call count for early sequential stages
     const nonUIStages = STAGE_ORDER.filter((s) => s !== 'ui_designer');
     const stage = nonUIStages[this.callCount - 1];
-    return stageResponses[stage] ?? '[mock] unknown stage';
+    return { content: stageResponses[stage] ?? '[mock] unknown stage' };
   }
 }
 

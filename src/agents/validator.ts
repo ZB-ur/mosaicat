@@ -23,14 +23,20 @@ export class ValidatorAgent extends BaseAgent {
     });
     eventBus.emit('agent:thinking', this.stage, prompt.length);
 
-    const raw = await this.provider.call(prompt, {
+    const response = await this.provider.call(prompt, {
       systemPrompt: context.systemPrompt,
     });
+    const raw = response.content;
 
     this.logger.agent(this.stage, 'info', 'llm:response', {
       responseLength: raw.length,
+      usage: response.usage,
     });
     eventBus.emit('agent:response', this.stage, raw.length);
+
+    if (response.usage) {
+      eventBus.emit('agent:usage', this.stage, response.usage);
+    }
 
     // Check for clarification (shouldn't happen for validator, but handle defensively)
     const clarificationMatch = raw.match(

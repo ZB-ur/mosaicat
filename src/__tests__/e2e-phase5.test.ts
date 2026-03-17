@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
-import type { LLMProvider, LLMCallOptions } from '../core/llm-provider.js';
+import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
 import type { StageName } from '../core/types.js';
 import { STAGE_ORDER } from '../core/types.js';
 import type { InteractionHandler, EvolutionApprovalResult } from '../core/interaction-handler.js';
@@ -36,7 +36,7 @@ class EvolutionMockProvider implements LLMProvider {
   // Configurable evolution response
   evolutionResponse: string = '[]';
 
-  async call(prompt: string, options?: LLMCallOptions): Promise<string> {
+  async call(prompt: string, options?: LLMCallOptions): Promise<LLMResponse> {
     this.callCount++;
     this.promptsSeen.push(prompt);
     if (options?.systemPrompt) {
@@ -45,17 +45,17 @@ class EvolutionMockProvider implements LLMProvider {
 
     // If this is an evolution analysis call (has evolution analyst system prompt)
     if (options?.systemPrompt?.includes('evolution analyst')) {
-      return this.evolutionResponse;
+      return { content: this.evolutionResponse };
     }
 
     // UIDesigner planner sub-phase
     const sys = options?.systemPrompt ?? '';
     if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
-      return `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "Test", "covers_flow": "main-flow", "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->`;
+      return { content: `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "Test", "covers_flow": "main-flow", "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->` };
     }
     // UIDesigner builder sub-phase
     if (sys.includes('UIBuilder') || sys.includes('builder phase of the UI designer')) {
-      return `<!-- ARTIFACT:components/CompA.tsx -->\nexport default function CompA() {\n  return <div className="p-4">Test</div>;\n}\n<!-- END:components/CompA.tsx -->\n\n<!-- ARTIFACT:previews/CompA.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4">Test</div></body></html>\n<!-- END:previews/CompA.html -->`;
+      return { content: `<!-- ARTIFACT:components/CompA.tsx -->\nexport default function CompA() {\n  return <div className="p-4">Test</div>;\n}\n<!-- END:components/CompA.tsx -->\n\n<!-- ARTIFACT:previews/CompA.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4">Test</div></body></html>\n<!-- END:previews/CompA.html -->` };
     }
 
     // Normal pipeline stage responses
@@ -71,7 +71,7 @@ class EvolutionMockProvider implements LLMProvider {
       validator: `<!-- ARTIFACT:validation-report.md -->\n## Validation Summary\n- Status: PASS\n- Checks passed: 4/4\n<!-- END:validation-report.md -->`,
     };
 
-    return responses[stage] ?? '[mock] unknown';
+    return { content: responses[stage] ?? '[mock] unknown' };
   }
 }
 

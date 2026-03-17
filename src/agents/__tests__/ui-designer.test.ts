@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
-import type { LLMProvider, LLMCallOptions } from '../../core/llm-provider.js';
+import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-provider.js';
 import type { AgentContext } from '../../core/types.js';
 import { ClarificationNeeded } from '../../core/types.js';
 import { UIDesignerAgent } from '../ui-designer.js';
@@ -15,14 +15,14 @@ class MockUIProvider implements LLMProvider {
   // Set to true to make the second builder call fail
   failOnBuilder = 0;
 
-  async call(prompt: string, options?: LLMCallOptions): Promise<string> {
+  async call(prompt: string, options?: LLMCallOptions): Promise<LLMResponse> {
     this.callCount++;
     this.calls.push({ prompt, systemPrompt: options?.systemPrompt });
     const sys = options?.systemPrompt ?? '';
 
     // Planner
     if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
-      return `<!-- ARTIFACT:ui-plan.json -->
+      return { content: `<!-- ARTIFACT:ui-plan.json -->
 {
   "design_tokens": {"primary": "blue-600"},
   "components": [
@@ -30,7 +30,7 @@ class MockUIProvider implements LLMProvider {
     {"name": "CompB", "file": "components/CompB.tsx", "preview": "previews/CompB.html", "purpose": "Second component", "covers_flow": "flow-b", "parent": null, "children": [], "props": [], "priority": 2}
   ]
 }
-<!-- END:ui-plan.json -->`;
+<!-- END:ui-plan.json -->` };
     }
 
     // Builder
@@ -55,10 +55,10 @@ class MockUIProvider implements LLMProvider {
       };
 
       const comp = components[this.builderCallCount] ?? components[1];
-      return `<!-- ARTIFACT:components/${comp.name}.tsx -->\n${comp.tsx}\n<!-- END:components/${comp.name}.tsx -->\n\n<!-- ARTIFACT:previews/${comp.name}.html -->\n${comp.html}\n<!-- END:previews/${comp.name}.html -->`;
+      return { content: `<!-- ARTIFACT:components/${comp.name}.tsx -->\n${comp.tsx}\n<!-- END:components/${comp.name}.tsx -->\n\n<!-- ARTIFACT:previews/${comp.name}.html -->\n${comp.html}\n<!-- END:previews/${comp.name}.html -->` };
     }
 
-    return '[unknown call]';
+    return { content: '[unknown call]' };
   }
 }
 
@@ -183,8 +183,8 @@ describe('UIDesignerAgent', () => {
 
   it('should throw ClarificationNeeded when planner requests clarification', async () => {
     const provider: LLMProvider = {
-      async call(_prompt: string, _options?: LLMCallOptions) {
-        return `<!-- CLARIFICATION -->
+      async call(_prompt: string, _options?: LLMCallOptions): Promise<LLMResponse> {
+        return { content: `<!-- CLARIFICATION -->
 {
   "question": "Pick a style:",
   "options": [
@@ -193,7 +193,7 @@ describe('UIDesignerAgent', () => {
   ],
   "allow_custom": true
 }
-<!-- END:CLARIFICATION -->`;
+<!-- END:CLARIFICATION -->` };
       },
     };
 
