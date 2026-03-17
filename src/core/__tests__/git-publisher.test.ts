@@ -74,6 +74,8 @@ class MockGitAdapter implements GitPlatformAdapter {
     this.record('createFileContent', filePath, content, message);
     return { sha: 'init-commit-sha' };
   }
+  async listReviews(_prNumber: number) { return []; }
+  async listReviewComments(_prNumber: number) { return []; }
 }
 
 describe('GitPublisher (API mode)', () => {

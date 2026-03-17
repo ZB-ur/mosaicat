@@ -11,6 +11,8 @@ import type {
   GitTreeEntry,
   GitTree,
   GitCommit,
+  PRReview,
+  PRReviewComment,
 } from './types.js';
 
 export class GitHubAdapter implements GitPlatformAdapter {
@@ -186,6 +188,33 @@ export class GitHubAdapter implements GitPlatformAdapter {
       owner: this.owner, repo: this.repo, commit_sha: sha,
     });
     return { sha: data.sha, treeSha: data.tree.sha };
+  }
+
+  async listReviews(prNumber: number): Promise<PRReview[]> {
+    const { data } = await this.octokit.pulls.listReviews({
+      owner: this.owner, repo: this.repo, pull_number: prNumber,
+    });
+    return data.map((r) => ({
+      id: r.id,
+      state: r.state as PRReview['state'],
+      body: r.body ?? '',
+      author: r.user?.login ?? '',
+      submittedAt: r.submitted_at ?? '',
+    }));
+  }
+
+  async listReviewComments(prNumber: number): Promise<PRReviewComment[]> {
+    const { data } = await this.octokit.pulls.listReviewComments({
+      owner: this.owner, repo: this.repo, pull_number: prNumber,
+    });
+    return data.map((c) => ({
+      id: c.id,
+      path: c.path,
+      line: c.line ?? undefined,
+      body: c.body,
+      author: c.user?.login ?? '',
+      diffHunk: c.diff_hunk,
+    }));
   }
 
   async createFileContent(filePath: string, content: string, message: string): Promise<{ sha: string }> {

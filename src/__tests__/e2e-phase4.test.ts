@@ -113,6 +113,8 @@ class InMemoryGitPlatformAdapter implements GitPlatformAdapter {
   async createCommit(_message: string, _treeSha: string, _parentShas: string[]): Promise<GitCommit> { return { sha: 'commit123', treeSha: 'tree123' }; }
   async getCommit(_sha: string): Promise<GitCommit> { return { sha: _sha, treeSha: 'tree123' }; }
   async createFileContent(_path: string, _content: string, _message: string): Promise<{ sha: string }> { return { sha: 'file123' }; }
+  async listReviews(_prNumber: number) { return []; }
+  async listReviewComments(_prNumber: number) { return []; }
 
   addMockComment(issueNumber: number, author: string, body: string) {
     const comments = this.comments.get(issueNumber) ?? [];
@@ -274,13 +276,13 @@ describe('Phase 4 E2E: GitHub Issue-based Approval', () => {
 
     expect(result.completedAt).toBeDefined();
 
-    // Gate Issues were created and closed
-    const gateIssues = handler.getCreatedIssues();
-    expect(gateIssues.size).toBe(2); // product_owner + ui_designer
+    // Gate Issues were created and closed (fallback Issue-based flow since no PR)
+    // Find review issues by title pattern
+    const reviewIssues = Array.from(adapter.issues.entries())
+      .filter(([_, i]) => i.title.includes('review:'));
+    expect(reviewIssues.length).toBe(2); // product_owner + ui_designer
 
-    // Gate Issues should be closed with approved label
-    for (const [_key, issueNumber] of gateIssues) {
-      const issue = adapter.issues.get(issueNumber)!;
+    for (const [_, issue] of reviewIssues) {
       expect(issue.state).toBe('closed');
       expect(issue.labels).toContain('status:approved');
     }

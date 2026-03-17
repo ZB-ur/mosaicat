@@ -16,6 +16,7 @@ import { createSnapshot } from './snapshot.js';
 import { eventBus } from './event-bus.js';
 import { Logger } from './logger.js';
 import type { InteractionHandler } from './interaction-handler.js';
+import { GitHubInteractionHandler } from './github-interaction-handler.js';
 import { CLIInteractionHandler } from './interaction-handler.js';
 import type { GitPlatformAdapter } from '../adapters/types.js';
 import { buildIssueBody } from './security.js';
@@ -76,6 +77,12 @@ export class Orchestrator {
             const files = (agentConfig.outputs ?? []).map((o: string) => `.mosaic/artifacts/${o}`);
             const issueNumber = this.stageIssues.get(`${runId}:${stage}`);
             await this.publisher.commitStage(stage, files, issueNumber);
+
+            // Notify handler about PR (created lazily after first commit)
+            const pr = this.publisher.getPR();
+            if (pr && this.handler instanceof GitHubInteractionHandler) {
+              this.handler.setPR(pr.number);
+            }
           } catch (err) {
             logger.pipeline('warn', 'git-publisher:commit-failed', {
               stage,
