@@ -44,6 +44,8 @@ export class Logger {
     if (!stream) {
       const filePath = path.join(this.logDir, file);
       stream = fs.createWriteStream(filePath, { flags: 'a' });
+      // Suppress ENOENT errors when log directory is cleaned up (e.g. test teardown)
+      stream.on('error', () => {});
       this.streams.set(file, stream);
     }
     return stream;
