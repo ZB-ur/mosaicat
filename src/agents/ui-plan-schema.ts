@@ -12,8 +12,15 @@ export const UIPlanComponentSchema = z.object({
   priority: z.number(),
 });
 
+export const UIPlanModuleSchema = z.object({
+  name: z.string(),       // e.g. "atomic", "business", "pages"
+  label: z.string(),      // e.g. "基础原子组件", "业务组件"
+  components: z.array(z.string()), // component names in this module
+});
+
 export const UIPlanSchema = z.object({
   design_tokens: z.record(z.string(), z.string()).optional(),
+  modules: z.array(UIPlanModuleSchema).optional(),
   components: z.array(UIPlanComponentSchema),
 });
 
