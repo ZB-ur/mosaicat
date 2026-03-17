@@ -32,6 +32,33 @@ export interface PRRef {
   branch: string;
 }
 
+// ── Git Data API types ──
+
+export interface GitRef {
+  ref: string;       // e.g. "refs/heads/mosaicat/run-123"
+  sha: string;       // commit SHA the ref points to
+}
+
+export interface GitBlob {
+  sha: string;
+}
+
+export interface GitTreeEntry {
+  path: string;
+  mode: '100644' | '100755' | '040000';  // file, executable, directory
+  type: 'blob' | 'tree';
+  sha: string;
+}
+
+export interface GitTree {
+  sha: string;
+}
+
+export interface GitCommit {
+  sha: string;
+  treeSha: string;
+}
+
 export interface GitPlatformAdapter {
   createIssue(params: CreateIssueParams): Promise<IssueRef>;
   addComment(issueNumber: number, body: string): Promise<void>;
@@ -42,4 +69,13 @@ export interface GitPlatformAdapter {
   getIssue(issueNumber: number): Promise<IssueDetails>;
   createPR(params: { title: string; body: string; head: string; base?: string; draft?: boolean }): Promise<PRRef>;
   markPRReady(prNumber: number): Promise<void>;
+
+  // ── Git Data API (for GitPublisher) ──
+  getRef(ref: string): Promise<GitRef>;
+  createRef(ref: string, sha: string): Promise<GitRef>;
+  updateRef(ref: string, sha: string): Promise<GitRef>;
+  createBlob(content: string, encoding: 'utf-8' | 'base64'): Promise<GitBlob>;
+  createTree(entries: GitTreeEntry[], baseTreeSha?: string): Promise<GitTree>;
+  createCommit(message: string, treeSha: string, parentShas: string[]): Promise<GitCommit>;
+  getCommit(sha: string): Promise<GitCommit>;
 }

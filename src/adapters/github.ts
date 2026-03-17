@@ -6,6 +6,11 @@ import type {
   IssueComment,
   IssueDetails,
   PRRef,
+  GitRef,
+  GitBlob,
+  GitTreeEntry,
+  GitTree,
+  GitCommit,
 } from './types.js';
 
 export class GitHubAdapter implements GitPlatformAdapter {
@@ -126,6 +131,61 @@ export class GitHubAdapter implements GitPlatformAdapter {
         }
       `, { id: pr.node_id });
     }
+  }
+
+  // ── Git Data API ──
+
+  async getRef(ref: string): Promise<GitRef> {
+    const { data } = await this.octokit.git.getRef({
+      owner: this.owner, repo: this.repo, ref,
+    });
+    return { ref: data.ref, sha: data.object.sha };
+  }
+
+  async createRef(ref: string, sha: string): Promise<GitRef> {
+    const { data } = await this.octokit.git.createRef({
+      owner: this.owner, repo: this.repo, ref, sha,
+    });
+    return { ref: data.ref, sha: data.object.sha };
+  }
+
+  async updateRef(ref: string, sha: string): Promise<GitRef> {
+    // ref for updateRef should NOT include "refs/" prefix
+    const shortRef = ref.startsWith('refs/') ? ref.slice(5) : ref;
+    const { data } = await this.octokit.git.updateRef({
+      owner: this.owner, repo: this.repo, ref: shortRef, sha,
+    });
+    return { ref: data.ref, sha: data.object.sha };
+  }
+
+  async createBlob(content: string, encoding: 'utf-8' | 'base64'): Promise<GitBlob> {
+    const { data } = await this.octokit.git.createBlob({
+      owner: this.owner, repo: this.repo, content, encoding,
+    });
+    return { sha: data.sha };
+  }
+
+  async createTree(entries: GitTreeEntry[], baseTreeSha?: string): Promise<GitTree> {
+    const { data } = await this.octokit.git.createTree({
+      owner: this.owner, repo: this.repo,
+      tree: entries.map((e) => ({ path: e.path, mode: e.mode, type: e.type, sha: e.sha })),
+      ...(baseTreeSha ? { base_tree: baseTreeSha } : {}),
+    });
+    return { sha: data.sha };
+  }
+
+  async createCommit(message: string, treeSha: string, parentShas: string[]): Promise<GitCommit> {
+    const { data } = await this.octokit.git.createCommit({
+      owner: this.owner, repo: this.repo, message, tree: treeSha, parents: parentShas,
+    });
+    return { sha: data.sha, treeSha: data.tree.sha };
+  }
+
+  async getCommit(sha: string): Promise<GitCommit> {
+    const { data } = await this.octokit.git.getCommit({
+      owner: this.owner, repo: this.repo, commit_sha: sha,
+    });
+    return { sha: data.sha, treeSha: data.tree.sha };
   }
 
   getOwner(): string { return this.owner; }

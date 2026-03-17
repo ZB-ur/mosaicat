@@ -1,30 +1,28 @@
-import { execFileSync } from 'node:child_process';
-import type { GitPlatformAdapter, PRRef } from '../adapters/types.js';
-import { eventBus } from './event-bus.js';
-
-function git(...args: string[]): string {
-  return execFileSync('git', args, { encoding: 'utf-8' }).trim();
-}
+import fs from 'node:fs';
+import path from 'node:path';
+import type { GitPlatformAdapter, PRRef, GitTreeEntry } from '../adapters/types.js';
 
 export class GitPublisher {
   private adapter: GitPlatformAdapter;
   private branch: string | null = null;
   private prRef: PRRef | null = null;
+  private headSha: string | null = null; // current commit SHA on our branch
 
   constructor(adapter: GitPlatformAdapter) {
     this.adapter = adapter;
   }
 
-  /** Create branch and Draft PR at pipeline start. Returns branch name. */
+  /** Create branch via API and Draft PR at pipeline start. Returns branch name. */
   async init(runId: string, title: string): Promise<string> {
     const timestamp = runId.replace('run-', '');
     this.branch = `mosaicat/run-${timestamp}`;
 
-    // Create and push branch
-    git('checkout', '-b', this.branch);
-    // Create an initial empty commit so the branch exists on remote
-    git('commit', '--allow-empty', '-m', `chore: init pipeline ${runId}`);
-    git('push', '-u', 'origin', this.branch);
+    // Get main branch HEAD SHA
+    const mainRef = await this.adapter.getRef('heads/main');
+    this.headSha = mainRef.sha;
+
+    // Create branch ref pointing to same commit
+    await this.adapter.createRef(`refs/heads/${this.branch}`, this.headSha);
 
     // Create Draft PR
     this.prRef = await this.adapter.createPR({
@@ -37,42 +35,49 @@ export class GitPublisher {
     return this.branch;
   }
 
-  /** Commit stage artifacts and push */
+  /** Commit stage artifacts via API: read files → create blobs → tree → commit → update ref */
   async commitStage(stage: string, files: string[], issueNumber?: number): Promise<void> {
-    if (!this.branch) return;
+    if (!this.branch || !this.headSha) return;
 
-    // Stage files
-    for (const file of files) {
-      try {
-        git('add', file);
-      } catch {
-        // File may not exist (e.g. screenshots skipped)
-      }
+    // Read files from disk and create blobs
+    const treeEntries: GitTreeEntry[] = [];
+    for (const filePath of files) {
+      const content = this.readFileAsBase64(filePath);
+      if (content === null) continue; // file doesn't exist
+
+      const blob = await this.adapter.createBlob(content, 'base64');
+      treeEntries.push({
+        path: filePath,
+        mode: '100644',
+        type: 'blob',
+        sha: blob.sha,
+      });
     }
 
-    // Check if there's anything to commit
-    try {
-      git('diff', '--cached', '--quiet');
-      // No changes staged
-      return;
-    } catch {
-      // Changes exist — proceed with commit
-    }
+    if (treeEntries.length === 0) return; // nothing to commit
 
+    // Get the tree SHA from the current HEAD commit (createTree needs a tree SHA, not commit SHA)
+    const parentCommit = await this.adapter.getCommit(this.headSha);
+    const tree = await this.adapter.createTree(treeEntries, parentCommit.treeSha);
+
+    // Create commit
     const issueRef = issueNumber ? ` (#${issueNumber})` : '';
-    git('commit', '-m', `feat(${stage}): add ${stage} artifacts${issueRef}`);
-    git('push', 'origin', this.branch);
+    const commit = await this.adapter.createCommit(
+      `feat(${stage}): add ${stage} artifacts${issueRef}`,
+      tree.sha,
+      [this.headSha],
+    );
+
+    // Update branch ref
+    await this.adapter.updateRef(`refs/heads/${this.branch}`, commit.sha);
+    this.headSha = commit.sha;
   }
 
   /** Update PR body and mark ready for review at pipeline end */
   async publish(prBody: string): Promise<PRRef | null> {
     if (!this.prRef) return null;
 
-    // Update PR body — use issue comment since REST can't update body easily
-    // Actually, we can update via addComment on the PR (PRs are issues in GitHub)
     await this.adapter.addComment(this.prRef.number, prBody);
-
-    // Mark as ready for review
     await this.adapter.markPRReady(this.prRef.number);
 
     return this.prRef;
@@ -84,5 +89,16 @@ export class GitPublisher {
 
   getPR(): PRRef | null {
     return this.prRef;
+  }
+
+  /** Read a file from disk and return base64-encoded content, or null if not found */
+  private readFileAsBase64(filePath: string): string | null {
+    try {
+      const resolved = path.resolve(filePath);
+      const buffer = fs.readFileSync(resolved);
+      return buffer.toString('base64');
+    } catch {
+      return null;
+    }
   }
 }
