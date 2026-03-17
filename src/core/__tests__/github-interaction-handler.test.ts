@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { GitHubInteractionHandler } from '../github-interaction-handler.js';
-import type { GitPlatformAdapter, CreateIssueParams, IssueComment, IssueDetails } from '../../adapters/types.js';
+import type { GitPlatformAdapter, CreateIssueParams, IssueComment, IssueDetails, PRRef } from '../../adapters/types.js';
 import type { GitHubConfig } from '../types.js';
 import type { SecurityConfig } from '../security.js';
 
@@ -65,6 +65,12 @@ class InMemoryAdapter implements GitPlatformAdapter {
       createdAt: new Date().toISOString(),
     };
   }
+
+  async createPR(params: { title: string; body: string; head: string; base?: string; draft?: boolean }): Promise<PRRef> {
+    return { number: 999, url: 'https://example.com/pulls/999', branch: params.head };
+  }
+
+  async markPRReady(_prNumber: number): Promise<void> {}
 
   // Test helper: simulate a user comment
   simulateComment(issueNumber: number, author: string, body: string) {

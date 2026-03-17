@@ -19,12 +19,14 @@ import type { InteractionHandler } from './interaction-handler.js';
 import { CLIInteractionHandler } from './interaction-handler.js';
 import type { GitPlatformAdapter } from '../adapters/types.js';
 import { buildIssueBody } from './security.js';
+import { GitPublisher } from './git-publisher.js';
 
 export class Orchestrator {
   private pipelineConfig: PipelineConfig;
   private agentsConfig: AgentsConfig;
   private handler: InteractionHandler;
   private adapter?: GitPlatformAdapter;
+  private publisher?: GitPublisher;
   private stageIssues = new Map<string, number>();
 
   constructor(handler?: InteractionHandler, adapter?: GitPlatformAdapter) {
@@ -47,9 +49,38 @@ export class Orchestrator {
     logger.pipeline('info', 'pipeline:start', { runId, instruction });
     eventBus.emit('pipeline:start', runId);
 
+    // Initialize GitPublisher for GitHub mode
+    if (this.adapter) {
+      this.publisher = new GitPublisher(this.adapter);
+      try {
+        await this.publisher.init(runId, instruction.slice(0, 80));
+      } catch (err) {
+        // Git publisher init failure is non-fatal — continue without it
+        logger.pipeline('warn', 'git-publisher:init-failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        this.publisher = undefined;
+      }
+    }
+
     try {
       for (const stage of STAGE_ORDER) {
         await this.executeStage(pipelineRun, stage, provider, logger);
+
+        // Commit stage artifacts to PR branch
+        if (this.publisher) {
+          try {
+            const agentConfig = this.agentsConfig.agents[stage];
+            const files = (agentConfig.outputs ?? []).map((o: string) => `.mosaic/artifacts/${o}`);
+            const issueNumber = this.stageIssues.get(`${runId}:${stage}`);
+            await this.publisher.commitStage(stage, files, issueNumber);
+          } catch (err) {
+            logger.pipeline('warn', 'git-publisher:commit-failed', {
+              stage,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
       }
 
       // Post-run evolution analysis
@@ -59,6 +90,18 @@ export class Orchestrator {
 
       pipelineRun.completedAt = new Date().toISOString();
       await this.createSummaryIssue(runId);
+
+      // Publish PR (mark ready for review)
+      if (this.publisher) {
+        try {
+          await this.publisher.publish(`## Pipeline Complete\n\nRun: ${runId}`);
+        } catch (err) {
+          logger.pipeline('warn', 'git-publisher:publish-failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
       logger.pipeline('info', 'pipeline:complete', { runId });
       eventBus.emit('pipeline:complete', runId);
     } catch (err) {
