@@ -14,16 +14,36 @@ import type {
   PRReview,
   PRReviewComment,
 } from './types.js';
+import type { AuthConfig } from '../auth/types.js';
+import { getInstallationToken } from '../auth/token-service.js';
+import { loadCachedAuth } from '../auth/auth-store.js';
+import { listInstallations } from '../auth/token-service.js';
+
+export type TokenProvider = string | (() => Promise<string>);
 
 export class GitHubAdapter implements GitPlatformAdapter {
   private octokit: Octokit;
+  private tokenProvider: TokenProvider | null;
   private owner: string;
   private repo: string;
 
-  constructor(params: { token: string; owner: string; repo: string }) {
-    this.octokit = new Octokit({ auth: params.token });
+  constructor(params: { token: TokenProvider; owner: string; repo: string }) {
+    this.tokenProvider = typeof params.token === 'function' ? params.token : null;
+    const initialToken = typeof params.token === 'string' ? params.token : '';
+    this.octokit = new Octokit({ auth: initialToken });
     this.owner = params.owner;
     this.repo = params.repo;
+  }
+
+  /**
+   * Refresh the Octokit instance with a fresh token from the provider.
+   * Call before long-running operations to ensure the token is still valid.
+   */
+  async refreshToken(): Promise<void> {
+    if (this.tokenProvider) {
+      const token = await this.tokenProvider();
+      this.octokit = new Octokit({ auth: token });
+    }
   }
 
   async createIssue(params: CreateIssueParams): Promise<IssueRef> {
@@ -230,15 +250,34 @@ export class GitHubAdapter implements GitPlatformAdapter {
   getRepo(): string { return this.repo; }
 }
 
-export function createGitHubAdapter(): GitHubAdapter {
-  const token = process.env.GITHUB_TOKEN;
-  const repoSlug = process.env.MOSAIC_GITHUB_REPO;
+/**
+ * Create adapter from resolved AuthConfig.
+ * Uses a token provider that auto-refreshes installation tokens before expiry.
+ */
+export function createGitHubAdapterFromAuth(config: AuthConfig): GitHubAdapter {
+  let currentToken = config.installationToken;
+  let expiresAt = new Date(config.installationTokenExpiresAt).getTime();
 
-  if (!token) throw new Error('GITHUB_TOKEN environment variable is required');
-  if (!repoSlug) throw new Error('MOSAIC_GITHUB_REPO environment variable is required (format: owner/repo)');
+  const tokenProvider: TokenProvider = async () => {
+    // Refresh if within 5 minutes of expiry
+    if (Date.now() > expiresAt - 5 * 60 * 1000) {
+      const cached = loadCachedAuth();
+      if (!cached) throw new Error('Auth expired. Run `mosaicat login` again.');
+      const installations = await listInstallations(cached.userToken);
+      const target = installations
+        .flatMap((i) => i.repositories.map((r) => ({ installationId: i.id, fullName: r.full_name })))
+        .find((r) => r.fullName === `${config.owner}/${config.repo}`);
+      if (!target) throw new Error('Installation no longer found for this repository.');
+      const result = await getInstallationToken(target.installationId, cached.userToken);
+      currentToken = result.token;
+      expiresAt = new Date(result.expiresAt).getTime();
+    }
+    return currentToken;
+  };
 
-  const [owner, repo] = repoSlug.split('/');
-  if (!owner || !repo) throw new Error('MOSAIC_GITHUB_REPO must be in format: owner/repo');
-
-  return new GitHubAdapter({ token, owner, repo });
+  return new GitHubAdapter({
+    token: tokenProvider,
+    owner: config.owner,
+    repo: config.repo,
+  });
 }

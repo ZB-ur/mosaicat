@@ -5,9 +5,9 @@ import { Orchestrator } from './orchestrator.js';
 import { DeferredInteractionHandler } from './interaction-handler.js';
 import type { InteractionHandler } from './interaction-handler.js';
 import { GitHubInteractionHandler } from './github-interaction-handler.js';
-import { createGitHubAdapter } from '../adapters/github.js';
+import { createGitHubAdapterFromAuth } from '../adapters/github.js';
 import { loadSecurityConfig } from './security.js';
-import { validateGitHubEnv } from './security.js';
+import { resolveGitHubAuth } from '../auth/resolve-auth.js';
 import type { GitPlatformAdapter } from '../adapters/types.js';
 
 export type RunState =
@@ -50,16 +50,26 @@ export class RunManager {
       fs.readFileSync('config/pipeline.yaml', 'utf-8')
     ) as PipelineConfig;
 
-    const useGitHub = pipelineConfig.github?.enabled && validateGitHubEnv().valid;
+    let useGitHub = false;
     let handler: InteractionHandler;
     let deferredHandler: DeferredInteractionHandler | undefined;
     let adapter: GitPlatformAdapter | undefined;
 
-    if (useGitHub) {
-      adapter = createGitHubAdapter();
-      const securityConfig = loadSecurityConfig(pipelineConfig);
-      handler = new GitHubInteractionHandler(adapter, pipelineConfig.github, securityConfig);
-    } else {
+    if (pipelineConfig.github?.enabled) {
+      try {
+        const authConfig = await resolveGitHubAuth();
+        adapter = createGitHubAdapterFromAuth(authConfig);
+        await (adapter as import('../adapters/github.js').GitHubAdapter).refreshToken();
+        const securityConfig = loadSecurityConfig(pipelineConfig, authConfig.userLogin);
+        handler = new GitHubInteractionHandler(adapter, pipelineConfig.github, securityConfig);
+        useGitHub = true;
+      } catch {
+        // Fall back to deferred handler if auth fails
+        useGitHub = false;
+      }
+    }
+
+    if (!useGitHub) {
       deferredHandler = new DeferredInteractionHandler();
       handler = this.createTrackedHandler(deferredHandler, id);
     }

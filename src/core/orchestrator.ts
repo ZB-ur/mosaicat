@@ -19,10 +19,31 @@ import type { InteractionHandler } from './interaction-handler.js';
 import { GitHubInteractionHandler } from './github-interaction-handler.js';
 import { CLIInteractionHandler } from './interaction-handler.js';
 import type { GitPlatformAdapter } from '../adapters/types.js';
-import { buildIssueBody } from './security.js';
+import { buildIssueBody, buildStageIssueTitle, buildSummaryIssueTitle } from './security.js';
+import type { StageIssueParams } from './security.js';
 import { GitPublisher } from './git-publisher.js';
 import { generatePRBody } from './pr-body-generator.js';
+import { extractManifestSummary } from './manifest.js';
 import type { LLMUsage } from './llm-provider.js';
+
+const AGENT_DESC: Record<StageName, string> = {
+  researcher: '市场调研 & 竞品分析',
+  product_owner: '产品需求文档',
+  ux_designer: 'UX 流程 & 组件清单',
+  api_designer: 'API 规范设计',
+  ui_designer: 'React 组件 & 截图',
+  validator: '交叉验证报告',
+};
+
+interface StageMetrics {
+  startTime: number;
+  usage?: LLMUsage;
+  hadClarification: boolean;
+  wasRejected: boolean;
+  commitSha?: string;
+  clarificationQA?: { question: string; answer: string };
+  rejectionFeedback?: string;
+}
 
 export class Orchestrator {
   private pipelineConfig: PipelineConfig;
@@ -31,6 +52,7 @@ export class Orchestrator {
   private adapter?: GitPlatformAdapter;
   private publisher?: GitPublisher;
   private stageIssues = new Map<string, number>();
+  private stageMetrics = new Map<StageName, StageMetrics>();
 
   constructor(handler?: InteractionHandler, adapter?: GitPlatformAdapter) {
     this.pipelineConfig = yaml.load(
@@ -69,27 +91,6 @@ export class Orchestrator {
     try {
       for (const stage of STAGE_ORDER) {
         await this.executeStage(pipelineRun, stage, provider, logger);
-
-        // Commit stage artifacts to PR branch
-        if (this.publisher) {
-          try {
-            const agentConfig = this.agentsConfig.agents[stage];
-            const files = (agentConfig.outputs ?? []).map((o: string) => `.mosaic/artifacts/${o}`);
-            const issueNumber = this.stageIssues.get(`${runId}:${stage}`);
-            await this.publisher.commitStage(stage, files, issueNumber);
-
-            // Notify handler about PR (created lazily after first commit)
-            const pr = this.publisher.getPR();
-            if (pr && this.handler instanceof GitHubInteractionHandler) {
-              this.handler.setPR(pr.number);
-            }
-          } catch (err) {
-            logger.pipeline('warn', 'git-publisher:commit-failed', {
-              stage,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-        }
       }
 
       // Post-run evolution analysis
@@ -98,7 +99,7 @@ export class Orchestrator {
       }
 
       pipelineRun.completedAt = new Date().toISOString();
-      await this.createSummaryIssue(runId);
+      await this.createSummaryIssue(runId, instruction);
 
       // Publish PR (mark ready for review)
       if (this.publisher) {
@@ -147,6 +148,24 @@ export class Orchestrator {
     logger.pipeline('info', 'stage:start', { stage });
     eventBus.emit('stage:start', stage, run.id);
 
+    // Initialize metrics for this stage (only on first entry, not retries)
+    if (!this.stageMetrics.has(stage)) {
+      this.stageMetrics.set(stage, {
+        startTime: Date.now(),
+        hadClarification: false,
+        wasRejected: false,
+      });
+    }
+
+    // Listen for usage events for this stage
+    const usageHandler = (s: StageName, usage: LLMUsage) => {
+      if (s === stage) {
+        const metrics = this.stageMetrics.get(stage);
+        if (metrics) metrics.usage = usage;
+      }
+    };
+    eventBus.on('agent:usage', usageHandler);
+
     try {
       // Build context (artifact isolation)
       const task = { runId: run.id, stage, instruction: run.instruction };
@@ -154,6 +173,18 @@ export class Orchestrator {
 
       // Create and execute agent (with clarification handling)
       await this.executeAgent(run, stage, provider, logger, context);
+
+      // Commit stage artifacts before gate check (so reviewers can see them)
+      await this.commitStageArtifacts(stage, run.id, logger);
+
+      // Record commit SHA
+      const metrics = this.stageMetrics.get(stage);
+      if (metrics && this.publisher) {
+        metrics.commitSha = this.publisher.getLastCommitSha() ?? undefined;
+      }
+
+      // Post preview comment for stages with visual outputs (before gate check)
+      await this.postPreviewComment(stage, run.id, logger);
 
       // Gate check
       if (shouldAutoApprove(run, stageConfig)) {
@@ -171,6 +202,13 @@ export class Orchestrator {
           eventBus.emit('stage:approved', stage, run.id);
           transitionStage(run, stage, 'done');
         } else {
+          // Track rejection in metrics
+          const rejMetrics = this.stageMetrics.get(stage);
+          if (rejMetrics) {
+            rejMetrics.wasRejected = true;
+            rejMetrics.rejectionFeedback = gateResult.feedback;
+          }
+
           transitionStage(run, stage, 'rejected');
           eventBus.emit('stage:rejected', stage, run.id);
           logger.pipeline('info', 'stage:rejected', {
@@ -211,11 +249,13 @@ export class Orchestrator {
       eventBus.emit('snapshot:created', stage, run.id);
 
       // Create informational Issue on stage complete
-      await this.createStageIssue(stage, run.id);
+      eventBus.off('agent:usage', usageHandler);
+      await this.createStageIssue(stage, run);
 
       logger.pipeline('info', 'stage:complete', { stage });
       eventBus.emit('stage:complete', stage, run.id);
     } catch (err) {
+      eventBus.off('agent:usage', usageHandler);
       // ClarificationNeeded is handled inside executeAgent, not here
       const message = err instanceof Error ? err.message : String(err);
       const stageStatus = run.stages[stage];
@@ -243,6 +283,107 @@ export class Orchestrator {
     }
   }
 
+  private async commitStageArtifacts(stage: StageName, runId: string, logger: Logger): Promise<void> {
+    if (!this.publisher) return;
+    try {
+      const agentConfig = this.agentsConfig.agents[stage];
+      const files = (agentConfig.outputs ?? []).map((o: string) => `.mosaic/artifacts/${o}`);
+      const issueNumber = this.stageIssues.get(`${runId}:${stage}`);
+      await this.publisher.commitStage(stage, files, issueNumber);
+
+      // Notify handler about PR (created lazily after first commit)
+      const pr = this.publisher.getPR();
+      if (pr && this.handler instanceof GitHubInteractionHandler) {
+        this.handler.setPR(pr.number);
+      }
+    } catch (err) {
+      logger.pipeline('warn', 'git-publisher:commit-failed', {
+        stage,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Post a PR comment with embedded screenshots and preview links for visual stages.
+   * Called after commitStageArtifacts, before gate check, so reviewers can see the output.
+   */
+  private async postPreviewComment(stage: StageName, _runId: string, logger: Logger): Promise<void> {
+    if (!this.adapter || !this.publisher) return;
+    const pr = this.publisher.getPR();
+    if (!pr) return;
+
+    // Only post for ui_designer (has screenshots + previews)
+    if (stage !== 'ui_designer') return;
+
+    const adapterAny = this.adapter as { getOwner?: () => string; getRepo?: () => string };
+    const owner = adapterAny.getOwner?.() ?? '';
+    const repo = adapterAny.getRepo?.() ?? '';
+    const branch = this.publisher.getBranch() ?? '';
+    if (!owner || !repo || !branch) return;
+
+    try {
+      const lines: string[] = ['## 🎨 UIDesigner — Component Preview', ''];
+
+      // Screenshots
+      const screenshotsDir = '.mosaic/artifacts/screenshots';
+      const screenshots = this.safeReadDir(screenshotsDir).filter(f => f.endsWith('.png'));
+      if (screenshots.length > 0) {
+        lines.push('### Screenshots');
+        lines.push('');
+        for (const file of screenshots) {
+          const name = file.replace('.png', '');
+          const imgUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/.mosaic/artifacts/screenshots/${file}`;
+          lines.push(`<details><summary>${name}</summary>`);
+          lines.push('');
+          lines.push(`![${name}](${imgUrl})`);
+          lines.push('');
+          lines.push('</details>');
+          lines.push('');
+        }
+      }
+
+      // Interactive preview links
+      const previewsDir = '.mosaic/artifacts/previews';
+      const previews = this.safeReadDir(previewsDir).filter(f => f.endsWith('.html'));
+      if (previews.length > 0) {
+        lines.push('### Interactive Previews');
+        lines.push('');
+        for (const file of previews) {
+          const name = file.replace('.html', '');
+          const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/.mosaic/artifacts/previews/${file}`;
+          const previewUrl = `https://htmlpreview.github.io/?${rawUrl}`;
+          lines.push(`- [${name}](${previewUrl})`);
+        }
+        lines.push('');
+      }
+
+      // Gallery link
+      if (fs.existsSync('.mosaic/artifacts/gallery.html')) {
+        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/.mosaic/artifacts/gallery.html`;
+        const galleryUrl = `https://htmlpreview.github.io/?${rawUrl}`;
+        lines.push(`### [View Gallery](${galleryUrl})`);
+        lines.push('');
+      }
+
+      if (screenshots.length > 0 || previews.length > 0) {
+        await this.adapter.addComment(pr.number, lines.join('\n'));
+      }
+    } catch (err) {
+      logger.pipeline('warn', 'preview-comment:failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  private safeReadDir(dir: string): string[] {
+    try {
+      return fs.readdirSync(dir);
+    } catch {
+      return [];
+    }
+  }
+
   private async executeAgent(
     run: PipelineRun,
     stage: StageName,
@@ -266,12 +407,18 @@ export class Orchestrator {
       }
 
       // Handle clarification: one round
+      const clMetrics = this.stageMetrics.get(stage);
+      if (clMetrics) clMetrics.hadClarification = true;
+
       transitionStage(run, stage, 'awaiting_clarification');
       logger.pipeline('info', 'stage:clarification', { stage, question: err.question });
 
       const answer = await this.handler.onClarification(
         stage, err.question, run.id, err.options, err.allowCustom
       );
+
+      // Record Q&A for issue report
+      if (clMetrics) clMetrics.clarificationQA = { question: err.question, answer };
 
       // Augment context with user answer
       context.inputArtifacts.set(
@@ -287,22 +434,67 @@ export class Orchestrator {
     }
   }
 
-  private async createStageIssue(stage: StageName, runId: string): Promise<void> {
+  private async createStageIssue(stage: StageName, run: PipelineRun): Promise<void> {
     if (!this.adapter) return;
 
     const agentConfig = this.agentsConfig.agents[stage];
+    const metrics = this.stageMetrics.get(stage);
+
+    // Extract manifest summary from disk (zero LLM cost)
+    const manifestName = (agentConfig.outputs ?? []).find((o: string) => o.endsWith('.manifest.json'));
+    const manifestSummary = manifestName ? extractManifestSummary(manifestName) : [];
+
+    // GitHub context for links
+    const adapterAny = this.adapter as { getOwner?: () => string; getRepo?: () => string };
+    const owner = adapterAny.getOwner?.() ?? '';
+    const repo = adapterAny.getRepo?.() ?? '';
+    const repoSlug = owner && repo ? `${owner}/${repo}` : undefined;
+    const branch = this.publisher?.getBranch() ?? undefined;
+    const prNumber = this.publisher?.getPR()?.number;
+
+    // Collect screenshot files for image embedding
+    const screenshots = this.collectScreenshots();
+
+    const params: StageIssueParams = {
+      agentId: stage,
+      agentName: agentConfig.name,
+      agentDesc: AGENT_DESC[stage],
+      taskRef: run.id,
+      instruction: run.instruction,
+      inputs: agentConfig.inputs ?? [],
+      outputs: agentConfig.outputs ?? [],
+      durationMs: metrics ? Date.now() - metrics.startTime : undefined,
+      usage: metrics?.usage,
+      retryCount: run.stages[stage].retryCount,
+      clarificationQA: metrics?.clarificationQA,
+      rejectionFeedback: metrics?.rejectionFeedback,
+      manifestSummary: manifestSummary.length > 0 ? manifestSummary : undefined,
+      screenshots: screenshots.length > 0 ? screenshots : undefined,
+      commitSha: metrics?.commitSha,
+      repoSlug,
+      branch,
+      prNumber,
+    };
+
     const issue = await this.adapter.createIssue({
-      title: `[${stage}] completed: ${runId}`,
-      body: buildIssueBody({
-        agentId: stage,
-        taskRef: runId,
-        outputs: agentConfig.outputs,
-      }),
+      title: buildStageIssueTitle(params),
+      body: buildIssueBody(params),
       labels: [`agent:${stage}`, 'status:completed'],
     });
 
-    this.stageIssues.set(`${runId}:${stage}`, issue.number);
-    eventBus.emit('issue:created', issue.number, stage, runId);
+    this.stageIssues.set(`${run.id}:${stage}`, issue.number);
+    eventBus.emit('issue:created', issue.number, stage, run.id);
+  }
+
+  private collectScreenshots(): string[] {
+    const dir = '.mosaic/artifacts/screenshots';
+    try {
+      return fs.readdirSync(dir)
+        .filter((f: string) => f.endsWith('.png'))
+        .map((f: string) => `screenshots/${f}`);
+    } catch {
+      return [];
+    }
   }
 
   private async closeRolledBackIssues(stage: StageName, runId: string): Promise<void> {
@@ -316,20 +508,25 @@ export class Orchestrator {
     eventBus.emit('issue:closed', issueNumber, stage, runId);
   }
 
-  private async createSummaryIssue(runId: string): Promise<void> {
+  private async createSummaryIssue(runId: string, instruction: string): Promise<void> {
     if (!this.adapter) return;
 
     const stageLinks = Array.from(this.stageIssues.entries())
       .filter(([key]) => key.startsWith(runId))
       .map(([key, num]) => {
-        const stage = key.split(':')[1];
-        return `- **${stage}**: #${num}`;
+        const stage = key.split(':')[1] as StageName;
+        const name = this.agentsConfig.agents[stage]?.name ?? stage;
+        const desc = AGENT_DESC[stage] ?? '';
+        return `- **${name}** ${desc} — #${num}`;
       })
       .join('\n');
 
+    const prRef = this.publisher?.getPR();
+    const prLine = prRef ? `\n**PR:** #${prRef.number}` : '';
+
     await this.adapter.createIssue({
-      title: `[pipeline] summary: ${runId}`,
-      body: `## Pipeline Summary\n\n**Run:** ${runId}\n\n### Stage Issues\n${stageLinks}\n\n---\n_Generated by Mosaicat pipeline_`,
+      title: buildSummaryIssueTitle(instruction),
+      body: `## Pipeline Summary\n\n**Run:** \`${runId}\`${prLine}\n**Instruction:** ${instruction}\n\n### Stages\n${stageLinks}\n\n---\n_Generated by [Mosaicat](https://github.com/ZB-ur/mosaicat) pipeline_`,
       labels: ['pipeline:summary'],
     });
   }

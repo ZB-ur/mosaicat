@@ -18,7 +18,7 @@
 | 文件 | Track | 职责 |
 |------|-------|------|
 | `src/core/artifact-presenter.ts` | T2 | OSC 8 终端超链接 + GitHub blob URL 格式化 |
-| `src/core/git-publisher.ts` | T3 | Git CLI 封装：分支、commit、push、Draft PR |
+| `src/core/git-publisher.ts` | T3 | GitHub API 封装（纯 API，无本地 git）：分支、commit、push、Draft PR |
 | `src/core/issue-manager.ts` | T4 | Stage/Step Issue 生命周期管理 |
 | `src/core/pr-body-generator.ts` | T5 | PR body 生成：截图、预览链接、token 统计 |
 
@@ -31,7 +31,64 @@
 | `GitPlatformAdapter` 新增 `createPR()` / `markPRReady()` | GitHub adapter + 测试 mock |
 | `DeferredInteractionHandler.reject()` 接受 feedback + retryComponents | RunManager + MCP tools |
 
+## 后续 Phase 记录
+
+| Phase | 目标 | PR | 状态 |
+|-------|------|----|------|
+| Phase 7 | GitPublisher API 化（去除本地 git 依赖） | #120 | :white_check_mark: Done |
+| Phase 8 | PR Review 审批流程（替代 Issue 审批） | #127 | :white_check_mark: Done |
+| Phase 9 | GitHub App Bot 认证（零配置 GitHub 模式） | #135 | :white_check_mark: Done |
+
+### Phase 7-8 接口变更
+
+| 变更 | 影响范围 |
+|------|----------|
+| `GitPlatformAdapter` 新增 Git Data API（getRef, createRef, createBlob, createTree, createCommit） | GitHub adapter + git-publisher |
+| `GitPlatformAdapter` 新增 PR Review API（listReviews, listReviewComments） | GitHub adapter + interaction-handler |
+| `GitPublisher` 改为纯 API 模式，不使用本地 git | orchestrator + 测试 |
+| `GitHubInteractionHandler` 新增 PR review 审批流程 | orchestrator + security |
+
+### Phase 9: GitHub App Bot 认证
+
+**问题**：个人 token 创建 PR → 用户是 author → 无法 approve 自己的 PR。且需 3 个环境变量。
+
+**方案**：GitHub App installation token（PR author = `mosaicat[bot]`）+ OAuth Device Flow（用户身份）+ Cloudflare Worker 后端（签发 token）。不保留 legacy 个人 token 模式——只有 App 模式能解决 author ≠ reviewer 的根本问题。
+
+**新增模块**：
+
+| 文件 | 职责 |
+|------|------|
+| `src/auth/types.ts` | AuthConfig, CachedAuth, InstallationInfo |
+| `src/auth/auth-store.ts` | `~/.mosaicat/auth.json` 持久化 |
+| `src/auth/oauth-device-flow.ts` | GitHub OAuth Device Flow |
+| `src/auth/token-service.ts` | 后端 API 通信（installations + token 交换） |
+| `src/auth/resolve-auth.ts` | 认证编排 + git remote 自动匹配 |
+| `backend/src/index.ts` | Cloudflare Worker 路由（Hono） |
+| `backend/src/auth.ts` | JWT 签名 + installation token 交换 |
+
+**接口变更**：
+
+| 变更 | 影响范围 |
+|------|----------|
+| `loadSecurityConfig()` 签名改为 `(config, initiatorLogin?)` | security + orchestrator + run-manager |
+| 删除 `validateGitHubEnv()`、`createGitHubAdapter()` | 所有调用方改为 `resolveGitHubAuth()` + `createGitHubAdapterFromAuth()` |
+| `GitHubAdapter` 构造函数接受 `TokenProvider`（支持自动刷新） | adapter + 测试 mock |
+| `index.ts` 新增 `login` / `logout` 命令 | CLI 入口 |
+
+### Phase 9 后续优化（Step 9-12）
+
+| Step | 改动 | 文件 |
+|------|------|------|
+| Step 9 | Clarification UX 优化：GitHub PR 评论展示预制选项，CLI 增强提示文案 | interaction-handler, github-interaction-handler, cli-progress |
+| Step 10 | Stage issue 内容丰富化：执行指标、commit 关联、clarification/rejection 标记 | security, orchestrator, git-publisher |
+| Step 11 | GitPublisher 修复：目录输出（components/、previews/）展开为具体文件 | git-publisher |
+| Step 12 | Stage issue 全面重设计：manifest 摘要、可点击 artifact 链接、过程记录、可折叠指标 | security, orchestrator, manifest |
+
+**新增导出**：
+- `manifest.ts`: `extractManifestSummary()` — 按 schema 提取人类可读摘要
+- `security.ts`: `buildStageIssueTitle()`, `buildSummaryIssueTitle()` — 可读的 issue 标题
+
 ## 验证
 
 - `npm run build` 通过
-- 274 tests / 46 test files 全部通过
+- 327 tests / 52 test files 全部通过（其中 9 个 pre-existing 失败：e2e + dist 过期 + token-service URL 不匹配）

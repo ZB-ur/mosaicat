@@ -54,21 +54,36 @@ export class GitHubInteractionHandler implements InteractionHandler {
 
   async onClarification(
     stage: StageName, question: string, runId: string,
-    _options?: ClarificationOption[], _allowCustom?: boolean
+    options?: ClarificationOption[], allowCustom?: boolean
   ): Promise<string> {
     if (!this.prNumber) {
       // No PR — fall back to Issue-based clarification
       return this.onClarificationViaIssue(stage, question, runId);
     }
 
-    // Post clarification question as PR comment
-    await this.adapter.addComment(this.prNumber, [
+    // Build comment body with options if available
+    const lines = [
       `## ❓ Clarification needed: **${stage}**`,
       '',
       question,
-      '',
-      'Please reply to this comment with your answer.',
-    ].join('\n'));
+    ];
+
+    if (options && options.length > 0) {
+      lines.push('', '### Options');
+      for (const opt of options) {
+        const desc = opt.description ? ` — ${opt.description}` : '';
+        lines.push(`- **${opt.label}**${desc}`);
+      }
+      if (allowCustom !== false) {
+        lines.push('', '_You can also reply with a custom answer._');
+      }
+      lines.push('', 'Reply with the option name (e.g. `' + options[0].label + '`) or your own answer.');
+    } else {
+      lines.push('', 'Please reply to this comment with your answer.');
+    }
+
+    // Post clarification question as PR comment
+    await this.adapter.addComment(this.prNumber, lines.join('\n'));
 
     // Poll for a reply comment (not a review)
     return this.pollForCommentReply(this.prNumber);
@@ -142,7 +157,8 @@ export class GitHubInteractionHandler implements InteractionHandler {
 
       for (const comment of comments) {
         if (!isTrustedActor(comment.author, this.securityConfig)) continue;
-        // Skip our own bot comments (they start with ##)
+        // Skip bot comments (from mosaicat[bot] or any [bot] account, or starting with ##)
+        if (comment.author.endsWith('[bot]')) continue;
         if (comment.body.startsWith('## ')) continue;
         return comment.body;
       }

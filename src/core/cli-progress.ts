@@ -141,6 +141,7 @@ export function attachCLIProgress(): () => void {
 
   on('stage:awaiting_human', (stage, _runId) => {
     console.log(`  ${YELLOW}⏳ waiting for approval...${RESET}`);
+    console.log(`  ${DIM}   Review the artifacts above, then answer the prompt below.${RESET}`);
   });
 
   on('stage:approved', (_stage, _runId) => {
