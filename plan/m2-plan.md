@@ -91,7 +91,7 @@
 ## 验证
 
 - `npm run build` 通过
-- 327 tests / 52 test files 全部通过（其中 9 个 pre-existing 失败：e2e + dist 过期 + token-service URL 不匹配）
+- 378 tests / 56 test files（367 passed, 11 failed in 7 files — pre-existing：e2e + dist 过期 + screenshot-renderer）
 
 ## Milestone 2 总结
 
