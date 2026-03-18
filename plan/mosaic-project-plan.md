@@ -94,7 +94,9 @@ Validator             → 交叉校验所有 Artifact 一致性
 | 设计团队 | UIDesigner | `prd.md` + `ux-flows.md` + `api-spec.yaml` | `components/` + `screenshots/` + `components.manifest.json` | 关闭 | manual |
 | 质量 | Validator | 所有 `*.manifest.json` | `validation-report.md` | 关闭 | auto |
 
-### 完整版本（Phase 2+）
+### 完整版本（Milestone 3）
+
+> 上述团队规划对应 Milestone 3。当前 M1（MVP）和 M2（可观测性 + 交付）已完成。
 
 ```
 产品团队 → 设计团队 → 研发团队 → 测试团队 → SRE 团队
@@ -595,8 +597,9 @@ Agent 发现可复用 pattern → 生成 Skill 提案
 | 语言 | TypeScript / Node.js |
 | MCP SDK | @modelcontextprotocol/sdk |
 | LLM 调用 (MVP) | Claude CLI (`claude --print`) + PQueue 串行队列 |
-| LLM 调用 (Phase 2) | @anthropic-ai/sdk（有 API Key 时自动切换） |
+| LLM 调用 (API) | @anthropic-ai/sdk |
 | Git 操作 | @octokit/rest（GitHub 适配器） |
+| 后端 | Cloudflare Workers + Hono（GitHub App 认证） |
 | UI 输出 | React + Tailwind CSS + Playwright（截图） |
 | 工件校验 | zod |
 | 向量检索 (planned) | sqlite-vec（SQLite 扩展，Phase 2） |
@@ -630,11 +633,15 @@ src/
 │   ├── cli-progress.ts          # 终端进度显示
 │   ├── run-manager.ts           # MCP 运行管理
 │   ├── interaction-handler.ts   # 用户交互抽象（CLI/Deferred）
-│   ├── github-interaction-handler.ts  # GitHub 交互实现
+│   ├── github-interaction-handler.ts  # GitHub PR Review 交互实现
 │   ├── security.ts              # 信任模型 + 安全校验
 │   ├── screenshot-renderer.ts   # Playwright 截图渲染
 │   ├── snapshot.ts              # 阶段快照与回退
-│   └── logger.ts                # JSONL 日志系统
+│   ├── logger.ts                # JSONL 日志系统
+│   ├── artifact-presenter.ts   # OSC 8 终端超链接 + GitHub blob URL
+│   ├── git-publisher.ts        # GitHub API 封装（纯 API，无本地 git）
+│   ├── issue-manager.ts        # Stage/Step Issue 生命周期管理
+│   └── pr-body-generator.ts    # PR body 生成（截图 + 预览 + 统计）
 ├── providers/
 │   ├── claude-cli.ts            # Claude CLI Provider
 │   └── anthropic-sdk.ts         # Anthropic SDK Provider
@@ -650,6 +657,12 @@ src/
 │   ├── api-designer.ts
 │   ├── ui-designer.ts
 │   └── validator.ts
+├── auth/
+│   ├── types.ts                # 认证域类型（AuthConfig, CachedAuth, InstallationInfo）
+│   ├── auth-store.ts           # ~/.mosaicat/auth.json 持久化
+│   ├── oauth-device-flow.ts    # GitHub OAuth Device Flow
+│   ├── token-service.ts        # 后端 API 通信（installations + token 交换）
+│   └── resolve-auth.ts         # 认证编排（GitHub App 认证 + git remote 匹配）
 ├── evolution/
 │   ├── types.ts                 # 进化域类型定义
 │   ├── engine.ts                # 进化引擎
@@ -669,6 +682,13 @@ config/
 ├── api-designer.md
 ├── ui-designer.md
 └── validator.md
+
+backend/
+├── src/
+│   ├── index.ts               # Cloudflare Worker（Hono 路由）
+│   └── auth.ts                # JWT 签名 + installation token 交换
+├── wrangler.toml
+└── package.json
 
 .mosaic/                        # 运行时数据（git ignored）
 ├── artifacts/                  # 当前 Pipeline 的工件产出（含 manifest）
@@ -707,13 +727,55 @@ config/
 
 ## 实施节奏
 
-| 阶段 | 范围 | 里程碑 |
+### Milestone 1: MVP — idea → 设计稿 + API 规范（✅ COMPLETE）
+
+| 阶段 | 范围 | PR | 状态 |
+|---|---|---|---|
+| Phase 1 | 核心引擎：Pipeline 状态机 + Agent 基类 + CLI Provider + 事件总线 + 日志系统 | #24 | ✅ |
+| Phase 2 | 真实 LLM Agent：Researcher / PO / UX / API / UI / Validator + Prompt + 澄清 | #33 | ✅ |
+| Phase 3 | SDK + MCP + 截图：Anthropic SDK Provider、MCP Server、Playwright 渲染 | #41 | ✅ |
+| Phase 4 | 安全 + 审批 + GitHub：信任模型、GitHub Issue 持久化、人工门控 | #56 | ✅ |
+| Phase 5 | 自进化：进化引擎 + Prompt 版本管理 + Skill 管理 | #67 | ✅ |
+| Phase 5.5 | 上下文优化：CLAUDE.md 模块速查表 | #75 | ✅ |
+| Phase 5.6 | UIDesigner 渲染优化：设计系统 + 预览体验 | #83 | ✅ |
+| Phase 5.7 | UIDesigner 多轮架构：Planner → Builder + Validator 文件完整性 + 结构化澄清 | #94 | ✅ |
+
+### Milestone 2: 可观测性 + 产出交付 + 审批反馈（✅ COMPLETE）
+
+> 详细文档：`plan/m2-plan.md`
+
+| 阶段 | 范围 | PR | 状态 |
+|---|---|---|---|
+| M2-Phase 1 (T1) | Token 可观测：每阶段 + 总计 token 用量和费用 | #97 | ✅ |
+| M2-Phase 2 (T2) | 产出链接：CLI / GitHub 模式下点击直达产出文件 | #100 | ✅ |
+| M2-Phase 3 (T3) | GitHub PR 流程：pipeline 产出自动 commit → push → Draft PR | #103 | ✅ |
+| M2-Phase 4 (T6) | 审批反馈 + 部分重试：拒绝时传递反馈，UIDesigner 部分组件重做 | #107 | ✅ |
+| M2-Phase 5 (T4) | Issue 分层 + Step 模块化：stage issue → step issue 内聚分组 | #110 | ✅ |
+| M2-Phase 6 (T5) | PR 预览：截图嵌入 PR body + 交互预览链接 | #113 | ✅ |
+| Phase 7 | GitPublisher API 化：去除本地 git 依赖，纯 GitHub API 操作 | #120 | ✅ |
+| Phase 8 | PR Review 审批流程：替代 Issue 审批，用户标准 Review 操作 | #127 | ✅ |
+| Phase 9 | GitHub App Bot 认证：零配置 GitHub 模式 + OAuth Device Flow + Cloudflare Worker 后端 | #135 | ✅ |
+
+### Milestone 3（规划中）: Spec 体系升级 + 研发团队
+
+> 详细计划将在 `plan/m3-plan.md` 中展开。以下为方向性规划。
+
+**Spec 体系升级（M2 → M3 桥梁）：**
+
+| 改进 | 说明 | 价值 |
 |---|---|---|
-| Phase 1 ✅ | 核心引擎：Pipeline 状态机 + Agent 基类 + CLI Provider + 事件总线 + 日志系统 | 能跑通空 Pipeline + 日志输出 |
-| Phase 2 ✅ | 产品团队：Researcher + ProductOwner Agent + 意图澄清 | 输入指令 → 澄清 → 输出 PRD |
-| Phase 3 ✅ | 设计团队：UXDesigner + APIDesigner + UIDesigner + Validator | 输入 PRD → 输出截图 + API 规范 + 校验报告 |
-| Phase 4 ✅ | 安全 + 审批：信任验证 + GitHub Issue 持久化 + 人工门控 | 完整审批流程可用 |
-| Phase 5 ✅ | 自进化：进化引擎 + Prompt 版本管理 + Skill 管理 | Agent 可提出进化提案 + 创建 Skill |
+| Spec ID 追溯链 | Feature ID 贯穿 PRD → UX → API → Component → Test，精确覆盖率校验 | Validator 零幻觉 + 研发/测试团队精确引用 |
+| 条件 Stage 跳过 | `pipeline.yaml` 支持 `skip_when`（如纯前端跳过 APIDesigner） | 简单项目更快完成 |
+| Pipeline DAG | 状态机从线性序列升级为有向无环图，支持并行阶段组 | 研发 + 测试并行执行 |
+| Context 切片 | 按 feature 切片注入上下文，Agent 只看相关 spec 片段 | 大型项目 token 效率 |
+
+**新增 Agent 团队：**
+
+| 团队 | Agents | 产出物 |
+|---|---|---|
+| 研发团队 | TechLead, Coder×N, Reviewer | 技术方案、代码、PR、Code Review |
+| 测试团队 | QALead, Tester, SecurityAuditor | 测试计划、测试代码、安全扫描报告 |
+| SRE 团队 | DevOps, ReleaseManager, Monitor | CI/CD、部署配置、监控配置 |
 
 ---
 

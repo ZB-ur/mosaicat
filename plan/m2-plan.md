@@ -1,6 +1,6 @@
 # Mosaicat Milestone 2 — 可观测性 + 产出交付 + 审批反馈
 
-> **状态: IMPLEMENTED** — 所有 6 个 Track 已完成，代码已合并。
+> **状态: COMPLETE** — 所有 Track + Phase 7-9 已完成并合并。Milestone 2 关闭。
 
 ## Track 实施状态
 
@@ -92,3 +92,21 @@
 
 - `npm run build` 通过
 - 327 tests / 52 test files 全部通过（其中 9 个 pre-existing 失败：e2e + dist 过期 + token-service URL 不匹配）
+
+## Milestone 2 总结
+
+**关键成果**：
+- **Token 可观测性** — 每阶段 + 总计 token/费用实时显示
+- **GitHub PR 全流程** — 纯 API 模式（无本地 git 副作用）+ Draft PR → Review → Approve
+- **PR Review 审批** — 替代 Issue 审批，用户标准 GitHub Review 操作
+- **GitHub App Bot 认证** — 零配置，PR author = mosaicat[bot]，用户可自审批
+- **Stage Issue 富信息** — manifest 摘要、commit 链接、截图嵌入、可折叠执行指标
+
+**新增模块**：11 个文件（4 core + 5 auth + 2 backend）
+
+**接口影响**：
+- `LLMProvider.call()` 返回 `LLMResponse`（含 usage）而非 `string`
+- `InteractionHandler.onManualGate()` 返回 `GateResult`（含 feedback）而非 `boolean`
+- `GitPlatformAdapter` 新增 Git Data API + PR Review API + PR Create/Ready
+- `GitHubAdapter` 构造函数接受 `TokenProvider`（支持 App token 自动刷新）
+- 删除 `validateGitHubEnv()`，统一为 `resolveGitHubAuth()`
