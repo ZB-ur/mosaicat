@@ -17,7 +17,7 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 | ProductOwner | 用户指令 + `research.md` | `prd.md` + `prd.manifest.json` | 关闭 | manual |
 | UXDesigner | `prd.md` | `ux-flows.md` + `ux-flows.manifest.json` | 开启 | auto |
 | APIDesigner | `prd.md` + `ux-flows.md` | `api-spec.yaml` + `api-spec.manifest.json` | 开启 | auto |
-| UIDesigner | `prd.md` + `ux-flows.md` + `api-spec.yaml` | `components/` + `screenshots/` + `components.manifest.json` | 关闭 | manual |
+| UIDesigner | `prd.md` + `ux-flows.md` + `api-spec.yaml` | `components/` + `previews/` + `screenshots/` + `gallery.html` + `components.manifest.json` | 关闭 | manual |
 | Validator | 所有 `*.manifest.json` | `validation-report.md` | 关闭 | auto |
 
 ---
@@ -72,6 +72,7 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 | `adapters/types.ts` | Git 适配器接口 | `GitPlatformAdapter` interface, `PRRef`, Git Data API types |
 | `providers/claude-cli.ts` | Claude CLI 调用 | `ClaudeCLIProvider` |
 | `providers/anthropic-sdk.ts` | Anthropic SDK 调用 | `AnthropicSDKProvider` |
+| `core/screenshot-renderer.ts` | Playwright 截图渲染 | `renderScreenshots()`, `renderPreviewScreenshots()` |
 
 ### 活跃模块（ACTIVE — 可能需要修改）
 | 模块 | 职责 | 改动场景 |

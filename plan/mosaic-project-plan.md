@@ -141,8 +141,8 @@ Validator             → 交叉校验所有 Artifact 一致性
 **决策：** MVP 使用 `claude --print` 调用模型，用户仅需 Claude 订阅，无需 API Key。
 
 ```
-Provider A (MVP):     Claude CLI → 用户的 Claude 订阅 → 零配置
-Provider B (Phase 2): @anthropic-ai/sdk → API Key → 可并发
+Provider A (默认):   Claude CLI → 用户的 Claude 订阅 → 零配置
+Provider B (已实现): @anthropic-ai/sdk → API Key → 可并发
 ```
 
 **并发策略：** Claude CLI 无法真并发，采用 `PQueue({ concurrency: 1 })` 串行队列统一调度。Pipeline 是线性的（一个 Agent 完成后下一个才开始），串行不影响正确性，仅影响效率。
@@ -157,7 +157,7 @@ class ClaudeCLIProvider {
 }
 ```
 
-**Phase 2 扩展：** 有 API Key 的用户自动切换到 `@anthropic-ai/sdk`，支持并发。
+**已实现：** 有 API Key 的用户自动切换到 `@anthropic-ai/sdk`，支持并发（M1-Phase 3 完成）。
 
 ### 3. 上下文管理：工件隔离（核心原则）
 
@@ -344,6 +344,10 @@ body:
   request: null                # Agent 不能主动发起新需求
 ```
 
+> **M2 更新**：Phase 8 已将审批流程从 Issue label/comment 改为 PR Review 模式。
+> PR author = mosaicat[bot]（GitHub App），用户通过标准 GitHub Review（Approve/Request Changes）操作审批。
+> Issue 仍用于 stage 进度记录和人工入口，但不再是审批的主要渠道。
+
 ### 9. Pipeline 状态机
 
 **阶段状态流转：**
@@ -488,6 +492,10 @@ function isTrustedActor(event: GitHubEvent): boolean {
 // 所有 webhook 事件第一步过这个检查
 ```
 
+> **M2 更新**：Phase 9 引入 GitHub App Bot 认证（零配置模式）。
+> 用户通过 `mosaicat login`（OAuth Device Flow）授权，initiator 身份从 OAuth token 自动获取。
+> `MOSAIC_INITIATOR_LOGIN` 不再需要手动配置。
+
 ### 需要 Level 0 确认的操作
 
 | 操作 | 理由 |
@@ -599,6 +607,7 @@ Agent 发现可复用 pattern → 生成 Skill 提案
 | LLM 调用 (MVP) | Claude CLI (`claude --print`) + PQueue 串行队列 |
 | LLM 调用 (API) | @anthropic-ai/sdk |
 | Git 操作 | @octokit/rest（GitHub 适配器） |
+| GitHub App 认证 | @octokit/auth-app |
 | 后端 | Cloudflare Workers + Hono（GitHub App 认证） |
 | UI 输出 | React + Tailwind CSS + Playwright（截图） |
 | 工件校验 | zod |
@@ -656,6 +665,7 @@ src/
 │   ├── ux-designer.ts
 │   ├── api-designer.ts
 │   ├── ui-designer.ts
+│   ├── ui-plan-schema.ts       # UI 组件 schema 定义
 │   └── validator.ts
 ├── auth/
 │   ├── types.ts                # 认证域类型（AuthConfig, CachedAuth, InstallationInfo）
@@ -681,6 +691,8 @@ config/
 ├── ux-designer.md
 ├── api-designer.md
 ├── ui-designer.md
+├── ui-planner.md
+├── ui-builder.md
 └── validator.md
 
 backend/
@@ -756,9 +768,11 @@ backend/
 | Phase 8 | PR Review 审批流程：替代 Issue 审批，用户标准 Review 操作 | #127 | ✅ |
 | Phase 9 | GitHub App Bot 认证：零配置 GitHub 模式 + OAuth Device Flow + Cloudflare Worker 后端 | #135 | ✅ |
 
-### Milestone 3（规划中）: Spec 体系升级 + 研发团队
+> **注：** Phase 9 还包含 Step 9-12 的后续优化（Clarification UX、Stage Issue 丰富化、GitPublisher 修复、Stage Issue 重设计），详见 `plan/m2-plan.md`。
 
-> 详细计划将在 `plan/m3-plan.md` 中展开。以下为方向性规划。
+### Milestone 3（计划已完成）: Spec 体系升级 + 研发团队 + 测试团队
+
+> 详细计划已完成，见 `plan/m3-plan.md`（10 个 Phase，含 Feature ID 追溯、动态 Stage 注册、DAG 执行引擎、TechLead/Coder/Reviewer/QALead/Tester/SecurityAuditor Agent）。以下为方向性概述。
 
 **Spec 体系升级（M2 → M3 桥梁）：**
 
