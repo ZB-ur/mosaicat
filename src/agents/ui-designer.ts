@@ -238,14 +238,24 @@ export class UIDesignerAgent extends BaseAgent {
       throw new Error('UIPlanner did not produce ui-plan.json artifact');
     }
 
-    const jsonStr = artifactMatch[1].trim()
-      .replace(/^```(?:json)?\s*/, '')
-      .replace(/\s*```$/, '');
+    let jsonStr = artifactMatch[1].trim()
+      .replace(/^```(?:json)?\s*\n?/, '')
+      .replace(/\n?\s*```\s*$/, '');
+
+    // LLM may wrap JSON in extra text — extract the JSON object/array
+    const jsonObjectMatch = jsonStr.match(/(\{[\s\S]*\})/);
+    if (jsonObjectMatch) {
+      jsonStr = jsonObjectMatch[1];
+    }
 
     let planData: unknown;
     try {
       planData = JSON.parse(jsonStr);
-    } catch {
+    } catch (parseErr) {
+      this.logger.agent(this.stage, 'error', 'planner:json-parse-failed', {
+        rawContent: jsonStr.slice(0, 500),
+        error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+      });
       throw new Error('Failed to parse ui-plan.json JSON from planner response');
     }
 
