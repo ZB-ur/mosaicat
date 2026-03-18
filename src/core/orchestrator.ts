@@ -183,6 +183,9 @@ export class Orchestrator {
         metrics.commitSha = this.publisher.getLastCommitSha() ?? undefined;
       }
 
+      // Post preview comment for stages with visual outputs (before gate check)
+      await this.postPreviewComment(stage, run.id, logger);
+
       // Gate check
       if (shouldAutoApprove(run, stageConfig)) {
         transitionStage(run, stage, 'done');
@@ -298,6 +301,86 @@ export class Orchestrator {
         stage,
         error: err instanceof Error ? err.message : String(err),
       });
+    }
+  }
+
+  /**
+   * Post a PR comment with embedded screenshots and preview links for visual stages.
+   * Called after commitStageArtifacts, before gate check, so reviewers can see the output.
+   */
+  private async postPreviewComment(stage: StageName, _runId: string, logger: Logger): Promise<void> {
+    if (!this.adapter || !this.publisher) return;
+    const pr = this.publisher.getPR();
+    if (!pr) return;
+
+    // Only post for ui_designer (has screenshots + previews)
+    if (stage !== 'ui_designer') return;
+
+    const adapterAny = this.adapter as { getOwner?: () => string; getRepo?: () => string };
+    const owner = adapterAny.getOwner?.() ?? '';
+    const repo = adapterAny.getRepo?.() ?? '';
+    const branch = this.publisher.getBranch() ?? '';
+    if (!owner || !repo || !branch) return;
+
+    try {
+      const lines: string[] = ['## 🎨 UIDesigner — Component Preview', ''];
+
+      // Screenshots
+      const screenshotsDir = '.mosaic/artifacts/screenshots';
+      const screenshots = this.safeReadDir(screenshotsDir).filter(f => f.endsWith('.png'));
+      if (screenshots.length > 0) {
+        lines.push('### Screenshots');
+        lines.push('');
+        for (const file of screenshots) {
+          const name = file.replace('.png', '');
+          const imgUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/.mosaic/artifacts/screenshots/${file}`;
+          lines.push(`<details><summary>${name}</summary>`);
+          lines.push('');
+          lines.push(`![${name}](${imgUrl})`);
+          lines.push('');
+          lines.push('</details>');
+          lines.push('');
+        }
+      }
+
+      // Interactive preview links
+      const previewsDir = '.mosaic/artifacts/previews';
+      const previews = this.safeReadDir(previewsDir).filter(f => f.endsWith('.html'));
+      if (previews.length > 0) {
+        lines.push('### Interactive Previews');
+        lines.push('');
+        for (const file of previews) {
+          const name = file.replace('.html', '');
+          const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/.mosaic/artifacts/previews/${file}`;
+          const previewUrl = `https://htmlpreview.github.io/?${rawUrl}`;
+          lines.push(`- [${name}](${previewUrl})`);
+        }
+        lines.push('');
+      }
+
+      // Gallery link
+      if (fs.existsSync('.mosaic/artifacts/gallery.html')) {
+        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/.mosaic/artifacts/gallery.html`;
+        const galleryUrl = `https://htmlpreview.github.io/?${rawUrl}`;
+        lines.push(`### [View Gallery](${galleryUrl})`);
+        lines.push('');
+      }
+
+      if (screenshots.length > 0 || previews.length > 0) {
+        await this.adapter.addComment(pr.number, lines.join('\n'));
+      }
+    } catch (err) {
+      logger.pipeline('warn', 'preview-comment:failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  private safeReadDir(dir: string): string[] {
+    try {
+      return fs.readdirSync(dir);
+    } catch {
+      return [];
     }
   }
 
