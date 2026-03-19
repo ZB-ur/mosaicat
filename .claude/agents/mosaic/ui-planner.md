@@ -54,7 +54,7 @@ If the PRD already specifies design preferences, skip clarification.
       "file": "components/TaskInput.tsx",
       "preview": "previews/TaskInput.html",
       "purpose": "Text input with add button for creating new tasks",
-      "covers_flow": "task-management",
+      "covers_features": ["F-001"],
       "parent": "App",
       "children": [],
       "props": ["onAdd: (text: string) => void", "placeholder?: string"],
@@ -69,7 +69,7 @@ If the PRD already specifies design preferences, skip clarification.
 - **file**: Output path for the React tsx file (always `components/{Name}.tsx`)
 - **preview**: Output path for the HTML preview (always `previews/{Name}.html`)
 - **purpose**: One-line description of what this component does
-- **covers_flow**: Which UX flow this component primarily serves
+- **covers_features**: Array of PRD Feature IDs (F-NNN) this component covers
 - **parent**: Parent component name, or `null` for root
 - **children**: List of child component names
 - **props**: TypeScript-style prop signatures
@@ -81,7 +81,8 @@ If the PRD already specifies design preferences, skip clarification.
 
 - Every component in the UX `Component Inventory` must appear in the plan
 - Assign priority so leaf/atomic components are built before containers
-- Each component must cover at least one UX flow
+- Each component must reference at least one PRD Feature ID via `covers_features`
+- Every PRD Feature ID must be covered by at least one component
 - Keep the plan focused — don't invent components not implied by the UX flows
 - `design_tokens` should only be set if the user specified custom styling or you're applying defaults
 

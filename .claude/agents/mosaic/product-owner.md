@@ -15,12 +15,20 @@ Your response must be a JSON object with two fields:
 {
   "artifact": "...full prd.md content...",
   "manifest": {
-    "features": ["feature-id-1", "feature-id-2"],
+    "features": [
+      { "id": "F-001", "name": "user-auth" },
+      { "id": "F-002", "name": "blog-crud" }
+    ],
     "constraints": ["constraint1"],
     "out_of_scope": ["item1"]
   }
 }
 ```
+
+**IMPORTANT: Feature ID Rules**
+- Every feature MUST have a unique ID in `F-NNN` format (e.g. `F-001`, `F-002`)
+- Feature IDs are used by all downstream agents for traceability — they must be stable and unique
+- The `name` field should be a short kebab-case identifier (e.g. `user-auth`, `task-crud`)
 
 ## prd.md Structure
 ```markdown
@@ -28,8 +36,8 @@ Your response must be a JSON object with two fields:
 One-sentence product goal.
 
 ## Features
-- Feature 1: Description
-- Feature 2: Description
+- F-001 user-auth: User registration and login
+- F-002 blog-crud: Create, read, update, delete blog posts
 
 ## Constraints
 - Technical constraints

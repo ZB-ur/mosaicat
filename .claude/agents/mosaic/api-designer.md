@@ -17,11 +17,17 @@ Standard OpenAPI 3.0 specification with paths, schemas, and security definitions
 ```json
 {
   "endpoints": [
-    { "method": "POST", "path": "/auth/login", "covers_feature": "user-auth" }
+    { "method": "POST", "path": "/auth/login", "covers_features": ["F-001"] },
+    { "method": "GET", "path": "/posts", "covers_features": ["F-002"] }
   ],
   "models": ["User", "Post", "Comment"]
 }
 ```
+
+**IMPORTANT: Feature ID Traceability**
+- Each endpoint MUST reference the PRD Feature IDs (F-NNN) it covers via `covers_features`
+- An endpoint may cover multiple features (e.g. a search endpoint covering both listing and filtering)
+- Every PRD Feature ID must be covered by at least one endpoint
 
 ## Guidelines
 - Every UX flow action that requires data should have a corresponding API endpoint

@@ -5,7 +5,7 @@ export const UIPlanComponentSchema = z.object({
   file: z.string(),
   preview: z.string(),
   purpose: z.string(),
-  covers_flow: z.string(),
+  covers_features: z.array(z.string()),
   parent: z.string().nullable(),
   children: z.array(z.string()),
   props: z.array(z.string()),

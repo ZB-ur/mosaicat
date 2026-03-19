@@ -48,17 +48,17 @@ class MockLLMProvider implements LLMProvider {
 
       product_owner: JSON.stringify({
         artifact: "## Goal\nA minimal todo app for personal task management.\n\n## Features\n- task-crud: Create, complete, delete tasks\n- task-filter: Filter by status\n\n## Constraints\n- Single-page app\n- Local storage\n\n## Out of Scope\n- Multi-user\n- Cloud sync",
-        manifest: { features: ["task-crud", "task-filter"], constraints: ["spa", "local-storage"], out_of_scope: ["multi-user", "cloud-sync"] },
+        manifest: { features: [{ id: "F-001", name: "task-crud" }, { id: "F-002", name: "task-filter" }], constraints: ["spa", "local-storage"], out_of_scope: ["multi-user", "cloud-sync"] },
       }),
 
       ux_designer: JSON.stringify({
         artifact: "## User Journeys\n### Flow 1: task-management\nAdd task → Complete task → Delete task\n\n### Flow 2: task-filtering\nView all → Filter active → Filter completed\n\n## Interaction Rules\n- inline-edit: Click to edit task text\n- swipe-delete: Swipe left to delete\n\n## Component Inventory\n- TaskInput: Add new task\n- TaskItem: Single task with checkbox\n- TaskFilter: Filter buttons",
-        manifest: { flows: ["task-management", "task-filtering"], components: ["TaskInput", "TaskItem", "TaskFilter"], interaction_rules: ["inline-edit", "swipe-delete"] },
+        manifest: { flows: [{ name: "task-management", covers_features: ["F-001"] }, { name: "task-filtering", covers_features: ["F-002"] }], components: ["TaskInput", "TaskItem", "TaskFilter"], interaction_rules: ["inline-edit", "swipe-delete"] },
       }),
 
       api_designer: JSON.stringify({
         artifact: "openapi: \"3.0.0\"\ninfo:\n  title: Todo API\n  version: \"1.0.0\"\npaths:\n  /tasks:\n    get:\n      summary: List tasks\n      responses:\n        \"200\":\n          description: Task list\n    post:\n      summary: Create task\n      responses:\n        \"201\":\n          description: Task created\n  /tasks/{id}:\n    patch:\n      summary: Update task\n      responses:\n        \"200\":\n          description: Task updated\n    delete:\n      summary: Delete task\n      responses:\n        \"204\":\n          description: Task deleted",
-        manifest: { endpoints: [{ method: "GET", path: "/tasks", covers_feature: "task-crud" }, { method: "POST", path: "/tasks", covers_feature: "task-crud" }, { method: "PATCH", path: "/tasks/{id}", covers_feature: "task-crud" }, { method: "DELETE", path: "/tasks/{id}", covers_feature: "task-crud" }], models: ["Task"] },
+        manifest: { endpoints: [{ method: "GET", path: "/tasks", covers_features: ["F-001"] }, { method: "POST", path: "/tasks", covers_features: ["F-001"] }, { method: "PATCH", path: "/tasks/{id}", covers_features: ["F-001"] }, { method: "DELETE", path: "/tasks/{id}", covers_features: ["F-001"] }], models: ["Task"] },
       }),
 
       validator: `<!-- ARTIFACT:validation-report.md -->\n## Validation Summary\n- Status: PASS\n- Checks passed: 4/4\n\n### Check 1: PRD ↔ UX Flows Coverage\n- Status: PASS\n- task-crud → task-management\n- task-filter → task-filtering\n\n### Check 2: UX Flows ↔ API Coverage\n- Status: PASS\n\n### Check 3: API ↔ Components Coverage\n- Status: PASS\n\n### Check 4: Naming Consistency\n- Status: PASS\n<!-- END:validation-report.md -->`,
@@ -72,9 +72,9 @@ class MockLLMProvider implements LLMProvider {
 {
   "design_tokens": {"primary": "blue-600", "background": "slate-50"},
   "components": [
-    {"name": "TaskInput", "file": "components/TaskInput.tsx", "preview": "previews/TaskInput.html", "purpose": "Add new task", "covers_flow": "task-management", "parent": null, "children": [], "props": ["onAdd: (text: string) => void"], "priority": 1},
-    {"name": "TaskItem", "file": "components/TaskItem.tsx", "preview": "previews/TaskItem.html", "purpose": "Single task row", "covers_flow": "task-management", "parent": null, "children": [], "props": ["task: Task", "onToggle: () => void"], "priority": 2},
-    {"name": "TaskFilter", "file": "components/TaskFilter.tsx", "preview": "previews/TaskFilter.html", "purpose": "Filter buttons", "covers_flow": "task-filtering", "parent": null, "children": [], "props": ["filter: string", "onChange: (f: string) => void"], "priority": 3}
+    {"name": "TaskInput", "file": "components/TaskInput.tsx", "preview": "previews/TaskInput.html", "purpose": "Add new task", "covers_features": ["F-001"], "parent": null, "children": [], "props": ["onAdd: (text: string) => void"], "priority": 1},
+    {"name": "TaskItem", "file": "components/TaskItem.tsx", "preview": "previews/TaskItem.html", "purpose": "Single task row", "covers_features": ["F-001"], "parent": null, "children": [], "props": ["task: Task", "onToggle: () => void"], "priority": 2},
+    {"name": "TaskFilter", "file": "components/TaskFilter.tsx", "preview": "previews/TaskFilter.html", "purpose": "Filter buttons", "covers_features": ["F-002"], "parent": null, "children": [], "props": ["filter: string", "onChange: (f: string) => void"], "priority": 3}
   ]
 }
 <!-- END:ui-plan.json -->`;
@@ -232,19 +232,24 @@ describe('Phase 3 E2E Integration', () => {
     const apiManifest = JSON.parse(fs.readFileSync(`${ARTIFACTS_DIR}/api-spec.manifest.json`, 'utf-8'));
     const compManifest = JSON.parse(fs.readFileSync(`${ARTIFACTS_DIR}/components.manifest.json`, 'utf-8'));
 
-    // PRD features should be covered by API endpoints
+    // PRD feature IDs should be covered by API endpoints
+    const featureIds = prdManifest.features.map((f: { id: string }) => f.id);
     for (const ep of apiManifest.endpoints) {
-      expect(prdManifest.features).toContain(ep.covers_feature);
+      for (const fid of ep.covers_features) {
+        expect(featureIds).toContain(fid);
+      }
     }
 
-    // Components should reference UX flows
+    // Components should reference feature IDs
     for (const comp of compManifest.components) {
-      expect(comp.covers_flow).toBeDefined();
+      expect(comp.covers_features).toBeDefined();
+      expect(comp.covers_features.length).toBeGreaterThan(0);
     }
 
-    // Validation passed (4 LLM checks + 1 programmatic file integrity check = 5)
+    // Validation passed (4 LLM checks + 1 file integrity + 1 feature traceability = 6)
     const report = fs.readFileSync(`${ARTIFACTS_DIR}/validation-report.md`, 'utf-8');
     expect(report).toContain('PASS');
     expect(report).toContain('Check 5: File Integrity');
+    expect(report).toContain('Check 6: Feature ID Traceability');
   }, 60000);
 });

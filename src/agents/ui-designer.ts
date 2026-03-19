@@ -346,7 +346,7 @@ export class UIDesignerAgent extends BaseAgent {
       .map((c) => ({
         name: c.name,
         file: c.file,
-        covers_flow: c.covers_flow,
+        covers_features: c.covers_features,
       }));
 
     const screenshots = components.map(
@@ -355,7 +355,7 @@ export class UIDesignerAgent extends BaseAgent {
     const previews = previewFiles;
 
     const manifestData: {
-      components: { name: string; file: string; covers_flow: string }[];
+      components: { name: string; file: string; covers_features: string[] }[];
       screenshots: string[];
       previews: string[];
     } = {

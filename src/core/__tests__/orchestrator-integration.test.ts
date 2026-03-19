@@ -30,10 +30,10 @@ class MockLLMProvider implements LLMProvider {
       return { content: `<!-- ARTIFACT:ui-plan.json -->
 {
   "components": [
-    {"name": "AuthForm", "file": "components/AuthForm.tsx", "preview": "previews/AuthForm.html", "purpose": "Login/register form", "covers_flow": "auth-flow", "parent": null, "children": [], "props": [], "priority": 1},
-    {"name": "PostEditor", "file": "components/PostEditor.tsx", "preview": "previews/PostEditor.html", "purpose": "Markdown editor", "covers_flow": "blog-management", "parent": null, "children": [], "props": [], "priority": 2},
-    {"name": "PostList", "file": "components/PostList.tsx", "preview": "previews/PostList.html", "purpose": "Blog listing", "covers_flow": "reader-flow", "parent": null, "children": [], "props": [], "priority": 3},
-    {"name": "CommentSection", "file": "components/CommentSection.tsx", "preview": "previews/CommentSection.html", "purpose": "Comment thread", "covers_flow": "reader-flow", "parent": null, "children": [], "props": [], "priority": 4}
+    {"name": "AuthForm", "file": "components/AuthForm.tsx", "preview": "previews/AuthForm.html", "purpose": "Login/register form", "covers_features": ["F-001"], "parent": null, "children": [], "props": [], "priority": 1},
+    {"name": "PostEditor", "file": "components/PostEditor.tsx", "preview": "previews/PostEditor.html", "purpose": "Markdown editor", "covers_features": ["F-002"], "parent": null, "children": [], "props": [], "priority": 2},
+    {"name": "PostList", "file": "components/PostList.tsx", "preview": "previews/PostList.html", "purpose": "Blog listing", "covers_features": ["F-002"], "parent": null, "children": [], "props": [], "priority": 3},
+    {"name": "CommentSection", "file": "components/CommentSection.tsx", "preview": "previews/CommentSection.html", "purpose": "Comment thread", "covers_features": ["F-003"], "parent": null, "children": [], "props": [], "priority": 4}
   ]
 }
 <!-- END:ui-plan.json -->` };
@@ -67,19 +67,19 @@ class MockLLMProvider implements LLMProvider {
       case 'product_owner':
         return { content: JSON.stringify({
           artifact: `## Goal\nBuild a simple, modern blog platform for individual creators.\n\n## Features\n- user-auth: User registration and login\n- blog-crud: Create, read, update, delete blog posts\n- blog-comments: Reader commenting system\n\n## Constraints\n- Must support markdown content\n- Response time < 200ms\n\n## Out of Scope\n- Multi-tenancy\n- Payment integration`,
-          manifest: { features: ["user-auth", "blog-crud", "blog-comments"], constraints: ["markdown-support", "performance-200ms"], out_of_scope: ["multi-tenancy", "payments"] },
+          manifest: { features: [{ id: "F-001", name: "user-auth" }, { id: "F-002", name: "blog-crud" }, { id: "F-003", name: "blog-comments" }], constraints: ["markdown-support", "performance-200ms"], out_of_scope: ["multi-tenancy", "payments"] },
         }) };
 
       case 'ux_designer':
         return { content: JSON.stringify({
           artifact: `## User Journeys\n### Flow 1: auth-flow\nRegister → Login → Dashboard\n\n### Flow 2: blog-management\nDashboard → Create Post → Edit → Publish\n\n### Flow 3: reader-flow\nBrowse → Read Post → Comment\n\n## Interaction Rules\n- form-validation: Inline validation on blur\n- loading-states: Skeleton screens during fetch\n\n## Component Inventory\n- AuthForm: Login/register form\n- PostEditor: Markdown editor for posts\n- PostList: Blog post listing\n- CommentSection: Comment thread`,
-          manifest: { flows: ["auth-flow", "blog-management", "reader-flow"], components: ["AuthForm", "PostEditor", "PostList", "CommentSection"], interaction_rules: ["form-validation", "loading-states"] },
+          manifest: { flows: [{ name: "auth-flow", covers_features: ["F-001"] }, { name: "blog-management", covers_features: ["F-002"] }, { name: "reader-flow", covers_features: ["F-003"] }], components: ["AuthForm", "PostEditor", "PostList", "CommentSection"], interaction_rules: ["form-validation", "loading-states"] },
         }) };
 
       case 'api_designer':
         return { content: JSON.stringify({
           artifact: `openapi: "3.0.0"\ninfo:\n  title: Blog API\n  version: "1.0.0"\npaths:\n  /auth/register:\n    post:\n      summary: Register a new user\n      responses:\n        "201":\n          description: User created\n  /auth/login:\n    post:\n      summary: Login\n      responses:\n        "200":\n          description: JWT token\n  /posts:\n    get:\n      summary: List posts\n      responses:\n        "200":\n          description: Post list\n    post:\n      summary: Create post\n      responses:\n        "201":\n          description: Post created\n  /posts/{id}/comments:\n    post:\n      summary: Add comment\n      responses:\n        "201":\n          description: Comment created`,
-          manifest: { endpoints: [{"method": "POST", "path": "/auth/register", "covers_feature": "user-auth"}, {"method": "POST", "path": "/auth/login", "covers_feature": "user-auth"}, {"method": "GET", "path": "/posts", "covers_feature": "blog-crud"}, {"method": "POST", "path": "/posts", "covers_feature": "blog-crud"}, {"method": "POST", "path": "/posts/{id}/comments", "covers_feature": "blog-comments"}], models: ["User", "Post", "Comment"] },
+          manifest: { endpoints: [{"method": "POST", "path": "/auth/register", "covers_features": ["F-001"]}, {"method": "POST", "path": "/auth/login", "covers_features": ["F-001"]}, {"method": "GET", "path": "/posts", "covers_features": ["F-002"]}, {"method": "POST", "path": "/posts", "covers_features": ["F-002"]}, {"method": "POST", "path": "/posts/{id}/comments", "covers_features": ["F-003"]}], models: ["User", "Post", "Comment"] },
         }) };
 
       case 'validator':

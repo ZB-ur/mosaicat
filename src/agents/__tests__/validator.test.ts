@@ -37,10 +37,10 @@ function makeContext(): AgentContext {
     task: { runId: 'test-run', stage: 'validator', instruction: 'Validate' },
     inputArtifacts: new Map([
       ['research.manifest.json', '{"competitors":["A"],"key_insights":["x"],"feasibility":"high","risks":[]}'],
-      ['prd.manifest.json', '{"features":["f1"],"constraints":[],"out_of_scope":[]}'],
-      ['ux-flows.manifest.json', '{"flows":["main"],"components":["CompA"],"interaction_rules":[]}'],
-      ['api-spec.manifest.json', '{"endpoints":[{"method":"GET","path":"/t","covers_feature":"f1"}],"models":["M"]}'],
-      ['components.manifest.json', '{"components":[{"name":"CompA","file":"components/CompA.tsx","covers_flow":"main"}],"screenshots":["screenshots/CompA.png"],"previews":["previews/CompA.html"]}'],
+      ['prd.manifest.json', '{"features":[{"id":"F-001","name":"f1"}],"constraints":[],"out_of_scope":[]}'],
+      ['ux-flows.manifest.json', '{"flows":[{"name":"main","covers_features":["F-001"]}],"components":["CompA"],"interaction_rules":[]}'],
+      ['api-spec.manifest.json', '{"endpoints":[{"method":"GET","path":"/t","covers_features":["F-001"]}],"models":["M"]}'],
+      ['components.manifest.json', '{"components":[{"name":"CompA","file":"components/CompA.tsx","covers_features":["F-001"]}],"screenshots":["screenshots/CompA.png"],"previews":["previews/CompA.html"]}'],
     ]),
   };
 }
@@ -64,9 +64,23 @@ describe('ValidatorAgent', () => {
     writeArtifact('screenshots/CompA.png', '[png data]');
     writeArtifact('previews/CompA.html', '<html></html>');
 
-    // Write a valid components manifest
+    // Write all manifests for Check 5 + Check 6
+    writeManifest('prd.manifest.json', {
+      features: [{ id: 'F-001', name: 'f1' }],
+      constraints: [],
+      out_of_scope: [],
+    });
+    writeManifest('ux-flows.manifest.json', {
+      flows: [{ name: 'main', covers_features: ['F-001'] }],
+      components: ['CompA'],
+      interaction_rules: [],
+    });
+    writeManifest('api-spec.manifest.json', {
+      endpoints: [{ method: 'GET', path: '/t', covers_features: ['F-001'] }],
+      models: ['M'],
+    });
     writeManifest('components.manifest.json', {
-      components: [{ name: 'CompA', file: 'components/CompA.tsx', covers_flow: 'main' }],
+      components: [{ name: 'CompA', file: 'components/CompA.tsx', covers_features: ['F-001'] }],
       screenshots: ['screenshots/CompA.png'],
       previews: ['previews/CompA.html'],
     });
@@ -83,7 +97,8 @@ describe('ValidatorAgent', () => {
     expect(report).toContain('Status: PASS');
     expect(report).toContain('All referenced files exist on disk');
     // Overall status should remain PASS
-    expect(report).toMatch(/- Status: PASS\n- Checks passed: 5\/5/);
+    expect(report).toContain('Check 6: Feature ID Traceability');
+    expect(report).toMatch(/- Status: PASS\n- Checks passed: 6\/6/);
   });
 
   it('should force FAIL when referenced files are missing', async () => {
@@ -92,7 +107,7 @@ describe('ValidatorAgent', () => {
 
     // Write manifest referencing files that don't exist
     writeManifest('components.manifest.json', {
-      components: [{ name: 'CompA', file: 'components/CompA.tsx', covers_flow: 'main' }],
+      components: [{ name: 'CompA', file: 'components/CompA.tsx', covers_features: ['F-001'] }],
       screenshots: ['screenshots/CompA.png'],
       previews: ['previews/CompA.html'],
     });

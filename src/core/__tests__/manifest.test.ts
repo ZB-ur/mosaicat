@@ -14,7 +14,7 @@ describe('Manifest', () => {
 
   it('should write and read a valid prd manifest', () => {
     const data: PrdManifest = {
-      features: ['auth', 'editor'],
+      features: [{ id: 'F-001', name: 'auth' }, { id: 'F-002', name: 'editor' }],
       constraints: ['no-third-party'],
       out_of_scope: ['payments'],
     };
