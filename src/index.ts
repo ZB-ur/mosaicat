@@ -39,13 +39,15 @@ if (command === 'login') {
 } else if (command === 'run') {
   const instruction = args[1];
   if (!instruction) {
-    console.error('Usage: mosaicat run <instruction> [--auto-approve] [--github] [--evolve]');
+    console.error('Usage: mosaicat run <instruction> [--auto-approve] [--github] [--evolve] [--profile <design-only|full|frontend-only>]');
     process.exit(1);
   }
 
   const autoApprove = args.includes('--auto-approve');
   const useGitHub = args.includes('--github');
   const useEvolve = args.includes('--evolve');
+  const profileIdx = args.indexOf('--profile');
+  const profileArg = profileIdx >= 0 ? args[profileIdx + 1] as import('./core/types.js').PipelineProfile | undefined : undefined;
 
   // Attach rich CLI progress output
   const detach = attachCLIProgress();
@@ -83,8 +85,9 @@ if (command === 'login') {
 
     console.log(`\x1b[2mInstruction: ${instruction}\x1b[0m`);
     console.log(`\x1b[2mAuto-approve: ${autoApprove}\x1b[0m`);
+    if (profileArg) console.log(`\x1b[2mProfile: ${profileArg}\x1b[0m`);
 
-    const result = await orchestrator.run(instruction, autoApprove);
+    const result = await orchestrator.run(instruction, autoApprove, profileArg);
 
     console.log(`\x1b[2mRun ID: ${result.id}\x1b[0m`);
     console.log(`\x1b[2mArtifacts: .mosaic/artifacts/\x1b[0m`);

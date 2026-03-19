@@ -21,9 +21,10 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
     {
       instruction: z.string().describe('The product idea or instruction to process through the pipeline'),
       auto_approve: z.boolean().optional().describe('Skip manual approval gates (default: false)'),
+      profile: z.enum(['design-only', 'full', 'frontend-only']).optional().describe('Pipeline profile (default: design-only)'),
     },
-    async ({ instruction, auto_approve }) => {
-      const runId = await runManager.startRun(instruction, auto_approve ?? false);
+    async ({ instruction, auto_approve, profile }) => {
+      const runId = await runManager.startRun(instruction, auto_approve ?? false, profile);
       return {
         content: [{
           type: 'text' as const,
