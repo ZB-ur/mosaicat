@@ -103,4 +103,8 @@ export interface GitPlatformAdapter {
   // ── PR Review API ──
   listReviews(prNumber: number): Promise<PRReview[]>;
   listReviewComments(prNumber: number): Promise<PRReviewComment[]>;
+
+  // ── Repository context ──
+  getOwner(): string;
+  getRepo(): string;
 }

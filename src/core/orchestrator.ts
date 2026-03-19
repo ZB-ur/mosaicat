@@ -123,9 +123,7 @@ export class Orchestrator {
       if (this.publisher) {
         try {
           // Generate rich PR body with screenshots, preview links, token stats
-          const adapterAny = this.adapter as { getOwner?: () => string; getRepo?: () => string };
-          const owner = adapterAny.getOwner?.() ?? '';
-          const repo = adapterAny.getRepo?.() ?? '';
+          const { owner, repo } = this.getRepoContext();
           const branch = this.publisher.getBranch() ?? '';
           const prBody = (owner && repo && branch)
             ? generatePRBody({ runId, owner, repo, branch })
@@ -345,9 +343,7 @@ export class Orchestrator {
     // Only post for ui_designer (has screenshots + previews)
     if (stage !== 'ui_designer') return;
 
-    const adapterAny = this.adapter as { getOwner?: () => string; getRepo?: () => string };
-    const owner = adapterAny.getOwner?.() ?? '';
-    const repo = adapterAny.getRepo?.() ?? '';
+    const { owner, repo } = this.getRepoContext();
     const branch = this.publisher.getBranch() ?? '';
     if (!owner || !repo || !branch) return;
 
@@ -403,6 +399,11 @@ export class Orchestrator {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  private getRepoContext(): { owner: string; repo: string } {
+    if (!this.adapter) return { owner: '', repo: '' };
+    return { owner: this.adapter.getOwner(), repo: this.adapter.getRepo() };
   }
 
   private safeReadDir(dir: string): string[] {
@@ -490,9 +491,7 @@ export class Orchestrator {
     const manifestSummary = manifestName ? extractManifestSummary(manifestName) : [];
 
     // GitHub context for links
-    const adapterAny = this.adapter as { getOwner?: () => string; getRepo?: () => string };
-    const owner = adapterAny.getOwner?.() ?? '';
-    const repo = adapterAny.getRepo?.() ?? '';
+    const { owner, repo } = this.getRepoContext();
     const repoSlug = owner && repo ? `${owner}/${repo}` : undefined;
     const branch = this.publisher?.getBranch() ?? undefined;
     const prNumber = this.publisher?.getPR()?.number;
