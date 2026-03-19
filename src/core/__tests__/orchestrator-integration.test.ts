@@ -45,127 +45,33 @@ class MockLLMProvider implements LLMProvider {
 
     switch (stage) {
       case 'researcher':
-        return { content: `
-<!-- ARTIFACT:research.md -->
-## Market Overview
-The blog platform market is mature with established players.
-
-## Competitor Analysis
-| Competitor | Core Features | Strengths | Weaknesses |
-|---|---|---|---|
-| WordPress | CMS, plugins | Ecosystem | Complexity |
-| Medium | Writing, social | UX | Monetization |
-
-## Feasibility
-High feasibility — standard CRUD with auth.
-
-## Key Insights
-- Focus on simplicity
-- Mobile-first approach
-<!-- END:research.md -->
-
-<!-- MANIFEST:research.manifest.json -->
-{"competitors": ["WordPress", "Medium"], "key_insights": ["simplicity-focus", "mobile-first"], "feasibility": "high", "risks": ["market-saturation"]}
-<!-- END:MANIFEST -->` };
+        // LLMAgent expects JSON: { artifact, manifest }
+        return { content: JSON.stringify({
+          artifact: `## Market Overview\nThe blog platform market is mature with established players.\n\n## Competitor Analysis\n| Competitor | Core Features | Strengths | Weaknesses |\n|---|---|---|---|\n| WordPress | CMS, plugins | Ecosystem | Complexity |\n| Medium | Writing, social | UX | Monetization |\n\n## Feasibility\nHigh feasibility — standard CRUD with auth.\n\n## Key Insights\n- Focus on simplicity\n- Mobile-first approach`,
+          manifest: { competitors: ["WordPress", "Medium"], key_insights: ["simplicity-focus", "mobile-first"], feasibility: "high", risks: ["market-saturation"] },
+        }) };
 
       case 'product_owner':
-        return { content: `
-<!-- ARTIFACT:prd.md -->
-## Goal
-Build a simple, modern blog platform for individual creators.
-
-## Features
-- user-auth: User registration and login
-- blog-crud: Create, read, update, delete blog posts
-- blog-comments: Reader commenting system
-
-## Constraints
-- Must support markdown content
-- Response time < 200ms
-
-## Out of Scope
-- Multi-tenancy
-- Payment integration
-<!-- END:prd.md -->
-
-<!-- MANIFEST:prd.manifest.json -->
-{"features": ["user-auth", "blog-crud", "blog-comments"], "constraints": ["markdown-support", "performance-200ms"], "out_of_scope": ["multi-tenancy", "payments"]}
-<!-- END:MANIFEST -->` };
+        return { content: JSON.stringify({
+          artifact: `## Goal\nBuild a simple, modern blog platform for individual creators.\n\n## Features\n- user-auth: User registration and login\n- blog-crud: Create, read, update, delete blog posts\n- blog-comments: Reader commenting system\n\n## Constraints\n- Must support markdown content\n- Response time < 200ms\n\n## Out of Scope\n- Multi-tenancy\n- Payment integration`,
+          manifest: { features: ["user-auth", "blog-crud", "blog-comments"], constraints: ["markdown-support", "performance-200ms"], out_of_scope: ["multi-tenancy", "payments"] },
+        }) };
 
       case 'ux_designer':
-        return { content: `
-<!-- ARTIFACT:ux-flows.md -->
-## User Journeys
-### Flow 1: auth-flow
-Register → Login → Dashboard
-
-### Flow 2: blog-management
-Dashboard → Create Post → Edit → Publish
-
-### Flow 3: reader-flow
-Browse → Read Post → Comment
-
-## Interaction Rules
-- form-validation: Inline validation on blur
-- loading-states: Skeleton screens during fetch
-
-## Component Inventory
-- AuthForm: Login/register form
-- PostEditor: Markdown editor for posts
-- PostList: Blog post listing
-- CommentSection: Comment thread
-<!-- END:ux-flows.md -->
-
-<!-- MANIFEST:ux-flows.manifest.json -->
-{"flows": ["auth-flow", "blog-management", "reader-flow"], "components": ["AuthForm", "PostEditor", "PostList", "CommentSection"], "interaction_rules": ["form-validation", "loading-states"]}
-<!-- END:MANIFEST -->` };
+        return { content: JSON.stringify({
+          artifact: `## User Journeys\n### Flow 1: auth-flow\nRegister → Login → Dashboard\n\n### Flow 2: blog-management\nDashboard → Create Post → Edit → Publish\n\n### Flow 3: reader-flow\nBrowse → Read Post → Comment\n\n## Interaction Rules\n- form-validation: Inline validation on blur\n- loading-states: Skeleton screens during fetch\n\n## Component Inventory\n- AuthForm: Login/register form\n- PostEditor: Markdown editor for posts\n- PostList: Blog post listing\n- CommentSection: Comment thread`,
+          manifest: { flows: ["auth-flow", "blog-management", "reader-flow"], components: ["AuthForm", "PostEditor", "PostList", "CommentSection"], interaction_rules: ["form-validation", "loading-states"] },
+        }) };
 
       case 'api_designer':
-        return { content: `
-<!-- ARTIFACT:api-spec.yaml -->
-openapi: "3.0.0"
-info:
-  title: Blog API
-  version: "1.0.0"
-paths:
-  /auth/register:
-    post:
-      summary: Register a new user
-      responses:
-        "201":
-          description: User created
-  /auth/login:
-    post:
-      summary: Login
-      responses:
-        "200":
-          description: JWT token
-  /posts:
-    get:
-      summary: List posts
-      responses:
-        "200":
-          description: Post list
-    post:
-      summary: Create post
-      responses:
-        "201":
-          description: Post created
-  /posts/{id}/comments:
-    post:
-      summary: Add comment
-      responses:
-        "201":
-          description: Comment created
-<!-- END:api-spec.yaml -->
-
-<!-- MANIFEST:api-spec.manifest.json -->
-{"endpoints": [{"method": "POST", "path": "/auth/register", "covers_feature": "user-auth"}, {"method": "POST", "path": "/auth/login", "covers_feature": "user-auth"}, {"method": "GET", "path": "/posts", "covers_feature": "blog-crud"}, {"method": "POST", "path": "/posts", "covers_feature": "blog-crud"}, {"method": "POST", "path": "/posts/{id}/comments", "covers_feature": "blog-comments"}], "models": ["User", "Post", "Comment"]}
-<!-- END:MANIFEST -->` };
+        return { content: JSON.stringify({
+          artifact: `openapi: "3.0.0"\ninfo:\n  title: Blog API\n  version: "1.0.0"\npaths:\n  /auth/register:\n    post:\n      summary: Register a new user\n      responses:\n        "201":\n          description: User created\n  /auth/login:\n    post:\n      summary: Login\n      responses:\n        "200":\n          description: JWT token\n  /posts:\n    get:\n      summary: List posts\n      responses:\n        "200":\n          description: Post list\n    post:\n      summary: Create post\n      responses:\n        "201":\n          description: Post created\n  /posts/{id}/comments:\n    post:\n      summary: Add comment\n      responses:\n        "201":\n          description: Comment created`,
+          manifest: { endpoints: [{"method": "POST", "path": "/auth/register", "covers_feature": "user-auth"}, {"method": "POST", "path": "/auth/login", "covers_feature": "user-auth"}, {"method": "GET", "path": "/posts", "covers_feature": "blog-crud"}, {"method": "POST", "path": "/posts", "covers_feature": "blog-crud"}, {"method": "POST", "path": "/posts/{id}/comments", "covers_feature": "blog-comments"}], models: ["User", "Post", "Comment"] },
+        }) };
 
       case 'validator':
-        return { content: `
-<!-- ARTIFACT:validation-report.md -->
+        // Validator has its own run() and still uses delimiter format
+        return { content: `<!-- ARTIFACT:validation-report.md -->
 ## Validation Summary
 - Status: PASS
 - Checks passed: 4/4
