@@ -534,17 +534,20 @@ export class Orchestrator {
     }
 
     logger.pipeline('info', 'intent-consultant:start', { runId: run.id });
+    console.log(`\n\x1b[1m[0/6] IntentConsultant\x1b[0m \x1b[2m— 意图深挖\x1b[0m`);
 
+    // Use 'researcher' as placeholder StageName — IntentConsultant is not a pipeline stage yet
+    const placeholderStage = 'researcher' as StageName;
     const agent = new IntentConsultantAgent(
-      'researcher' as StageName, // placeholder stage — not a real pipeline stage yet
+      placeholderStage,
       provider,
       logger,
       this.handler,
     );
 
     const context: AgentContext = {
-      systemPrompt: '', // loaded by agent internally
-      task: { runId: run.id, stage: 'researcher' as StageName, instruction: run.instruction },
+      systemPrompt: '',
+      task: { runId: run.id, stage: placeholderStage, instruction: run.instruction },
       inputArtifacts: new Map([['user_instruction', run.instruction]]),
     };
 
