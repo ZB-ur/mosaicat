@@ -4,11 +4,12 @@
 </p>
 
 <p align="center">
-  <strong>一条指令，十个 AI Agent 协作产出完整产品交付物 — 8 项程序化校验确保一致性。</strong>
+  <strong>AI Agent 流水线：一条指令产出完整产品交付物 — <br/>调研、PRD、UX 流程、API 规范、React 组件、代码和代码审查，8 项程序化校验。</strong>
 </p>
 
 <p align="center">
   <a href="README.md">English</a> ·
+  <a href="#前置要求">前置要求</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#工作原理">工作原理</a> ·
   <a href="#竞品对比">竞品对比</a>
@@ -23,31 +24,102 @@
 
 ---
 
-## Mosaicat 是什么？
+## 为什么选择 Mosaicat？
+
+传统交付方法论 — Scrum、看板、SAFe — 为优化**人的执行效率**而设计。在 AI 时代，执行从人转移到 Agent，瓶颈随之转移到**人的决策效率**：我们在做正确的事吗？设计合理吗？
+
+Mosaicat 围绕这一洞察重构交付流水线：
+
+- **人在两个关键点决策**（PRD 审批 + 设计评审），其余全部自治
+- **Agent 通过契约协调**，而非对话。每个 Agent 只看契约输入，绝不看上游推理过程。误差被隔离，不会关联传播
+- **验证是程序化的**，不靠 AI 判断。8 项确定性检查基于结构化 manifest（每份 ~500 字节），而非 50k token 的全量审查
+- **知识跨运行积累**。Prompt 进化和 Skill 捕获让每次交付成为组织记忆 — 人类审批是安全门控
 
 ```
 你:   "做一个个人记账 App，支持收入支出记录和月度报表查看"
        ↓
-       10 个 AI Agent 自主运行
+       10 个 AI Agent 自主运行，人在 2 个检查点审批
        ↓
 产出: 调研 → PRD → UX 流程 → OpenAPI 规范 → 25 个 React 组件 + 截图
       → 技术方案 → 代码 → 代码审查 → 8 项交叉验证报告
 ```
 
-无需 API Key，无需配置，只需 Claude 订阅和一条命令。
-
 <!-- TODO: 添加流水线终端输出的 demo GIF 或截图 -->
 
 ### 核心特性
 
-- **10 个自治 Agent** — 从意图澄清到代码审查，每个 Agent 有明确的输入/输出契约
-- **8 项程序化验证** — 确定性交叉验证，无 LLM 参与
-- **Feature ID 端到端追溯** — `F-001` → `F-002` 贯穿 PRD → UX → API → 代码
-- **可视化设计产出** — React + Tailwind 组件 + Playwright 截图 + 画廊
-- **3 种流水线 Profile** — `design-only` / `full` / `frontend-only`，意图自动推荐
-- **GitHub 原生工作流** — Draft PR + Stage Issue + PR Review 审批
-- **自进化系统** — Prompt + Skill 积累，人类审批后生效
-- **MCP 兼容** — 可作为 Claude Code 内置工具使用
+- **10 个自治 Agent** — 模拟真实产品团队：PM、设计师、架构师、开发者、审查者
+- **可配置审批门控** — 全自治、全人工或按阶段任意组合
+- **8 项确定性验证** — 跨工件一致性校验，无 LLM 参与
+- **Feature ID 端到端追溯** — `F-001` 从 PRD → UX → API → 代码 → 审查全程可追踪
+- **可视化设计产出** — React + Tailwind 组件 + Playwright 截图 + HTML 画廊
+- **GitHub 原生工作流** — Draft PR、Stage Issue、PR Review 审批 — 无缝融入现有团队流程
+- **人类监督下的自进化** — Prompt + Skill 积累，所有提案需人工批准
+- **3 种流水线 Profile** — `design-only` / `full` / `frontend-only`，意图分析自动推荐
+- **MCP 兼容** — 可作为 Claude Code 内置工具运行
+
+---
+
+## 前置要求
+
+| 要求 | 说明 |
+|---|---|
+| **Node.js** | v18 或更高版本 |
+| **Claude 订阅** | [Claude Pro / Team / Enterprise](https://claude.ai/) — Mosaicat 通过 Claude CLI（`claude -p`）调用 LLM 推理，无需单独的 API Key。 |
+| **Claude CLI** | 已安装并完成认证。在终端运行 `claude` 验证。安装指南见 [Claude Code 文档](https://docs.anthropic.com/en/docs/claude-code/overview)。 |
+| **Playwright**（可选） | 仅 UI 截图生成需要。安装：`npx playwright install chromium`。 |
+| **GitHub 账号**（可选） | 仅 `--github` 模式需要。通过 `npx tsx src/index.ts login` 登录。 |
+
+> **企业 / 团队用户**：Claude Team 和 Enterprise 计划开箱即用。流水线使用 `claude -p` 的 tool use 能力，所有 Claude 订阅方案均包含此功能。无需管理 API Key，无需配置 token 预算。
+
+---
+
+## 快速开始
+
+```bash
+git clone https://github.com/anthropics/mosaicat.git
+cd mosaicat
+npm install
+```
+
+### 1. 基本运行
+
+```bash
+npx tsx src/index.ts run "做一个任务管理应用"
+```
+
+意图顾问提出澄清问题，然后流水线运行。人工审批门控在产品经理、UI 设计师、技术负责人和审查员阶段暂停。
+
+### 2. 自动审批（CI / 快速原型）
+
+```bash
+npx tsx src/index.ts run "做一个任务管理应用" --auto-approve
+```
+
+### 3. GitHub 模式（团队协作）
+
+```bash
+npx tsx src/index.ts login                                    # 一次性 OAuth 授权
+npx tsx src/index.ts run "做一个任务管理应用" --github
+```
+
+创建 Draft PR 和 Stage Issue，团队成员通过 PR 上的 `/approve` 评论审批。
+
+### 4. MCP 模式（IDE 集成）
+
+```bash
+npx tsx src/mcp-entry.ts                                      # 启动 MCP server
+```
+
+添加到 Claude Code MCP 配置，然后在 IDE 中使用 `mosaic_run` 工具。
+
+### 5. 开启自进化
+
+```bash
+npx tsx src/index.ts run "做一个任务管理应用" --evolve
+```
+
+每个阶段完成后，进化引擎分析表现并提出 Prompt 改进或新 Skill。所有提案需人工批准。
 
 ---
 
@@ -71,9 +143,9 @@ graph LR
     style RV fill:#e8b4cb,stroke:#333,color:#000
 ```
 
-> 🔒 = 人工审批门控。人在 PRD 和设计稿处决策，其余全部自治。
+> 🔒 = 可配置审批门控（默认人工）。用 `--auto-approve` 跳过，或在 `config/pipeline.yaml` 中按阶段配置。
 
-| # | Agent | 输入 | 输出 | 门控 |
+| # | Agent | 输入 | 输出 | 默认门控 |
 |---|---|---|---|---|
 | 1 | **意图顾问** | 用户指令 | `intent-brief.json` | 自动 |
 | 2 | **调研员** | 意图摘要 | `research.md` + manifest | 自动 |
@@ -86,57 +158,25 @@ graph LR
 | 9 | **审查员** | 技术方案 + 代码 | `review-report.md` + manifest | **人工** |
 | 10 | **校验器** | 所有 manifest | `validation-report.md`（8 项检查） | 自动 |
 
-每个 Agent 生成一份 **manifest**（~500 字节）— 声明覆盖了哪些功能点（`F-001`、`F-002`...）。校验器对所有 manifest 执行 8 项确定性检查，验证过程无 LLM 参与。
+### Manifest 与验证
 
----
-
-## 快速开始
-
-```bash
-git clone https://github.com/anthropics/mosaicat.git
-cd mosaicat && npm install
-```
-
-**交互模式** — 意图顾问提问，人工门控暂停等待审批：
-
-```bash
-npx tsx src/index.ts run "做一个任务管理应用"
-```
-
-**自动审批** — 跳过所有门控，全速运行：
-
-```bash
-npx tsx src/index.ts run "做一个任务管理应用" --auto-approve
-```
-
-**GitHub 模式** — Draft PR + Stage Issue + PR Review 审批：
-
-```bash
-npx tsx src/index.ts login                                    # 一次性 OAuth 授权
-npx tsx src/index.ts run "做一个任务管理应用" --github
-```
-
-**MCP 模式** — 在 Claude Code 中使用：
-
-```bash
-npx tsx src/mcp-entry.ts                                      # 启动 MCP server
-```
+每个 Agent 生成一份 **manifest**（~500 字节），声明结构性事实：覆盖了哪些 Feature ID、生成了哪些文件。校验器执行 **8 项确定性检查** — 集合交叉、文件存在性、schema 一致性 — 无需调用任何 LLM。这是在规模化场景下验证 AI 产出的方式：不靠另一个 AI 做检查。
 
 ---
 
 ## 流水线 Profile
 
-| Profile | Agent 范围 | 使用场景 |
+| Profile | 阶段 | 使用场景 |
 |---|---|---|
-| `design-only` | 意图 → 调研 → PRD → UX → API → UI → 校验 | 产品规范 + 视觉设计 |
-| `full` | 全部 10 个 Agent | 想法 → 代码 + 审查 |
+| `design-only` | 意图 → 调研 → PRD → UX → API → UI → 校验 | 产品规范、设计评审 |
+| `full` | 全部 10 个 Agent | 端到端：想法 → 验证过的代码 |
 | `frontend-only` | 跳过 API 设计师 | 前端为主的项目 |
 
 ```bash
 npx tsx src/index.ts run "做一个博客系统" --profile design-only
 ```
 
-意图顾问根据你的指令自动推荐 profile，也可用 `--profile` 覆盖。
+意图顾问根据指令自动推荐 profile，也可用 `--profile` 覆盖。
 
 ---
 
@@ -147,14 +187,14 @@ npx tsx src/index.ts run "做一个博客系统" --profile design-only
 | **界面** | 终端（inquirer） | PR + Issues | Claude Code |
 | **审批** | 交互式提示 | PR review 评论 | 工具响应 |
 | **产出物** | `.mosaic/artifacts/` | PR commits + 本地 | `.mosaic/artifacts/` |
-| **适用场景** | 快速迭代 | 团队协作 | IDE 集成 |
+| **适用场景** | 个人 / 快速原型 | 团队协作 | IDE 集成 |
 
 <details>
 <summary><strong>GitHub 模式 — 详细流程</strong></summary>
 
 ```mermaid
 sequenceDiagram
-    participant U as 用户
+    participant U as 用户 / 团队
     participant M as Mosaicat
     participant GH as GitHub
 
@@ -166,12 +206,14 @@ sequenceDiagram
         M->>GH: 提交产出物 + 关闭 issue
         alt 人工门控
             M->>GH: 发起 PR review 请求
-            U->>GH: /approve（评论）
-            GH->>M: 轮询检测到审批
+            U->>GH: /approve 或 /reject（评论）
+            GH->>M: 轮询检测到决策
         end
     end
     M->>GH: 标记 PR 为 Ready for Review
 ```
+
+GitHub 模式自然融入现有团队工作流 — 设计师在 PR 上审查组件截图，产品经理通过 review 评论审批 PRD，技术负责人签署架构方案。无需学习新工具。
 
 <!-- TODO: 补充 GitHub PR 工作流真实截图 -->
 
@@ -184,29 +226,79 @@ sequenceDiagram
 | 能力 | Mosaicat | MetaGPT | CrewAI | v0 / bolt.new | Cursor / Windsurf |
 |---|:---:|:---:|:---:|:---:|:---:|
 | 全流程（想法→代码） | ✅ 10 个 Agent | ✅ | ✅ | ❌ 仅 UI | ❌ 仅代码 |
-| 结构化验证 | ✅ 8 项确定性检查 | ❌ | ❌ | ❌ | ❌ |
+| 确定性验证 | ✅ 8 项检查 | ❌ | ❌ | ❌ | ❌ |
 | Feature ID 追溯 | ✅ F-NNN 端到端 | ❌ | ❌ | ❌ | ❌ |
+| 可配置审批门控 | ✅ 按阶段配置 | ❌ | ❌ | ❌ | ❌ |
 | GitHub 原生工作流 | ✅ PR + Issues | ❌ | ❌ | ❌ | ❌ |
 | 可视化设计产出 | ✅ React + Playwright | ❌ | ❌ | ✅ | ❌ |
-| 自进化 | ✅ Prompt + Skill | ❌ | ❌ | ❌ | ❌ |
-| 认证要求 | 仅 Claude 订阅 | API Key | API Key | 订阅 | 订阅 |
+| 自进化 | ✅ 人类审批 | ❌ | ❌ | ❌ | ❌ |
 | 工件隔离 | ✅ 严格契约 | ❌ 共享内存 | ❌ 共享内存 | N/A | N/A |
+| 认证要求 | Claude 订阅 | API Key | API Key | 订阅 | 订阅 |
 
 ---
 
-## 契约层 — 为什么更笨的接口能构建更聪明的系统
+## 设计原则
 
-> 多 Agent 系统的核心失败模式不是 Agent 不聪明，而是共享太多上下文导致误差关联传播。解决方案不是更聪明的 Agent，而是更严格的边界。
+### 契约，而非对话
 
-**工件隔离** — 每个 Agent 只看契约输入，绝不看上游推理过程。UX 设计师阅读 PRD，但不知道调研员为什么排除了某个竞品。误差被隔离在局部。
+> 多 Agent 系统的失败很少源于 Agent 不聪明，而是源于共享太多上下文 — 误差关联传播。解法不是更聪明的 Agent，而是更严格的边界。
 
-**Manifest 验证** — 全量验证需 50k+ token 且幻觉容易通过。取而代之，每个 Agent 生成 ~500 字节的 manifest 声明结构性事实。校验器执行 8 项确定性检查 — 集合交叉、文件存在性、schema 一致性 — 零 LLM。
+**工件隔离** — 每个 Agent 只看契约输入，绝不看上游推理过程。UX 设计师阅读 PRD，但不知道调研员为什么排除了某个竞品。这不是限制，这是架构。误差被隔离在局部，每个 Agent 带来全新判断。
 
-**决策效率** — 传统方法论优化执行速度。AI 时代执行近乎免费，瓶颈是决策速度。流水线只在两个关键点需要人类决策：PRD 对不对？设计稿好不好？其余全自治。
+**基于 Manifest 的验证** — 全量验证需 50k+ token 且幻觉容易通过。取而代之，每个 Agent 生成 ~500 字节的 manifest 声明结构性事实。校验器执行 8 项确定性检查 — 零 LLM。在企业级流水线中，你不能依赖概率性的质量门控。
 
-**进化即记忆** — Prompt 进化 + Skill 积累 = 组织知识沉淀。但所有进化需人类批准，进化机制本身不可进化 — 刻意约束。
+### 全面开放，必要约束
 
-> Mosaicat 不是使用 AI Agent 的更好方式，而是关于 AI Agent 应如何协调的不同理论：通过契约，而非对话。
+Agent 在其职责范围内完全自治 — 可以使用工具、派生子 Agent、搜索网络。但自治受可配置约束限定：
+
+| 约束维度 | 配置位置 | 示例 |
+|---|---|---|
+| **可用工具** | `config/agents.yaml` | 编码员：`[Read, Write, Bash, Agent, WebSearch]` |
+| **可写路径** | `config/agents.yaml` | 编码员：仅 `.mosaic/artifacts/code/` |
+| **最大轮次** | `config/agents.yaml` | 调研员：3，编码员：10 |
+| **审批门控** | `config/pipeline.yaml` | 产品经理：人工，调研员：自动 |
+
+全面自治 + 生产级护栏，不是非此即彼的选择。
+
+### 从执行效率到决策效率
+
+传统交付方法论（Scrum、看板）优化人的执行速度。当 AI 承担执行时，瓶颈转移到人的决策速度。Mosaicat 的流水线在恰当的位置要求人类决策：
+
+- **PRD 审批** — 我们在做正确的事吗？
+- **设计评审** — UX/UI 符合意图吗？
+- **技术方案签署** — 架构合理吗？
+- **代码审查** — 实现符合规范吗？
+
+这些检查点之间的所有工作自治完成。这本质上就是成熟工程团队的运作方式 — 流水线只是移除了决策之间的手动执行。
+
+### 自进化：持续增长的组织记忆
+
+每次流水线运行都能改进系统。进化引擎提出：
+
+- **Prompt 进化** — 基于运行结果改进 Agent 系统提示词（版本间 24 小时冷却期）
+- **Skill 捕获** — 可复用的领域知识保存为 `SKILL.md` 文件，可跨 Agent 共享或专属于特定 Agent
+
+关键安全约束：
+- 所有提案生效前需**人类审批**
+- 进化机制本身**不可进化** — 这是刻意的不变量
+- Skill 遵循开放的 [Agent Skills 标准](https://github.com/anthropics/agent-skills) 格式
+
+随着时间推移，流水线积累组织知识：命名规范、API 模式、设计偏好、领域特定启发式。这些知识跨团队成员持久化，不随人员流动而丢失 — 它存在于系统中，而非存在于个人脑中。
+
+<details>
+<summary>Skill 目录结构</summary>
+
+```
+.mosaic/evolution/skills/
+├── shared/              # 跨 Agent 共享（如 API 命名规范）
+│   └── api-naming/
+│       └── SKILL.md
+└── ux-designer/         # Agent 专属（如移动优先设计模式）
+    └── mobile-first/
+        └── SKILL.md
+```
+
+</details>
 
 ---
 
@@ -252,7 +344,7 @@ graph TB
 
 ---
 
-## 产出物一览
+## 产出物
 
 单次 `--profile full` 运行的完整产出：
 
@@ -278,46 +370,20 @@ graph TB
 
 ---
 
-## 自进化系统
-
-每个阶段完成后，进化引擎可能提出：
-
-- **Prompt 进化** — 改进 Agent 系统提示词（24 小时冷却期）
-- **Skill 创建** — 可复用领域知识，`SKILL.md` 格式（无冷却期）
-
-所有提案需**人类批准**。进化机制本身不可进化。
-
-<details>
-<summary>Skill 目录结构</summary>
-
-```
-.mosaic/evolution/skills/
-├── shared/              # 跨 Agent 共享
-│   └── api-naming/
-│       └── SKILL.md
-└── ux-designer/         # Agent 专属
-    └── mobile-first/
-        └── SKILL.md
-```
-
-</details>
-
----
-
 ## 路线图
 
 | 里程碑 | 状态 | 亮点 |
 |---|---|---|
 | **M1** — MVP Pipeline | ✅ 完成 | 6 个 Agent，状态机，CLI Provider |
 | **M2** — 可观测性 + 交付 | ✅ 完成 | GitHub 模式，截图，日志系统 |
-| **M3** — 想法到代码 | ✅ 完成 | 10 个 Agent，3 个 Profile，Feature ID，进化系统 |
-| **M4** — 质量 + 规模 | 计划中 | QA 团队，DAG 引擎，棕地项目 |
+| **M3** — 想法到代码 | ✅ 完成 | 10 个 Agent，3 个 Profile，Feature ID，自进化 |
+| **M4** — 质量 + 规模 | 计划中 | QA 团队 Agent，DAG 引擎，棕地项目支持 |
 
 ---
 
 ## 贡献
 
-欢迎贡献！请先开 issue 讨论你想做的改动。
+欢迎贡献。请先开 issue 讨论你想做的改动。
 
 <!-- TODO: 项目公开后添加 contrib.rocks 贡献者墙 -->
 

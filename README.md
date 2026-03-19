@@ -4,14 +4,15 @@
 </p>
 
 <p align="center">
-  <strong>One instruction, ten AI agents deliver a full product specification — with 8 programmatic checks.</strong>
+  <strong>An AI-agent pipeline that turns a single instruction into validated product deliverables — <br/>research, PRD, UX flows, API spec, React components, code, and code review.</strong>
 </p>
 
 <p align="center">
   <a href="README.zh-CN.md">简体中文</a> ·
+  <a href="#prerequisites">Prerequisites</a> ·
   <a href="#quick-start">Quick Start</a> ·
   <a href="#how-it-works">How It Works</a> ·
-  <a href="#competitive-comparison">Comparison</a>
+  <a href="#comparison">Comparison</a>
 </p>
 
 <p align="center">
@@ -23,31 +24,102 @@
 
 ---
 
-## What Is Mosaicat?
+## Why Mosaicat?
+
+Traditional software delivery methodologies — Scrum, Kanban, SAFe — were designed to optimize **human execution efficiency**. In the AI era, execution shifts from humans to agents, and the bottleneck moves to **human decision efficiency**: are we building the right thing? Does the design make sense?
+
+Mosaicat restructures the delivery pipeline around this insight:
+
+- **Humans decide** at two critical points (PRD approval + design review). Everything else is autonomous.
+- **Agents coordinate through contracts**, not conversations. Each agent sees only its contracted inputs — never upstream reasoning. Errors stay local instead of propagating through shared context.
+- **Validation is programmatic**, not AI-judged. 8 deterministic checks on structural manifests (~500 bytes each), not 50k-token full-artifact reviews prone to hallucination.
+- **Knowledge accumulates** across runs. Prompt evolution and skill capture turn each delivery into organizational memory — with human approval as the safety gate.
 
 ```
 You:  "Build a personal finance tracker with income/expense logging and monthly reports"
        ↓
-       10 AI agents run autonomously
+       10 AI agents run autonomously, humans approve at 2 checkpoints
        ↓
 Out:  Research → PRD → UX Flows → OpenAPI Spec → 25 React Components + Screenshots
       → Tech Spec → Code → Code Review → 8-Check Validation Report
 ```
 
-No API keys. No configuration. Just a Claude subscription and one command.
-
 <!-- TODO: Add demo GIF or screenshot of pipeline terminal output here -->
 
 ### Key Features
 
-- **10 autonomous agents** — from intent clarification to code review, each with contracted inputs/outputs
-- **8 programmatic validation checks** — deterministic cross-artifact verification, no LLM involved
-- **Feature ID traceability** — `F-001` → `F-002` traced end-to-end across PRD → UX → API → Code
-- **Visual design output** — React + Tailwind components with Playwright screenshots + gallery
-- **3 pipeline profiles** — `design-only` / `full` / `frontend-only`, auto-recommended by intent
-- **GitHub-native workflow** — Draft PR, stage issues, PR review approval gates
-- **Self-evolution** — prompt + skill accumulation with human-approved proposals
-- **MCP compatible** — works as a tool inside Claude Code
+- **10 autonomous agents** — mirrors a real product team: PM, designer, architect, coder, reviewer
+- **Configurable approval gates** — full autonomy, full manual, or anything in between per stage
+- **8 deterministic validation checks** — cross-artifact consistency verified without LLM
+- **Feature ID traceability** — `F-001` traced end-to-end from PRD → UX → API → Code → Review
+- **Visual design output** — React + Tailwind components with Playwright screenshots + HTML gallery
+- **GitHub-native workflow** — Draft PR, stage issues, PR review approval gates — fits existing team processes
+- **Self-evolution with human oversight** — prompt + skill accumulation, all proposals require approval
+- **3 pipeline profiles** — `design-only` / `full` / `frontend-only`, auto-recommended by intent analysis
+- **MCP compatible** — runs inside Claude Code as a tool server
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|---|---|
+| **Node.js** | v18 or later |
+| **Claude subscription** | [Claude Pro / Team / Enterprise](https://claude.ai/) — Mosaicat calls Claude CLI (`claude -p`) for LLM inference. No separate API key needed. |
+| **Claude CLI** | Installed and authenticated. Run `claude` in your terminal to verify. See [Claude Code docs](https://docs.anthropic.com/en/docs/claude-code/overview) for setup. |
+| **Playwright** (optional) | Required only for UI screenshot generation. Install with `npx playwright install chromium`. |
+| **GitHub account** (optional) | Required only for `--github` mode. Login via `npx tsx src/index.ts login`. |
+
+> **Enterprise / Team users**: Claude Team and Enterprise plans work out of the box. The pipeline uses `claude -p` with tool use, which is included in all Claude subscriptions. No API key management, no token budgets to configure.
+
+---
+
+## Quick Start
+
+```bash
+git clone https://github.com/anthropics/mosaicat.git
+cd mosaicat
+npm install
+```
+
+### 1. Basic Run
+
+```bash
+npx tsx src/index.ts run "Build a task management app"
+```
+
+The IntentConsultant asks clarifying questions, then the pipeline runs. Manual approval gates pause at ProductOwner, UIDesigner, TechLead, and Reviewer stages.
+
+### 2. Auto-Approve (CI / rapid prototyping)
+
+```bash
+npx tsx src/index.ts run "Build a task management app" --auto-approve
+```
+
+### 3. GitHub Mode (team collaboration)
+
+```bash
+npx tsx src/index.ts login                                    # one-time OAuth
+npx tsx src/index.ts run "Build a task management app" --github
+```
+
+Creates a Draft PR with stage issues. Team members approve via `/approve` comments on the PR.
+
+### 4. MCP Mode (IDE integration)
+
+```bash
+npx tsx src/mcp-entry.ts                                      # start MCP server
+```
+
+Add to your Claude Code MCP config, then use `mosaic_run` tool inside the IDE.
+
+### 5. With Self-Evolution
+
+```bash
+npx tsx src/index.ts run "Build a task management app" --evolve
+```
+
+After each stage, the evolution engine analyzes performance and proposes prompt improvements or new skills. All proposals require human approval.
 
 ---
 
@@ -71,9 +143,9 @@ graph LR
     style RV fill:#e8b4cb,stroke:#333,color:#000
 ```
 
-> 🔒 = manual approval gate. Human decides at PRD and Design. Everything else is autonomous.
+> 🔒 = configurable approval gate (manual by default). Set `--auto-approve` to skip, or configure per-stage in `config/pipeline.yaml`.
 
-| # | Agent | Input | Output | Gate |
+| # | Agent | Input | Output | Default Gate |
 |---|---|---|---|---|
 | 1 | **IntentConsultant** | User instruction | `intent-brief.json` | auto |
 | 2 | **Researcher** | intent brief | `research.md` + manifest | auto |
@@ -86,50 +158,18 @@ graph LR
 | 9 | **Reviewer** | tech spec + code | `review-report.md` + manifest | **manual** |
 | 10 | **Validator** | all manifests | `validation-report.md` (8 checks) | auto |
 
-Each agent emits a **manifest** (~500 bytes) — a structural declaration of what it covered (`F-001`, `F-002`...). The Validator cross-references all manifests with 8 deterministic checks. No LLM involved in validation.
+### Manifests and Validation
 
----
-
-## Quick Start
-
-```bash
-git clone https://github.com/anthropics/mosaicat.git
-cd mosaicat && npm install
-```
-
-**Interactive** — the IntentConsultant asks questions, manual gates pause for approval:
-
-```bash
-npx tsx src/index.ts run "Build a task management app"
-```
-
-**Auto-approve** — skip all gates, full speed:
-
-```bash
-npx tsx src/index.ts run "Build a task management app" --auto-approve
-```
-
-**GitHub mode** — Draft PR + stage issues + PR review approval:
-
-```bash
-npx tsx src/index.ts login                                    # one-time OAuth
-npx tsx src/index.ts run "Build a task management app" --github
-```
-
-**MCP mode** — use inside Claude Code:
-
-```bash
-npx tsx src/mcp-entry.ts                                      # start MCP server
-```
+Each agent emits a **manifest** (~500 bytes) declaring structural facts: which Feature IDs it covered, which files it produced. The Validator runs **8 deterministic checks** — set intersection, file existence, schema conformance — without calling any LLM. This is how you validate AI output at scale without trusting another AI to do the checking.
 
 ---
 
 ## Pipeline Profiles
 
-| Profile | Agents | Use Case |
+| Profile | Stages | Use Case |
 |---|---|---|
-| `design-only` | Intent → Research → PRD → UX → API → UI → Validate | Product spec + visual design |
-| `full` | All 10 agents | Idea → code + review |
+| `design-only` | Intent → Research → PRD → UX → API → UI → Validate | Product specification, design review |
+| `full` | All 10 agents | End-to-end: idea → validated code |
 | `frontend-only` | Skips APIDesigner | Frontend-focused projects |
 
 ```bash
@@ -147,14 +187,14 @@ The IntentConsultant auto-recommends a profile based on your instruction. Overri
 | **Interface** | Terminal (inquirer) | PR + Issues | Claude Code |
 | **Approval** | Interactive prompts | PR review comments | Tool responses |
 | **Artifacts** | `.mosaic/artifacts/` | PR commits + local | `.mosaic/artifacts/` |
-| **Best for** | Quick iteration | Team collaboration | IDE integration |
+| **Best for** | Solo / rapid prototyping | Team collaboration | IDE integration |
 
 <details>
 <summary><strong>GitHub Mode — Detailed Flow</strong></summary>
 
 ```mermaid
 sequenceDiagram
-    participant U as User
+    participant U as User / Team
     participant M as Mosaicat
     participant GH as GitHub
 
@@ -166,12 +206,14 @@ sequenceDiagram
         M->>GH: Commit artifacts + close issue
         alt Manual gate
             M->>GH: Request PR review
-            U->>GH: /approve (comment)
-            GH->>M: Poll detects approval
+            U->>GH: /approve or /reject (comment)
+            GH->>M: Poll detects decision
         end
     end
     M->>GH: Mark PR ready for review
 ```
+
+GitHub mode fits naturally into existing team workflows — designers review component screenshots on the PR, product owners approve PRDs through review comments, tech leads sign off on architecture. No new tools to learn.
 
 <!-- TODO: Add real screenshots of GitHub PR workflow -->
 
@@ -179,34 +221,84 @@ sequenceDiagram
 
 ---
 
-## Competitive Comparison
+## Comparison
 
 | Capability | Mosaicat | MetaGPT | CrewAI | v0 / bolt.new | Cursor / Windsurf |
 |---|:---:|:---:|:---:|:---:|:---:|
 | Full pipeline (idea → code) | ✅ 10 agents | ✅ | ✅ | ❌ UI only | ❌ Code only |
-| Structured validation | ✅ 8 deterministic checks | ❌ | ❌ | ❌ | ❌ |
+| Deterministic validation | ✅ 8 checks | ❌ | ❌ | ❌ | ❌ |
 | Feature ID traceability | ✅ F-NNN end-to-end | ❌ | ❌ | ❌ | ❌ |
+| Configurable approval gates | ✅ Per-stage | ❌ | ❌ | ❌ | ❌ |
 | GitHub-native workflow | ✅ PR + Issues | ❌ | ❌ | ❌ | ❌ |
 | Visual design output | ✅ React + Playwright | ❌ | ❌ | ✅ | ❌ |
-| Self-evolution | ✅ Prompt + Skill | ❌ | ❌ | ❌ | ❌ |
-| Auth requirement | Claude sub only | API key | API key | Sub | Sub |
+| Self-evolution | ✅ Human-approved | ❌ | ❌ | ❌ | ❌ |
 | Artifact isolation | ✅ Strict contracts | ❌ Shared memory | ❌ Shared memory | N/A | N/A |
+| Auth requirement | Claude subscription | API key | API key | Subscription | Subscription |
 
 ---
 
-## The Contract Layer — Why Dumber Interfaces Build Smarter Systems
+## Design Principles
 
-> Most multi-agent failures come not from dumb agents, but from agents sharing too much context — errors correlate and propagate. The fix isn't smarter agents. It's stricter boundaries.
+### Contracts, Not Conversations
 
-**Artifact Isolation** — Each agent sees only its contracted inputs, never upstream reasoning. The UX Designer reads the PRD but doesn't know why the Researcher excluded a competitor. Errors stay local.
+> Multi-agent failures rarely come from dumb agents. They come from agents sharing too much context — errors correlate and propagate. The fix isn't smarter agents. It's stricter boundaries.
 
-**Manifest Validation** — Full-artifact validation costs 50k+ tokens and hallucinations pass as checks. Instead, each agent emits a ~500-byte manifest declaring structural facts. The Validator runs 8 deterministic checks — set intersection, file existence, schema conformance — zero LLM.
+**Artifact Isolation** — Each agent sees only its contracted inputs, never upstream reasoning. The UX Designer reads the PRD but doesn't know why the Researcher excluded a competitor. This is not a limitation; it is the architecture. Errors stay local. Each agent brings fresh judgment.
 
-**Decision Efficiency** — Traditional methodologies optimize human execution speed. Post-AI, execution is free. The bottleneck is human decision speed. This pipeline requires human decisions at exactly two points: Is the PRD right? Does the design look good? Everything else is autonomous.
+**Manifest-Based Validation** — Full-artifact validation costs 50k+ tokens and hallucinations pass as checks. Instead, each agent emits a ~500-byte manifest declaring structural facts. The Validator runs 8 deterministic checks — zero LLM. This scales to enterprise pipelines where you cannot afford probabilistic quality gates.
 
-**Evolution as Memory** — Prompt evolution + skill accumulation = organizational knowledge. But all evolution requires human approval, and the evolution mechanism itself cannot evolve — a deliberate constraint.
+### Autonomy With Guardrails
 
-> Mosaicat is not a better way to use AI agents. It is a different theory of how AI agents should coordinate: through contracts, not conversations.
+Agents are fully autonomous within their scope — they can use tools, spawn sub-agents, search the web. But autonomy is bounded by configurable constraints:
+
+| Constraint | Configuration | Example |
+|---|---|---|
+| **Allowed tools** | `config/agents.yaml` | Coder: `[Read, Write, Bash, Agent, WebSearch]` |
+| **Writable paths** | `config/agents.yaml` | Coder: `.mosaic/artifacts/code/` only |
+| **Max turns** | `config/agents.yaml` | Researcher: 3, Coder: 10 |
+| **Approval gates** | `config/pipeline.yaml` | ProductOwner: manual, Researcher: auto |
+
+Full autonomy with production-grade guardrails. No all-or-nothing choice.
+
+### From Execution Speed to Decision Speed
+
+Traditional delivery methodologies (Scrum, Kanban) optimize human execution speed. When AI handles execution, the bottleneck shifts to human decision speed. Mosaicat's pipeline requires human decisions at exactly the right points:
+
+- **PRD approval** — are we building the right thing?
+- **Design review** — does the UX/UI match intent?
+- **Tech spec sign-off** — is the architecture sound?
+- **Code review** — does the implementation match spec?
+
+Everything between these checkpoints runs autonomously. This mirrors how senior engineering organizations already work — the pipeline just removes the manual execution between decisions.
+
+### Self-Evolution: Organizational Memory That Grows
+
+Each pipeline run can improve the system. The evolution engine proposes:
+
+- **Prompt evolution** — improved agent system prompts based on run outcomes (24h cooldown between versions)
+- **Skill capture** — reusable domain knowledge saved as `SKILL.md` files, shared across agents or agent-specific
+
+Critical safety constraints:
+- All proposals require **human approval** before taking effect
+- The evolution mechanism itself **cannot evolve** — a deliberate invariant
+- Skills follow the open [Agent Skills standard](https://github.com/anthropics/agent-skills) format
+
+Over time, the pipeline accumulates organizational knowledge: naming conventions, API patterns, design preferences, domain-specific heuristics. This knowledge persists across team members and survives personnel changes — it lives in the system, not in people's heads.
+
+<details>
+<summary>Skill directory structure</summary>
+
+```
+.mosaic/evolution/skills/
+├── shared/              # Cross-agent skills (e.g., API naming conventions)
+│   └── api-naming/
+│       └── SKILL.md
+└── ux-designer/         # Agent-specific skills (e.g., mobile-first patterns)
+    └── mobile-first/
+        └── SKILL.md
+```
+
+</details>
 
 ---
 
@@ -252,7 +344,7 @@ graph TB
 
 ---
 
-## Outputs Gallery
+## Outputs
 
 A single `--profile full` run produces:
 
@@ -278,46 +370,20 @@ A single `--profile full` run produces:
 
 ---
 
-## Self-Evolution
-
-After each stage, the evolution engine may propose:
-
-- **Prompt evolution** — improved agent system prompts (24h cooldown)
-- **Skill creation** — reusable domain knowledge as `SKILL.md` files (no cooldown)
-
-All proposals require **human approval**. The evolution mechanism itself cannot evolve.
-
-<details>
-<summary>Skill directory structure</summary>
-
-```
-.mosaic/evolution/skills/
-├── shared/              # Cross-agent skills
-│   └── api-naming/
-│       └── SKILL.md
-└── ux-designer/         # Agent-specific skills
-    └── mobile-first/
-        └── SKILL.md
-```
-
-</details>
-
----
-
 ## Roadmap
 
 | Milestone | Status | Highlights |
 |---|---|---|
 | **M1** — MVP Pipeline | ✅ Done | 6 agents, state machine, CLI provider |
 | **M2** — Observability + Delivery | ✅ Done | GitHub mode, screenshots, logging |
-| **M3** — Idea to Code | ✅ Done | 10 agents, 3 profiles, Feature ID, evolution |
-| **M4** — Quality + Scale | Planned | QA agents, DAG engine, brownfield projects |
+| **M3** — Idea to Code | ✅ Done | 10 agents, 3 profiles, Feature ID, self-evolution |
+| **M4** — Quality + Scale | Planned | QA team agents, DAG engine, brownfield project support |
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please open an issue first to discuss what you'd like to change.
+Contributions welcome. Please open an issue first to discuss what you'd like to change.
 
 <!-- TODO: Add contributor wall via contrib.rocks when repo is public -->
 
