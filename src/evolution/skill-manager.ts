@@ -63,8 +63,24 @@ export function persistSkill(proposal: EvolutionProposal): SkillInfo {
 
   ensureDir(scopeDir);
 
-  const filePath = path.join(scopeDir, `${name}.md`);
-  fs.writeFileSync(filePath, proposal.proposedContent);
+  // Write SKILL.md with YAML frontmatter (Agent Skills open standard)
+  const skillDir = path.join(scopeDir, name);
+  ensureDir(skillDir);
+  const filePath = path.join(skillDir, 'SKILL.md');
+
+  const frontmatter = [
+    '---',
+    `name: ${name}`,
+    `description: ${proposal.skillMetadata.description}`,
+    `scope: ${scope}`,
+    `agent: ${proposal.agentStage}`,
+    `created: ${new Date().toISOString()}`,
+    `proposal: ${proposal.id}`,
+    '---',
+    '',
+  ].join('\n');
+
+  fs.writeFileSync(filePath, frontmatter + proposal.proposedContent);
 
   const skillInfo: SkillInfo = {
     name,
@@ -102,7 +118,10 @@ export function loadSkillsForAgent(stage: StageName): Map<string, string> {
 
   for (const skill of skills) {
     if (fs.existsSync(skill.filePath)) {
-      result.set(skill.name, fs.readFileSync(skill.filePath, 'utf-8'));
+      const raw = fs.readFileSync(skill.filePath, 'utf-8');
+      // Strip YAML frontmatter if present
+      const content = raw.replace(/^---\n[\s\S]*?\n---\n*/, '');
+      result.set(skill.name, content);
     }
   }
 
