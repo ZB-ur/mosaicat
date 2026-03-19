@@ -98,7 +98,9 @@ describe('ValidatorAgent', () => {
     expect(report).toContain('All referenced files exist on disk');
     // Overall status should remain PASS
     expect(report).toContain('Check 6: Feature ID Traceability');
-    expect(report).toMatch(/- Status: PASS\n- Checks passed: 6\/6/);
+    expect(report).toContain('Check 7: Tech-Spec Feature Coverage');
+    expect(report).toContain('Check 8: Code Task Coverage');
+    expect(report).toMatch(/- Status: PASS\n- Checks passed: 8\/8/);
   });
 
   it('should force FAIL when referenced files are missing', async () => {

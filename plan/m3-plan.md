@@ -1,5 +1,21 @@
 # M3 实施计划
 
+## 状态：✅ 已完成
+
+M3 所有 Phase (0-9) 已实施完成。主要成果：
+- Phase 0: Provider 升级 + CLI 交互改造 + 结构化输出
+- Phase 1: Intent Consultant 多轮对话
+- Phase 2: Feature ID 追溯链（F-NNN 贯穿全链路）
+- Phase 3: StageName 扩展到 12 + skipped 状态
+- Phase 4: Pipeline Profile（design-only / full / frontend-only）
+- Phase 5: 进化系统升级（stage 级 + SKILL.md 标准）
+- Phase 6: TechLead Agent
+- Phase 7: Coder Agent（高自主 tool use）
+- Phase 8: Reviewer Agent
+- Phase 9: Validator Check 7/8 + 文档收尾
+
+---
+
 ## Context
 
 M1（MVP Pipeline）和 M2（可观测性 + 产出交付 + 审批反馈）已全部完成。M3 的目标是打通从意图到代码的全链路。

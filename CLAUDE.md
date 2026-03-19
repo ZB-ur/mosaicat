@@ -76,46 +76,37 @@ full:        IntentConsultant → Researcher → ProductOwner → UXDesigner →
 | `adapters/github.ts` | GitHub 适配器 | `GitHubAdapter` |
 | `auth/*` | 整个认证模块 | OAuth + Token + AuthStore |
 
-### M3 重写模块（REWRITE — 接口或实现将大幅变更）
-| 模块 | 职责 | M3 变更 |
-|------|------|---------|
-| `providers/claude-cli.ts` | Claude CLI 调用 | 重写：tool use + `--allowedTools` + `--json-schema` 结构化输出 |
-| `providers/anthropic-sdk.ts` | Anthropic SDK 调用 | 同步适配 LLMCallOptions 扩展 |
-| `core/llm-provider.ts` | LLM 接口定义 | 扩展：`allowedTools`、`jsonSchema`；移除 `LLMUsage` |
-| `core/response-parser.ts` | 响应解析 | **删除**（结构化输出替代 delimiter 正则） |
-| `core/prompt-assembler.ts` | Prompt 拼装 | 重写：移除 delimiter 语法，只保留任务 + 上下文拼装 |
-| `agents/llm-agent.ts` | Agent 模板基类 | 重写：结构化输出模式，`getOutputSpec()` 返回 JSON schema |
-| `core/event-bus.ts` | 事件总线 | 精简：移除 `agent:usage`、`pipeline:usage` 事件 |
-| `core/cli-progress.ts` | 终端进度 | 重写：移除费用显示 |
-| `core/orchestrator.ts` | 全局编排 | 大改：去 usage、加 Profile、加 Intent Consultant、stage 级进化 |
-| `core/pr-body-generator.ts` | PR body 生成 | 移除 token 统计区块 |
-| `core/security.ts` | 信任模型 | 移除 metrics 相关参数 |
-| `index.ts` | CLI 入口 | 大改：`--profile` flag、新入口流程 |
+### M3 已完成模块（M3 DONE — 已重写/新增，接口稳定）
+| 模块 | 职责 | 状态 |
+|------|------|------|
+| `providers/claude-cli.ts` | Claude CLI 调用 | ✅ tool use + 结构化输出 |
+| `core/llm-provider.ts` | LLM 接口定义 | ✅ allowedTools、jsonSchema |
+| `core/prompt-assembler.ts` | Prompt 拼装 | ✅ 任务 + 上下文拼装 |
+| `agents/llm-agent.ts` | Agent 模板基类 | ✅ 结构化输出 + getOutputSpec() |
+| `core/event-bus.ts` | 事件总线 | ✅ 精简完成 |
+| `core/cli-progress.ts` | 终端进度 | ✅ 12 stage 支持 |
+| `core/orchestrator.ts` | 全局编排 | ✅ Profile + Intent Consultant + stage 级进化 |
+| `index.ts` | CLI 入口 | ✅ --profile flag |
+| `core/types.ts` | 全局类型 | ✅ 12 StageName + skipped + PipelineProfile + IntentBrief |
+| `core/manifest.ts` | manifest 读写 | ✅ Feature ID + TechSpec/Code/Review schemas |
+| `core/agent-factory.ts` | Agent 实例工厂 | ✅ 10 agents registered |
+| `agents/intent-consultant.ts` | Intent Consultant | ✅ 多轮对话 |
+| `agents/tech-lead.ts` | TechLead Agent | ✅ tech-spec 输出 |
+| `agents/coder.ts` | Coder Agent | ✅ 高自主 tool use |
+| `agents/reviewer.ts` | Reviewer Agent | ✅ code vs spec 审查 |
+| `evolution/engine.ts` | 进化引擎 | ✅ stage 级分析 |
+| `evolution/skill-manager.ts` | Skill 管理 | ✅ SKILL.md 标准格式 |
 
 ### 活跃模块（ACTIVE — 可能需要修改）
 | 模块 | 职责 | 改动场景 |
 |------|------|----------|
-| `core/types.ts` | 全局类型 | StageName 扩展到 12、新增 IntentBrief、skipped 状态、profiles |
-| `core/manifest.ts` | manifest 读写 + zod schema | Feature ID schema、新 Agent manifest |
-| `core/context-manager.ts` | 上下文组装 | Skill 注入格式对齐 |
-| `core/agent-factory.ts` | Agent 实例工厂 | 注册新 Agent、autonomy 配置 |
-| `core/interaction-handler.ts` | 用户交互抽象 | inquirer 风格改造 |
-| `core/run-manager.ts` | MCP 运行管理 | profile 参数 |
-| `evolution/*` | 自进化系统 | Stage 级进化、Skill 格式标准化 |
-| `mcp/tools.ts` | MCP 工具注册 | profile 参数、扩展 STAGE_NAMES |
-| `agents/*.ts` | 具体 Agent | 适配结构化输出 + Feature ID |
+| `core/context-manager.ts` | 上下文组装 | 新 Agent 上下文需求 |
+| `core/interaction-handler.ts` | 用户交互抽象 | 新交互模式 |
+| `core/run-manager.ts` | MCP 运行管理 | 新参数 |
+| `mcp/tools.ts` | MCP 工具注册 | 新工具 |
+| `agents/*.ts` | 具体 Agent | 优化调整 |
 | `core/artifact-presenter.ts` | 产出链接格式化 | 新 Agent 链接 |
 | `core/issue-manager.ts` | Issue 分层管理 | 新 Stage Issue |
-
-### M3 新增模块
-| 模块 | 职责 | Phase |
-|------|------|-------|
-| `config/mcp-servers.yaml` | 预设 MCP server 列表 | Phase 0 |
-| `core/mcp-loader.ts` | 加载预设 MCP server 配置 | Phase 0 |
-| `agents/intent-consultant.ts` | Intent Consultant Agent | Phase 1 |
-| `agents/tech-lead.ts` | TechLead Agent | Phase 6 |
-| `agents/coder.ts` | Coder Agent（tool use + subagent） | Phase 7 |
-| `agents/reviewer.ts` | Reviewer Agent | Phase 8 |
 
 ### 跨模块依赖关系
 ```
@@ -135,7 +126,7 @@ CLI(index.ts) → resolveGitHubAuth() → TokenService → Backend(api.mosaicat.
 
 Auth: resolveGitHubAuth() → AuthStore(~/.mosaicat/) + TokenService → Backend
 MCP: server.ts → RunManager → Orchestrator
-Evolution: Orchestrator(post-run) → Engine → ProposalHandler
+Evolution: Orchestrator(per-stage + post-run) → Engine → ProposalHandler
 ```
 
 ### 关键接口文件（理解模块间通信只需读这几个）
