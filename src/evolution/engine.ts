@@ -172,10 +172,11 @@ export class EvolutionEngine {
   }
 
   loadState(): EvolutionState {
-    if (!fs.existsSync(STATE_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
+    } catch {
       return { proposals: [], promptVersions: {}, cooldowns: {} };
     }
-    return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
   }
 
   saveState(state: EvolutionState): void {
@@ -186,8 +187,6 @@ export class EvolutionEngine {
   private buildStageSummary(stage: StageName): string | null {
     const parts: string[] = [];
     const artifactsDir = getArtifactsDir();
-
-    if (!fs.existsSync(artifactsDir)) return null;
 
     // Find manifests and artifacts for this stage
     const stageArtifactMap: Record<string, string[]> = {
@@ -202,9 +201,11 @@ export class EvolutionEngine {
     const files = stageArtifactMap[stage] ?? [];
     for (const file of files) {
       const filePath = path.join(artifactsDir, file);
-      if (fs.existsSync(filePath)) {
+      try {
         const content = fs.readFileSync(filePath, 'utf-8');
         parts.push(`## ${file}\n${content}`);
+      } catch {
+        // File doesn't exist or can't be read — skip
       }
     }
 
@@ -219,31 +220,38 @@ export class EvolutionEngine {
 
     // Read validation report
     const validationPath = `${getArtifactsDir()}/validation-report.md`;
-    if (fs.existsSync(validationPath)) {
+    try {
       parts.push('## Validation Report\n' + fs.readFileSync(validationPath, 'utf-8'));
+    } catch {
+      // Validation report doesn't exist — skip
     }
 
     // Read all manifests
     const artifactsDir = getArtifactsDir();
-    if (fs.existsSync(artifactsDir)) {
+    try {
       const files = fs.readdirSync(artifactsDir);
       for (const file of files) {
         if (file.endsWith('.manifest.json')) {
-          const content = fs.readFileSync(path.join(artifactsDir, file), 'utf-8');
-          parts.push(`## Manifest: ${file}\n${content}`);
+          try {
+            const content = fs.readFileSync(path.join(artifactsDir, file), 'utf-8');
+            parts.push(`## Manifest: ${file}\n${content}`);
+          } catch {
+            // Individual manifest read failed — skip
+          }
         }
       }
+    } catch {
+      // Artifacts directory doesn't exist — skip
     }
 
     // Read run logs for retry counts and timings
-    const logDir = `.mosaic/logs/${runId}`;
-    if (fs.existsSync(logDir)) {
-      const pipelineLog = path.join(logDir, 'pipeline.log');
-      if (fs.existsSync(pipelineLog)) {
-        const logContent = fs.readFileSync(pipelineLog, 'utf-8');
-        const retries = (logContent.match(/stage:retry/g) || []).length;
-        parts.push(`## Run Metadata\nRun ID: ${runId}\nRetries: ${retries}`);
-      }
+    const pipelineLog = path.join(`.mosaic/logs/${runId}`, 'pipeline.log');
+    try {
+      const logContent = fs.readFileSync(pipelineLog, 'utf-8');
+      const retries = (logContent.match(/stage:retry/g) || []).length;
+      parts.push(`## Run Metadata\nRun ID: ${runId}\nRetries: ${retries}`);
+    } catch {
+      // Pipeline log doesn't exist — skip
     }
 
     if (parts.length === 0) return null;
