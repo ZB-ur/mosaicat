@@ -45,7 +45,6 @@ export interface StageIssueParams {
   inputs: string[];
   outputs: string[];
   durationMs?: number;
-  usage?: { input_tokens: number; output_tokens: number; cost_usd?: number };
   retryCount?: number;
   // Process log
   clarificationQA?: { question: string; answer: string };
@@ -139,10 +138,6 @@ export function buildIssueBody(params: StageIssueParams): string {
   lines.push('');
   const durationStr = params.durationMs != null ? formatDurationForIssue(params.durationMs) : '—';
   const metricsItems: string[] = [`**Duration:** ${durationStr}`];
-  if (params.usage) {
-    const costStr = params.usage.cost_usd != null ? ` ($${params.usage.cost_usd.toFixed(2)})` : '';
-    metricsItems.push(`**Tokens:** in: ${params.usage.input_tokens.toLocaleString()} / out: ${params.usage.output_tokens.toLocaleString()}${costStr}`);
-  }
   if (params.retryCount && params.retryCount > 0) {
     metricsItems.push(`**Retries:** ${params.retryCount}`);
   }

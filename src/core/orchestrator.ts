@@ -24,8 +24,6 @@ import type { StageIssueParams } from './security.js';
 import { GitPublisher } from './git-publisher.js';
 import { generatePRBody } from './pr-body-generator.js';
 import { extractManifestSummary } from './manifest.js';
-import type { LLMUsage } from './llm-provider.js';
-
 const AGENT_DESC: Record<StageName, string> = {
   researcher: '市场调研 & 竞品分析',
   product_owner: '产品需求文档',
@@ -37,7 +35,6 @@ const AGENT_DESC: Record<StageName, string> = {
 
 interface StageMetrics {
   startTime: number;
-  usage?: LLMUsage;
   hadClarification: boolean;
   wasRejected: boolean;
   commitSha?: string;
@@ -157,15 +154,6 @@ export class Orchestrator {
       });
     }
 
-    // Listen for usage events for this stage
-    const usageHandler = (s: StageName, usage: LLMUsage) => {
-      if (s === stage) {
-        const metrics = this.stageMetrics.get(stage);
-        if (metrics) metrics.usage = usage;
-      }
-    };
-    eventBus.on('agent:usage', usageHandler);
-
     try {
       // Build context (artifact isolation)
       const task = { runId: run.id, stage, instruction: run.instruction };
@@ -249,13 +237,11 @@ export class Orchestrator {
       eventBus.emit('snapshot:created', stage, run.id);
 
       // Create informational Issue on stage complete
-      eventBus.off('agent:usage', usageHandler);
       await this.createStageIssue(stage, run);
 
       logger.pipeline('info', 'stage:complete', { stage });
       eventBus.emit('stage:complete', stage, run.id);
     } catch (err) {
-      eventBus.off('agent:usage', usageHandler);
       // ClarificationNeeded is handled inside executeAgent, not here
       const message = err instanceof Error ? err.message : String(err);
       const stageStatus = run.stages[stage];
@@ -464,7 +450,6 @@ export class Orchestrator {
       inputs: agentConfig.inputs ?? [],
       outputs: agentConfig.outputs ?? [],
       durationMs: metrics ? Date.now() - metrics.startTime : undefined,
-      usage: metrics?.usage,
       retryCount: run.stages[stage].retryCount,
       clarificationQA: metrics?.clarificationQA,
       rejectionFeedback: metrics?.rejectionFeedback,

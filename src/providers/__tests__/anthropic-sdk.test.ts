@@ -40,9 +40,6 @@ describe('AnthropicSDKProvider', () => {
     const result = await provider.call('Say hello');
 
     expect(result.content).toBe('Hello world');
-    expect(result.usage).toBeDefined();
-    expect(result.usage!.input_tokens).toBe(10);
-    expect(result.usage!.output_tokens).toBe(20);
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         messages: [{ role: 'user', content: 'Say hello' }],
@@ -133,19 +130,5 @@ describe('AnthropicSDKProvider', () => {
         model: 'claude-opus-4-20250514',
       })
     );
-  });
-
-  it('should calculate cost based on model pricing', async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: 'text', text: 'ok' }],
-      usage: { input_tokens: 1000, output_tokens: 500 },
-    });
-
-    const provider = new AnthropicSDKProvider('test-key', 'claude-sonnet-4-20250514');
-    const result = await provider.call('Hello');
-
-    // sonnet-4: $3/M input, $15/M output
-    // 1000 * 3/1M + 500 * 15/1M = 0.003 + 0.0075 = 0.0105
-    expect(result.usage!.cost_usd).toBeCloseTo(0.0105, 4);
   });
 });

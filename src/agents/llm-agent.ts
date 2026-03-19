@@ -25,13 +25,8 @@ export abstract class LLMAgent extends BaseAgent {
 
     this.logger.agent(this.stage, 'info', 'llm:response', {
       responseLength: raw.length,
-      usage: response.usage,
     });
     eventBus.emit('agent:response', this.stage, raw.length);
-
-    if (response.usage) {
-      eventBus.emit('agent:usage', this.stage, response.usage);
-    }
 
     const parsed = parseResponse(raw, spec.artifacts, spec.manifest);
 

@@ -30,13 +30,8 @@ export class ValidatorAgent extends BaseAgent {
 
     this.logger.agent(this.stage, 'info', 'llm:response', {
       responseLength: raw.length,
-      usage: response.usage,
     });
     eventBus.emit('agent:response', this.stage, raw.length);
-
-    if (response.usage) {
-      eventBus.emit('agent:usage', this.stage, response.usage);
-    }
 
     // Check for clarification (shouldn't happen for validator, but handle defensively)
     const clarificationMatch = raw.match(
