@@ -770,26 +770,45 @@ backend/
 
 > **注：** Phase 9 还包含 Step 9-12 的后续优化（Clarification UX、Stage Issue 丰富化、GitPublisher 修复、Stage Issue 重设计），详见 `plan/m2-plan.md`。
 
-### Milestone 3（计划已完成）: Spec 体系升级 + 研发团队 + 测试团队
+### Milestone 3: 意图深挖 + Provider 升级 + 研发团队
 
-> 详细计划已完成，见 `plan/m3-plan.md`（10 个 Phase，含 Feature ID 追溯、动态 Stage 注册、DAG 执行引擎、TechLead/Coder/Reviewer/QALead/Tester/SecurityAuditor Agent）。以下为方向性概述。
+> 详细计划见 `plan/m3-plan.md`。核心目标：打通从意图到代码的全链路。
 
-**Spec 体系升级（M2 → M3 桥梁）：**
+**核心升级：**
 
 | 改进 | 说明 | 价值 |
 |---|---|---|
-| Spec ID 追溯链 | Feature ID 贯穿 PRD → UX → API → Component → Test，精确覆盖率校验 | Validator 零幻觉 + 研发/测试团队精确引用 |
-| 条件 Stage 跳过 | `pipeline.yaml` 支持 `skip_when`（如纯前端跳过 APIDesigner） | 简单项目更快完成 |
-| Pipeline DAG | 状态机从线性序列升级为有向无环图，支持并行阶段组 | 研发 + 测试并行执行 |
-| Context 切片 | 按 feature 切片注入上下文，Agent 只看相关 spec 片段 | 大型项目 token 效率 |
+| Provider 升级 | Claude CLI 支持 tool use + 结构化输出 + MCP server | Agent 从纯文本函数升级为有工具的自治单元 |
+| Intent Consultant | 多轮动态对话深挖用户意图，产出结构化 Intent Brief | 减少模糊指令导致的返工 |
+| Feature ID 追溯链 | `F-NNN` ID 贯穿 PRD → UX → API → Component | Validator 精确覆盖率校验 |
+| Pipeline Profile | `design-only` / `full` / `frontend-only` 模式切换 | 按需裁剪 pipeline |
+| Agent 自主度配置 | allowedTools / writable_paths / max_turns 可配置 | 过程自主 + 产出校验 |
+| 移除 token/费用展示 | 精简代码，不做非核心功能 | 代码简洁 |
+| CLI 交互改造 | inquirer 风格上下键选择 + 自由输入 | 更好的用户体验 |
 
-**新增 Agent 团队：**
+**新增 Agent（M3 范围）：**
 
-| 团队 | Agents | 产出物 |
+| Agent | 产出物 | 门控 |
 |---|---|---|
-| 研发团队 | TechLead, Coder×N, Reviewer | 技术方案、代码、PR、Code Review |
-| 测试团队 | QALead, Tester, SecurityAuditor | 测试计划、测试代码、安全扫描报告 |
-| SRE 团队 | DevOps, ReleaseManager, Monitor | CI/CD、部署配置、监控配置 |
+| IntentConsultant | `intent-brief.json` | auto |
+| TechLead | `tech-spec.md` + manifest | manual |
+| Coder | `code/` + manifest（tool use + subagent 自主编码） | auto |
+| Reviewer | `review-report.md` + manifest | manual |
+
+**M4 预留：** QALead / Tester / SecurityAuditor Agent、DAG 执行引擎、Project Initializer
+
+| 阶段 | 范围 | PR | 状态 |
+|---|---|---|---|
+| Phase 0 | Provider 升级 + 结构化输出 + CLI 交互 + MCP 配置 + Agent 自主度 | — | 进行中 |
+| Phase 1 | Intent Consultant（多轮对话 + Intent Brief） | — | 待开始 |
+| Phase 2 | Feature ID 追溯链（manifest schema + Validator Check 6） | — | 待开始 |
+| Phase 3 | 扩展 StageName union + 注册新 Agent | — | 待开始 |
+| Phase 4 | Pipeline Profile + 条件跳过 | — | 待开始 |
+| Phase 5 | 进化系统升级（stage 级 + Skill 标准化） | — | 待开始 |
+| Phase 6 | TechLead Agent | — | 待开始 |
+| Phase 7 | Coder Agent（tool use + subagent 自主编码） | — | 待开始 |
+| Phase 8 | Reviewer Agent | — | 待开始 |
+| Phase 9 | 扩展 Validator + MCP 适配 + 收尾 | — | 待开始 |
 
 ---
 

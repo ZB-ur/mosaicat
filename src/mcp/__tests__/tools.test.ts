@@ -21,10 +21,10 @@ class MockLLMProvider implements LLMProvider {
     }
 
     const stageResponses: Record<string, string> = {
-      researcher: `<!-- ARTIFACT:research.md -->\n## Market Overview\nTest\n<!-- END:research.md -->\n<!-- MANIFEST:research.manifest.json -->\n{"competitors": ["A"], "key_insights": ["t"], "feasibility": "high", "risks": []}\n<!-- END:MANIFEST -->`,
-      product_owner: `<!-- ARTIFACT:prd.md -->\n## Goal\nTest\n## Features\n- f1\n<!-- END:prd.md -->\n<!-- MANIFEST:prd.manifest.json -->\n{"features": ["f1"], "constraints": [], "out_of_scope": []}\n<!-- END:MANIFEST -->`,
-      ux_designer: `<!-- ARTIFACT:ux-flows.md -->\n## User Journeys\n### Flow 1: main\nA → B\n## Component Inventory\n- C1\n<!-- END:ux-flows.md -->\n<!-- MANIFEST:ux-flows.manifest.json -->\n{"flows": ["main"], "components": ["C1"], "interaction_rules": []}\n<!-- END:MANIFEST -->`,
-      api_designer: `<!-- ARTIFACT:api-spec.yaml -->\nopenapi: "3.0.0"\ninfo:\n  title: T\npaths:\n  /t:\n    get:\n      summary: T\n<!-- END:api-spec.yaml -->\n<!-- MANIFEST:api-spec.manifest.json -->\n{"endpoints": [{"method": "GET", "path": "/t", "covers_feature": "f1"}], "models": ["M"]}\n<!-- END:MANIFEST -->`,
+      researcher: JSON.stringify({ artifact: "## Market Overview\nTest", manifest: { competitors: ["A"], key_insights: ["t"], feasibility: "high", risks: [] } }),
+      product_owner: JSON.stringify({ artifact: "## Goal\nTest\n## Features\n- f1", manifest: { features: ["f1"], constraints: [], out_of_scope: [] } }),
+      ux_designer: JSON.stringify({ artifact: "## User Journeys\n### Flow 1: main\nA → B\n## Component Inventory\n- C1", manifest: { flows: ["main"], components: ["C1"], interaction_rules: [] } }),
+      api_designer: JSON.stringify({ artifact: "openapi: \"3.0.0\"\ninfo:\n  title: T\npaths:\n  /t:\n    get:\n      summary: T", manifest: { endpoints: [{ method: "GET", path: "/t", covers_feature: "f1" }], models: ["M"] } }),
       validator: `<!-- ARTIFACT:validation-report.md -->\n## Validation Summary\n- Status: PASS\n<!-- END:validation-report.md -->`,
     };
 

@@ -1,4 +1,4 @@
-import type { StageName } from './types.js';
+import type { StageName, AgentAutonomyConfig } from './types.js';
 import type { LLMProvider } from './llm-provider.js';
 import type { Logger } from './logger.js';
 import { BaseAgent, StubAgent } from './agent.js';
@@ -21,7 +21,12 @@ const AGENT_MAP: Record<StageName, new (stage: StageName, provider: LLMProvider,
   validator: ValidatorAgent,
 };
 
-export function createAgent(stage: StageName, provider: LLMProvider, logger: Logger): BaseAgent {
+export function createAgent(
+  stage: StageName,
+  provider: LLMProvider,
+  logger: Logger,
+  _autonomy?: AgentAutonomyConfig,
+): BaseAgent {
   // Use StubAgent when provider is StubProvider (Phase 1 compatibility)
   if (provider instanceof StubProvider) {
     return new StubAgent(stage, provider, logger);

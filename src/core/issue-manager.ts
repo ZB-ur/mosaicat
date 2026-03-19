@@ -1,6 +1,5 @@
 import type { GitPlatformAdapter, IssueRef } from '../adapters/types.js';
 import type { StageName } from './types.js';
-import type { LLMUsage } from './llm-provider.js';
 import { eventBus } from './event-bus.js';
 
 export interface StepInfo {
@@ -63,12 +62,11 @@ export class IssueManager {
     return issue;
   }
 
-  /** Update stage issue body with step statuses and usage */
+  /** Update stage issue body with step statuses */
   async updateStageIssue(
     stage: StageName,
     runId: string,
     steps: StepInfo[],
-    usage?: LLMUsage,
   ): Promise<void> {
     const issueNumber = this.stageIssues.get(`${runId}:${stage}`);
     if (!issueNumber) return;
@@ -82,12 +80,7 @@ export class IssueManager {
       return `- ${icon} **${s.label}**${issueRef} — ${s.status}`;
     }).join('\n');
 
-    const usageLine = usage
-      ? `\n\n**Usage:** in: ${usage.input_tokens} / out: ${usage.output_tokens} tokens` +
-        (usage.cost_usd != null ? ` — $${usage.cost_usd.toFixed(2)}` : '')
-      : '';
-
-    await this.adapter.addComment(issueNumber, `### Step Progress\n${stepsTable}${usageLine}`);
+    await this.adapter.addComment(issueNumber, `### Step Progress\n${stepsTable}`);
   }
 
   /** Close a step issue */

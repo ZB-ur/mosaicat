@@ -1,8 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { StageName } from './types.js';
-import type { LLMUsage } from './llm-provider.js';
-import { STAGE_ORDER } from './types.js';
 
 const ARTIFACTS_DIR = '.mosaic/artifacts';
 
@@ -11,12 +8,6 @@ interface PRBodyOptions {
   owner: string;
   repo: string;
   branch: string;
-  stageUsage?: Map<StageName, LLMUsage>;
-}
-
-function formatTokens(n: number): string {
-  if (n < 1000) return `${n}`;
-  return `${(n / 1000).toFixed(1)}k`;
 }
 
 function rawUrl(owner: string, repo: string, branch: string, filePath: string): string {
@@ -29,30 +20,11 @@ function previewUrl(owner: string, repo: string, branch: string, filePath: strin
 }
 
 export function generatePRBody(options: PRBodyOptions): string {
-  const { runId, owner, repo, branch, stageUsage } = options;
+  const { runId, owner, repo, branch } = options;
   const sections: string[] = [];
 
   // Header
   sections.push(`## Mosaicat Pipeline Output\n\n**Run:** \`${runId}\``);
-
-  // Pipeline usage summary
-  if (stageUsage && stageUsage.size > 0) {
-    const rows: string[] = ['| Stage | In Tokens | Out Tokens | Cost |', '|-------|-----------|------------|------|'];
-    let totalIn = 0, totalOut = 0, totalCost = 0;
-
-    for (const stage of STAGE_ORDER) {
-      const usage = stageUsage.get(stage);
-      if (!usage) continue;
-      totalIn += usage.input_tokens;
-      totalOut += usage.output_tokens;
-      const cost = usage.cost_usd ?? 0;
-      totalCost += cost;
-      rows.push(`| ${stage} | ${formatTokens(usage.input_tokens)} | ${formatTokens(usage.output_tokens)} | $${cost.toFixed(2)} |`);
-    }
-
-    rows.push(`| **Total** | **${formatTokens(totalIn)}** | **${formatTokens(totalOut)}** | **$${totalCost.toFixed(2)}** |`);
-    sections.push(`### Token Usage\n\n${rows.join('\n')}`);
-  }
 
   // Component screenshots
   const screenshotsDir = path.join(ARTIFACTS_DIR, 'screenshots');

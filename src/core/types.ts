@@ -87,11 +87,19 @@ export interface PipelineConfig {
   evolution?: EvolutionConfig;
 }
 
+export interface AgentAutonomyConfig {
+  allowed_tools?: string[];
+  writable_paths?: string[];
+  max_turns?: number;
+  max_budget_usd?: number;
+}
+
 export interface AgentOutputConfig {
   name: string;
   prompt_file: string;
   inputs: string[];
   outputs: string[];
+  autonomy?: AgentAutonomyConfig;
 }
 
 export interface AgentsConfig {

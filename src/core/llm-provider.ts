@@ -1,18 +1,17 @@
 export interface LLMCallOptions {
   systemPrompt?: string;
-}
-
-export interface LLMUsage {
-  input_tokens: number;
-  output_tokens: number;
-  cache_creation_input_tokens?: number;
-  cache_read_input_tokens?: number;
-  cost_usd?: number;
+  /** Tool names the LLM is allowed to invoke (e.g. "Bash(git:*)", "WebSearch", "Read") */
+  allowedTools?: string[];
+  /** JSON Schema for structured output — LLM must return valid JSON matching this schema */
+  jsonSchema?: object;
+  /** Path(s) to MCP server config JSON files */
+  mcpConfigPaths?: string[];
+  /** Maximum dollar amount to spend on this call */
+  maxBudgetUsd?: number;
 }
 
 export interface LLMResponse {
   content: string;
-  usage?: LLMUsage;
 }
 
 export interface LLMProvider {

@@ -38,122 +38,27 @@ class MockLLMProvider implements LLMProvider {
     const stage = nonUIStages[nonUICallIndex] ?? STAGE_ORDER[this.callCount - 1];
 
     const responses: Record<string, string> = {
-      researcher: `<!-- ARTIFACT:research.md -->
-## Market Overview
-Todo app market analysis.
+      researcher: JSON.stringify({
+        artifact: "## Market Overview\nTodo app market analysis.\n\n## Competitor Analysis\n| Competitor | Core Features | Strengths | Weaknesses |\n|---|---|---|---|\n| Todoist | Tasks, projects | UX | Price |\n\n## Feasibility\nHigh — standard CRUD.\n\n## Key Insights\n- Keep it simple",
+        manifest: { competitors: ["Todoist"], key_insights: ["simplicity"], feasibility: "high", risks: [] },
+      }),
 
-## Competitor Analysis
-| Competitor | Core Features | Strengths | Weaknesses |
-|---|---|---|---|
-| Todoist | Tasks, projects | UX | Price |
+      product_owner: JSON.stringify({
+        artifact: "## Goal\nA minimal todo app for personal task management.\n\n## Features\n- task-crud: Create, complete, delete tasks\n- task-filter: Filter by status\n\n## Constraints\n- Single-page app\n- Local storage\n\n## Out of Scope\n- Multi-user\n- Cloud sync",
+        manifest: { features: ["task-crud", "task-filter"], constraints: ["spa", "local-storage"], out_of_scope: ["multi-user", "cloud-sync"] },
+      }),
 
-## Feasibility
-High — standard CRUD.
+      ux_designer: JSON.stringify({
+        artifact: "## User Journeys\n### Flow 1: task-management\nAdd task → Complete task → Delete task\n\n### Flow 2: task-filtering\nView all → Filter active → Filter completed\n\n## Interaction Rules\n- inline-edit: Click to edit task text\n- swipe-delete: Swipe left to delete\n\n## Component Inventory\n- TaskInput: Add new task\n- TaskItem: Single task with checkbox\n- TaskFilter: Filter buttons",
+        manifest: { flows: ["task-management", "task-filtering"], components: ["TaskInput", "TaskItem", "TaskFilter"], interaction_rules: ["inline-edit", "swipe-delete"] },
+      }),
 
-## Key Insights
-- Keep it simple
-<!-- END:research.md -->
+      api_designer: JSON.stringify({
+        artifact: "openapi: \"3.0.0\"\ninfo:\n  title: Todo API\n  version: \"1.0.0\"\npaths:\n  /tasks:\n    get:\n      summary: List tasks\n      responses:\n        \"200\":\n          description: Task list\n    post:\n      summary: Create task\n      responses:\n        \"201\":\n          description: Task created\n  /tasks/{id}:\n    patch:\n      summary: Update task\n      responses:\n        \"200\":\n          description: Task updated\n    delete:\n      summary: Delete task\n      responses:\n        \"204\":\n          description: Task deleted",
+        manifest: { endpoints: [{ method: "GET", path: "/tasks", covers_feature: "task-crud" }, { method: "POST", path: "/tasks", covers_feature: "task-crud" }, { method: "PATCH", path: "/tasks/{id}", covers_feature: "task-crud" }, { method: "DELETE", path: "/tasks/{id}", covers_feature: "task-crud" }], models: ["Task"] },
+      }),
 
-<!-- MANIFEST:research.manifest.json -->
-{"competitors": ["Todoist"], "key_insights": ["simplicity"], "feasibility": "high", "risks": []}
-<!-- END:MANIFEST -->`,
-
-      product_owner: `<!-- ARTIFACT:prd.md -->
-## Goal
-A minimal todo app for personal task management.
-
-## Features
-- task-crud: Create, complete, delete tasks
-- task-filter: Filter by status
-
-## Constraints
-- Single-page app
-- Local storage
-
-## Out of Scope
-- Multi-user
-- Cloud sync
-<!-- END:prd.md -->
-
-<!-- MANIFEST:prd.manifest.json -->
-{"features": ["task-crud", "task-filter"], "constraints": ["spa", "local-storage"], "out_of_scope": ["multi-user", "cloud-sync"]}
-<!-- END:MANIFEST -->`,
-
-      ux_designer: `<!-- ARTIFACT:ux-flows.md -->
-## User Journeys
-### Flow 1: task-management
-Add task → Complete task → Delete task
-
-### Flow 2: task-filtering
-View all → Filter active → Filter completed
-
-## Interaction Rules
-- inline-edit: Click to edit task text
-- swipe-delete: Swipe left to delete
-
-## Component Inventory
-- TaskInput: Add new task
-- TaskItem: Single task with checkbox
-- TaskFilter: Filter buttons
-<!-- END:ux-flows.md -->
-
-<!-- MANIFEST:ux-flows.manifest.json -->
-{"flows": ["task-management", "task-filtering"], "components": ["TaskInput", "TaskItem", "TaskFilter"], "interaction_rules": ["inline-edit", "swipe-delete"]}
-<!-- END:MANIFEST -->`,
-
-      api_designer: `<!-- ARTIFACT:api-spec.yaml -->
-openapi: "3.0.0"
-info:
-  title: Todo API
-  version: "1.0.0"
-paths:
-  /tasks:
-    get:
-      summary: List tasks
-      responses:
-        "200":
-          description: Task list
-    post:
-      summary: Create task
-      responses:
-        "201":
-          description: Task created
-  /tasks/{id}:
-    patch:
-      summary: Update task
-      responses:
-        "200":
-          description: Task updated
-    delete:
-      summary: Delete task
-      responses:
-        "204":
-          description: Task deleted
-<!-- END:api-spec.yaml -->
-
-<!-- MANIFEST:api-spec.manifest.json -->
-{"endpoints": [{"method": "GET", "path": "/tasks", "covers_feature": "task-crud"}, {"method": "POST", "path": "/tasks", "covers_feature": "task-crud"}, {"method": "PATCH", "path": "/tasks/{id}", "covers_feature": "task-crud"}, {"method": "DELETE", "path": "/tasks/{id}", "covers_feature": "task-crud"}], "models": ["Task"]}
-<!-- END:MANIFEST -->`,
-
-      validator: `<!-- ARTIFACT:validation-report.md -->
-## Validation Summary
-- Status: PASS
-- Checks passed: 4/4
-
-### Check 1: PRD ↔ UX Flows Coverage
-- Status: PASS
-- task-crud → task-management
-- task-filter → task-filtering
-
-### Check 2: UX Flows ↔ API Coverage
-- Status: PASS
-
-### Check 3: API ↔ Components Coverage
-- Status: PASS
-
-### Check 4: Naming Consistency
-- Status: PASS
-<!-- END:validation-report.md -->`,
+      validator: `<!-- ARTIFACT:validation-report.md -->\n## Validation Summary\n- Status: PASS\n- Checks passed: 4/4\n\n### Check 1: PRD ↔ UX Flows Coverage\n- Status: PASS\n- task-crud → task-management\n- task-filter → task-filtering\n\n### Check 2: UX Flows ↔ API Coverage\n- Status: PASS\n\n### Check 3: API ↔ Components Coverage\n- Status: PASS\n\n### Check 4: Naming Consistency\n- Status: PASS\n<!-- END:validation-report.md -->`,
     };
 
     return { content: responses[stage!] ?? '[mock] unknown' };

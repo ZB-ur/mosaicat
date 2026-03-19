@@ -1,0 +1,15 @@
+# Preset MCP servers available to agents via --mcp-config
+# Each entry maps to a Claude Code MCP server configuration.
+# Agents reference these by name in their autonomy.allowed_tools config.
+
+servers:
+  # Web search — Researcher can search the web
+  # Uses the built-in WebSearch tool (no external MCP server needed)
+  # WebSearch and WebFetch are built-in Claude Code tools
+
+  # File System — agents can read/write within artifact directory
+  # Uses built-in Read/Write/Edit tools (no external MCP server needed)
+
+  # Note: In Claude CLI --print mode, tools like WebSearch, WebFetch, Read,
+  # Write, Edit, Bash, Agent are built-in and enabled via --allowedTools.
+  # External MCP servers can be added here when needed (e.g., database, API).

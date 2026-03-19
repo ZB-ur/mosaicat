@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
 import PQueue from 'p-queue';
-import type { LLMProvider, LLMCallOptions, LLMResponse, LLMUsage } from '../core/llm-provider.js';
+import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
 
-const TIMEOUT_MS = 600_000; // 10 minutes — complex stages (ui_designer) need time for large outputs
+const TIMEOUT_MS = 600_000; // 10 minutes — complex stages (ui_designer, coder) need time
 const MAX_BUFFER = 10 * 1024 * 1024; // 10MB
 
 export class ClaudeCLIProvider implements LLMProvider {
@@ -10,13 +10,10 @@ export class ClaudeCLIProvider implements LLMProvider {
 
   async call(prompt: string, options?: LLMCallOptions): Promise<LLMResponse> {
     return this.queue.add(async () => {
-      // Prepend system prompt if provided (claude --print has no separate system prompt flag)
-      const fullPrompt = options?.systemPrompt
-        ? `${options.systemPrompt}\n\n---\n\n${prompt}`
-        : prompt;
+      const args = this.buildArgs(options);
 
       return new Promise<LLMResponse>((resolve, reject) => {
-        const child = spawn('claude', ['--print', '--output-format', 'json'], {
+        const child = spawn('claude', args, {
           stdio: ['pipe', 'pipe', 'pipe'],
         });
 
@@ -50,25 +47,7 @@ export class ClaudeCLIProvider implements LLMProvider {
             return;
           }
 
-          // Parse JSON output from claude --output-format json
-          try {
-            const json = JSON.parse(stdout.trim());
-            const content = json.result ?? stdout.trim();
-            const usage: LLMUsage | undefined = json.usage
-              ? {
-                  input_tokens: json.usage.input_tokens ?? 0,
-                  output_tokens: json.usage.output_tokens ?? 0,
-                  cache_creation_input_tokens: json.usage.cache_creation_input_tokens,
-                  cache_read_input_tokens: json.usage.cache_read_input_tokens,
-                  cost_usd: json.total_cost_usd ?? json.cost_usd,
-                }
-              : undefined;
-
-            resolve({ content, usage });
-          } catch {
-            // Fallback: if JSON parsing fails, treat entire output as content
-            resolve({ content: stdout.trim() });
-          }
+          resolve(this.parseOutput(stdout, options));
         });
 
         child.on('error', (err) => {
@@ -77,9 +56,70 @@ export class ClaudeCLIProvider implements LLMProvider {
         });
 
         // Write prompt to stdin and close
-        child.stdin.write(fullPrompt);
+        child.stdin.write(prompt);
         child.stdin.end();
       });
     }) as Promise<LLMResponse>;
+  }
+
+  private buildArgs(options?: LLMCallOptions): string[] {
+    const args = ['--print', '--output-format', 'json'];
+
+    if (options?.systemPrompt) {
+      args.push('--system-prompt', options.systemPrompt);
+    }
+
+    if (options?.allowedTools && options.allowedTools.length > 0) {
+      args.push('--allowedTools', ...options.allowedTools);
+    }
+
+    if (options?.jsonSchema) {
+      args.push('--json-schema', JSON.stringify(options.jsonSchema));
+    }
+
+    if (options?.mcpConfigPaths) {
+      for (const configPath of options.mcpConfigPaths) {
+        args.push('--mcp-config', configPath);
+      }
+    }
+
+    if (options?.maxBudgetUsd != null) {
+      args.push('--max-budget-usd', String(options.maxBudgetUsd));
+    }
+
+    // Skip permission prompts in pipeline mode
+    args.push('--permission-mode', 'bypassPermissions');
+
+    return args;
+  }
+
+  private parseOutput(stdout: string, options?: LLMCallOptions): LLMResponse {
+    try {
+      const json = JSON.parse(stdout.trim());
+      const rawContent = json.result ?? stdout.trim();
+
+      // If jsonSchema was requested, the result should be valid JSON — extract it
+      if (options?.jsonSchema) {
+        return { content: this.extractJsonContent(rawContent) };
+      }
+
+      return { content: rawContent };
+    } catch {
+      // Fallback: if JSON parsing fails, treat entire output as content
+      return { content: stdout.trim() };
+    }
+  }
+
+  /**
+   * Extract JSON content from LLM output that may be wrapped in markdown code fences.
+   */
+  private extractJsonContent(raw: string): string {
+    const trimmed = raw.trim();
+    // Strip markdown code fences if present
+    const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
+    if (fenceMatch) {
+      return fenceMatch[1].trim();
+    }
+    return trimmed;
   }
 }

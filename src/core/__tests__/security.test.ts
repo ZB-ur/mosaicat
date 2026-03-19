@@ -159,13 +159,11 @@ describe('Security', () => {
       const body = buildIssueBody({
         ...baseParams,
         durationMs: 38900,
-        usage: { input_tokens: 3, output_tokens: 993, cost_usd: 0.12 },
         repoSlug: 'ZB-ur/test-repo',
         commitSha: 'abc1234567890',
       });
       expect(body).toContain('<details>');
       expect(body).toContain('38.9s');
-      expect(body).toContain('$0.12');
       expect(body).toContain('[`abc1234`]');
     });
 

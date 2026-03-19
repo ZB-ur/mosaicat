@@ -23,10 +23,10 @@ class MockLLMProvider implements LLMProvider {
     const stage = STAGE_ORDER[this.callCount - 1];
 
     const responses: Record<string, string> = {
-      researcher: `<!-- ARTIFACT:research.md -->\n## Market Overview\nTest research content\n<!-- END:research.md -->\n<!-- MANIFEST:research.manifest.json -->\n{"competitors": ["A"], "key_insights": ["test"], "feasibility": "high", "risks": []}\n<!-- END:MANIFEST -->`,
-      product_owner: `<!-- ARTIFACT:prd.md -->\n## Goal\nTest goal\n## Features\n- feat-a\n<!-- END:prd.md -->\n<!-- MANIFEST:prd.manifest.json -->\n{"features": ["feat-a"], "constraints": [], "out_of_scope": []}\n<!-- END:MANIFEST -->`,
-      ux_designer: `<!-- ARTIFACT:ux-flows.md -->\n## User Journeys\n### Flow 1: main-flow\nStep 1 → Step 2\n## Component Inventory\n- CompA\n<!-- END:ux-flows.md -->\n<!-- MANIFEST:ux-flows.manifest.json -->\n{"flows": ["main-flow"], "components": ["CompA"], "interaction_rules": []}\n<!-- END:MANIFEST -->`,
-      api_designer: `<!-- ARTIFACT:api-spec.yaml -->\nopenapi: "3.0.0"\ninfo:\n  title: Test\npaths:\n  /test:\n    get:\n      summary: Test\n<!-- END:api-spec.yaml -->\n<!-- MANIFEST:api-spec.manifest.json -->\n{"endpoints": [{"method": "GET", "path": "/test", "covers_feature": "feat-a"}], "models": ["TestModel"]}\n<!-- END:MANIFEST -->`,
+      researcher: JSON.stringify({ artifact: "## Market Overview\nTest research content", manifest: { competitors: ["A"], key_insights: ["test"], feasibility: "high", risks: [] } }),
+      product_owner: JSON.stringify({ artifact: "## Goal\nTest goal\n## Features\n- feat-a", manifest: { features: ["feat-a"], constraints: [], out_of_scope: [] } }),
+      ux_designer: JSON.stringify({ artifact: "## User Journeys\n### Flow 1: main-flow\nStep 1 → Step 2\n## Component Inventory\n- CompA", manifest: { flows: ["main-flow"], components: ["CompA"], interaction_rules: [] } }),
+      api_designer: JSON.stringify({ artifact: "openapi: \"3.0.0\"\ninfo:\n  title: Test\npaths:\n  /test:\n    get:\n      summary: Test", manifest: { endpoints: [{ method: "GET", path: "/test", covers_feature: "feat-a" }], models: ["TestModel"] } }),
       validator: `<!-- ARTIFACT:validation-report.md -->\n## Validation Summary\n- Status: PASS\n- Checks passed: 4/4\n<!-- END:validation-report.md -->`,
     };
 
