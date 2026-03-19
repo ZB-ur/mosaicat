@@ -30,8 +30,8 @@ export function buildContext(
       }
       systemPrompt += skillSection;
     }
-  } catch {
-    // Skills not available — continue without them
+  } catch (err) {
+    console.warn(`[context-manager] Failed to load skills for ${task.stage}: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // Load only contracted input artifacts (artifact isolation)
