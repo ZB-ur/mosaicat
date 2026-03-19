@@ -267,6 +267,11 @@ export class Orchestrator {
 
       logger.pipeline('info', 'stage:complete', { stage });
       eventBus.emit('stage:complete', stage, run.id);
+
+      // Stage-level evolution analysis (non-blocking)
+      if (this.pipelineConfig.evolution?.enabled) {
+        await this.runStageEvolution(run.id, stage, provider, logger);
+      }
     } catch (err) {
       // ClarificationNeeded is handled inside executeAgent, not here
       const message = err instanceof Error ? err.message : String(err);
@@ -586,6 +591,32 @@ export class Orchestrator {
       this.pipelineConfig.evolution = { enabled: true, cooldown_hours: 24 };
     } else {
       this.pipelineConfig.evolution.enabled = true;
+    }
+  }
+
+  private async runStageEvolution(
+    runId: string,
+    stage: StageName,
+    provider: LLMProvider,
+    logger: Logger,
+  ): Promise<void> {
+    try {
+      const { EvolutionEngine } = await import('../evolution/engine.js');
+      const { ProposalHandler } = await import('../evolution/proposal-handler.js');
+
+      const engine = new EvolutionEngine(provider, logger);
+      const proposals = await engine.analyzeStage(runId, stage);
+
+      if (proposals.length > 0) {
+        const handler = new ProposalHandler(this.handler, provider, logger);
+        await handler.processProposals(proposals);
+      }
+    } catch (err) {
+      logger.pipeline('error', 'evolution:stage-error', {
+        stage,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Stage evolution errors don't fail the pipeline
     }
   }
 

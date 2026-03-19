@@ -58,6 +58,28 @@ export class EvolutionEngine {
     this.logger = logger;
   }
 
+  /**
+   * Analyze a single stage's output for evolution proposals.
+   * Called after each stage completes (stage-level evolution).
+   */
+  async analyzeStage(runId: string, stage: StageName): Promise<EvolutionProposal[]> {
+    this.logger.pipeline('info', 'evolution:analyze-stage:start', { runId, stage });
+
+    const state = this.loadState();
+    const summary = this.buildStageSummary(stage);
+
+    if (!summary) {
+      this.logger.pipeline('info', 'evolution:analyze-stage:no-data', { runId, stage });
+      return [];
+    }
+
+    return this.runAnalysis(runId, summary, state);
+  }
+
+  /**
+   * Analyze the full pipeline run for evolution proposals.
+   * Called after pipeline completes (pipeline-level evolution).
+   */
   async analyze(runId: string): Promise<EvolutionProposal[]> {
     this.logger.pipeline('info', 'evolution:analyze:start', { runId });
 
@@ -69,6 +91,14 @@ export class EvolutionEngine {
       return [];
     }
 
+    return this.runAnalysis(runId, summary, state);
+  }
+
+  private async runAnalysis(
+    runId: string,
+    summary: string,
+    state: EvolutionState,
+  ): Promise<EvolutionProposal[]> {
     // Call LLM for analysis
     let rawContent: string;
     try {
@@ -150,6 +180,37 @@ export class EvolutionEngine {
   saveState(state: EvolutionState): void {
     ensureDir(STATE_DIR);
     fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  }
+
+  private buildStageSummary(stage: StageName): string | null {
+    const parts: string[] = [];
+    const artifactsDir = '.mosaic/artifacts';
+
+    if (!fs.existsSync(artifactsDir)) return null;
+
+    // Find manifests and artifacts for this stage
+    const stageArtifactMap: Record<string, string[]> = {
+      researcher: ['research.md', 'research.manifest.json'],
+      product_owner: ['prd.md', 'prd.manifest.json'],
+      ux_designer: ['ux-flows.md', 'ux-flows.manifest.json'],
+      api_designer: ['api-spec.yaml', 'api-spec.manifest.json'],
+      ui_designer: ['components.manifest.json'],
+      validator: ['validation-report.md'],
+    };
+
+    const files = stageArtifactMap[stage] ?? [];
+    for (const file of files) {
+      const filePath = path.join(artifactsDir, file);
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        parts.push(`## ${file}\n${content}`);
+      }
+    }
+
+    if (parts.length === 0) return null;
+
+    parts.unshift(`# Stage Analysis: ${stage}`);
+    return parts.join('\n\n');
   }
 
   private buildPipelineSummary(runId: string): string | null {
