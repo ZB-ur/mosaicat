@@ -84,3 +84,67 @@ agents:
     autonomy:
       allowed_tools: []
       max_turns: 1
+
+  # --- New stages (Phase 6-8) ---
+  intent_consultant:
+    name: IntentConsultant
+    prompt_file: .claude/agents/mosaic/intent-consultant.md
+    inputs:
+      - user_instruction
+    outputs:
+      - intent-brief.json
+    autonomy:
+      allowed_tools: []
+      max_turns: 3
+
+  tech_lead:
+    name: TechLead
+    prompt_file: .claude/agents/mosaic/tech-lead.md
+    inputs:
+      - prd.md
+      - ux-flows.md
+      - api-spec.yaml
+    outputs:
+      - tech-spec.md
+      - tech-spec.manifest.json
+    autonomy:
+      allowed_tools:
+        - WebSearch
+        - WebFetch
+      max_turns: 3
+
+  coder:
+    name: Coder
+    prompt_file: .claude/agents/mosaic/coder.md
+    inputs:
+      - tech-spec.md
+      - api-spec.yaml
+    outputs:
+      - code/
+      - code.manifest.json
+    autonomy:
+      allowed_tools:
+        - Read
+        - Write
+        - Bash
+        - Agent
+        - WebSearch
+      writable_paths:
+        - .mosaic/artifacts/code/
+      max_turns: 10
+      max_budget_usd: 5
+
+  reviewer:
+    name: Reviewer
+    prompt_file: .claude/agents/mosaic/reviewer.md
+    inputs:
+      - tech-spec.md
+      - code/
+      - code.manifest.json
+    outputs:
+      - review-report.md
+      - review.manifest.json
+    autonomy:
+      allowed_tools:
+        - Read
+      max_turns: 3
