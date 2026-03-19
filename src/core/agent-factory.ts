@@ -9,6 +9,7 @@ import {
   UXDesignerAgent,
   APIDesignerAgent,
   UIDesignerAgent,
+  TechLeadAgent,
   ValidatorAgent,
 } from '../agents/index.js';
 
@@ -20,8 +21,9 @@ const AGENT_MAP: Partial<Record<StageName, AgentConstructor>> = {
   ux_designer: UXDesignerAgent,
   api_designer: APIDesignerAgent,
   ui_designer: UIDesignerAgent,
+  tech_lead: TechLeadAgent,
   validator: ValidatorAgent,
-  // tech_lead, coder, reviewer — registered in Phase 6-8
+  // coder, reviewer — registered in Phase 7-8
   // intent_consultant — handled separately in orchestrator
   // qa_lead, tester — M4
 };

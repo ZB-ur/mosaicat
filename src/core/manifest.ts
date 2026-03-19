@@ -55,6 +55,25 @@ export const ComponentsManifestSchema = z.object({
   previews: z.array(z.string()).optional(),
 });
 
+export const TechSpecManifestSchema = z.object({
+  modules: z.array(
+    z.object({
+      name: z.string(),
+      description: z.string(),
+      covers_features: z.array(z.string()),
+    })
+  ),
+  tech_stack: z.array(z.string()),
+  implementation_tasks: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      module: z.string(),
+      covers_features: z.array(z.string()),
+    })
+  ),
+});
+
 // Schema registry by manifest name
 const MANIFEST_SCHEMAS: Record<string, z.ZodType> = {
   'research.manifest.json': ResearchManifestSchema,
@@ -62,6 +81,7 @@ const MANIFEST_SCHEMAS: Record<string, z.ZodType> = {
   'ux-flows.manifest.json': UxFlowsManifestSchema,
   'api-spec.manifest.json': ApiSpecManifestSchema,
   'components.manifest.json': ComponentsManifestSchema,
+  'tech-spec.manifest.json': TechSpecManifestSchema,
 };
 
 export type ResearchManifest = z.infer<typeof ResearchManifestSchema>;
@@ -69,6 +89,7 @@ export type PrdManifest = z.infer<typeof PrdManifestSchema>;
 export type UxFlowsManifest = z.infer<typeof UxFlowsManifestSchema>;
 export type ApiSpecManifest = z.infer<typeof ApiSpecManifestSchema>;
 export type ComponentsManifest = z.infer<typeof ComponentsManifestSchema>;
+export type TechSpecManifest = z.infer<typeof TechSpecManifestSchema>;
 
 export function writeManifest(name: string, data: unknown): void {
   const schema = MANIFEST_SCHEMAS[name];
@@ -139,6 +160,14 @@ const SUMMARY_EXTRACTORS: Record<string, (data: Record<string, unknown>) => stri
     for (const c of m.components) lines.push(`**${c.name}** (\`${c.file}\`) — [${c.covers_features.join(', ')}]`);
     if (m.screenshots.length > 0) lines.push(`**Screenshots:** ${m.screenshots.length} captured`);
     if (m.previews && m.previews.length > 0) lines.push(`**Previews:** ${m.previews.length} generated`);
+    return lines;
+  },
+  'tech-spec.manifest.json': (data) => {
+    const m = data as unknown as TechSpecManifest;
+    const lines: string[] = [];
+    if (m.modules.length > 0) lines.push(`**Modules (${m.modules.length}):** ${m.modules.map((mod) => `${mod.name} [${mod.covers_features.join(', ')}]`).join(', ')}`);
+    if (m.tech_stack.length > 0) lines.push(`**Tech Stack:** ${m.tech_stack.join(', ')}`);
+    if (m.implementation_tasks.length > 0) lines.push(`**Tasks (${m.implementation_tasks.length}):** ${m.implementation_tasks.map((t) => `${t.id}: ${t.name}`).join(', ')}`);
     return lines;
   },
 };
