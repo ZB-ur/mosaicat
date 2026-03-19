@@ -377,7 +377,8 @@ export class Orchestrator {
     logger: Logger,
     context: AgentContext
   ): Promise<void> {
-    const agent = createAgent(stage, provider, logger);
+    const agentConfig = this.agentsConfig.agents[stage];
+    const agent = createAgent(stage, provider, logger, agentConfig?.autonomy);
 
     try {
       await agent.execute(context);
@@ -415,7 +416,7 @@ export class Orchestrator {
       transitionStage(run, stage, 'running');
 
       // Re-run agent with augmented context
-      const retryAgent = createAgent(stage, provider, logger);
+      const retryAgent = createAgent(stage, provider, logger, agentConfig?.autonomy);
       await retryAgent.execute(context);
     }
   }

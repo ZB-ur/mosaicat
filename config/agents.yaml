@@ -7,6 +7,11 @@ agents:
     outputs:
       - research.md
       - research.manifest.json
+    autonomy:
+      allowed_tools:
+        - WebSearch
+        - WebFetch
+      max_turns: 3
 
   product_owner:
     name: ProductOwner
@@ -17,6 +22,9 @@ agents:
     outputs:
       - prd.md
       - prd.manifest.json
+    autonomy:
+      allowed_tools: []
+      max_turns: 1
 
   ux_designer:
     name: UXDesigner
@@ -26,6 +34,9 @@ agents:
     outputs:
       - ux-flows.md
       - ux-flows.manifest.json
+    autonomy:
+      allowed_tools: []
+      max_turns: 1
 
   api_designer:
     name: APIDesigner
@@ -36,6 +47,9 @@ agents:
     outputs:
       - api-spec.yaml
       - api-spec.manifest.json
+    autonomy:
+      allowed_tools: []
+      max_turns: 1
 
   ui_designer:
     name: UIDesigner
@@ -50,6 +64,9 @@ agents:
       - screenshots/
       - gallery.html
       - components.manifest.json
+    autonomy:
+      allowed_tools: []
+      max_turns: 1
 
   validator:
     name: Validator
@@ -62,3 +79,6 @@ agents:
       - components.manifest.json
     outputs:
       - validation-report.md
+    autonomy:
+      allowed_tools: []
+      max_turns: 1
