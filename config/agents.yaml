@@ -4,6 +4,7 @@ agents:
     prompt_file: .claude/agents/mosaic/researcher.md
     inputs:
       - user_instruction
+      - intent-brief.json
     outputs:
       - research.md
       - research.manifest.json
@@ -18,6 +19,7 @@ agents:
     prompt_file: .claude/agents/mosaic/product-owner.md
     inputs:
       - user_instruction
+      - intent-brief.json
       - research.md
     outputs:
       - prd.md
