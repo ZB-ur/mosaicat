@@ -7,11 +7,23 @@ import { STAGE_ORDER } from '../types.js';
 // Mock provider — routes UIDesigner sub-phases by system prompt
 class MockLLMProvider implements LLMProvider {
   callCount = 0;
+  private stageCallCount = 0;
   private uiBuilderCallCount = 0;
+  private intentConsultantDone = false;
 
   async call(_prompt: string, _options?: LLMCallOptions): Promise<LLMResponse> {
-    this.callCount++;
     const sys = _options?.systemPrompt ?? '';
+
+    // Intent Consultant — first non-UI call is always the consultant
+    if (!this.intentConsultantDone && (sys.includes('Intent Consultant') || sys.includes('intent consultant') || _prompt.includes('## User Instruction'))) {
+      this.intentConsultantDone = true;
+      return { content: JSON.stringify({
+        ready_to_converge: true,
+        intent_brief: { problem: "Blog platform", target_users: "Individual creators", core_scenarios: ["Write posts", "Read posts", "Comment"], mvp_boundary: "Basic blog CRUD", constraints: ["markdown-support"], domain_specifics: [], recommended_profile: "design-only", profile_reason: "Design only for MVP" },
+      }) };
+    }
+
+    this.callCount++;
 
     // UIDesigner planner sub-phase
     if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
@@ -39,9 +51,10 @@ class MockLLMProvider implements LLMProvider {
       return { content: builders[this.uiBuilderCallCount] ?? builders[1]! };
     }
 
-    // Determine which stage based on call count (non-UI stages)
-    const stageIndex = this.callCount - 1;
-    const stage = STAGE_ORDER[stageIndex];
+    // Determine which stage based on non-UI call count
+    const nonUIStages = STAGE_ORDER.filter((s) => s !== 'ui_designer');
+    const stage = nonUIStages[this.stageCallCount];
+    this.stageCallCount++;
 
     switch (stage) {
       case 'researcher':

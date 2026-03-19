@@ -37,7 +37,6 @@ class EvolutionMockProvider implements LLMProvider {
   evolutionResponse: string = '[]';
 
   async call(prompt: string, options?: LLMCallOptions): Promise<LLMResponse> {
-    this.callCount++;
     this.promptsSeen.push(prompt);
     if (options?.systemPrompt) {
       this.systemPromptsSeen.push(options.systemPrompt);
@@ -45,11 +44,17 @@ class EvolutionMockProvider implements LLMProvider {
 
     // If this is an evolution analysis call (has evolution analyst system prompt)
     if (options?.systemPrompt?.includes('evolution analyst')) {
+      this.callCount++;
       return { content: this.evolutionResponse };
     }
 
-    // UIDesigner planner sub-phase
     const sys = options?.systemPrompt ?? '';
+    // Intent Consultant (don't count as stage call)
+    if (sys.includes('Intent Consultant') || prompt.includes('## User Instruction')) {
+      return { content: JSON.stringify({ ready_to_converge: true, intent_brief: { problem: "Test", target_users: "Test", core_scenarios: [], mvp_boundary: "Test", constraints: [], domain_specifics: [], recommended_profile: "design-only", profile_reason: "Test" } }) };
+    }
+    this.callCount++;
+    // UIDesigner planner sub-phase
     if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
       return { content: `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "Test", "covers_flow": "main-flow", "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->` };
     }

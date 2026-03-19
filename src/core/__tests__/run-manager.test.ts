@@ -8,9 +8,13 @@ class MockLLMProvider implements LLMProvider {
   callCount = 0;
 
   async call(_prompt: string, _options?: LLMCallOptions): Promise<LLMResponse> {
-    this.callCount++;
     const sys = _options?.systemPrompt ?? '';
 
+    // Intent Consultant (don't count as stage call)
+    if (sys.includes('Intent Consultant') || _prompt.includes('## User Instruction')) {
+      return { content: JSON.stringify({ ready_to_converge: true, intent_brief: { problem: "Test", target_users: "Test", core_scenarios: [], mvp_boundary: "Test", constraints: [], domain_specifics: [], recommended_profile: "design-only", profile_reason: "Test" } }) };
+    }
+    this.callCount++;
     // UIDesigner planner sub-phase
     if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
       return { content: `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "Test", "covers_flow": "main-flow", "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->` };
