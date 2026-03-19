@@ -45,7 +45,12 @@ export class Logger {
       const filePath = path.join(this.logDir, file);
       stream = fs.createWriteStream(filePath, { flags: 'a' });
       // Suppress ENOENT errors when log directory is cleaned up (e.g. test teardown)
-      stream.on('error', () => {});
+      // Surface all other errors (disk full, permissions, etc.) to stderr
+      stream.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code !== 'ENOENT') {
+          console.error(`[logger] stream error on ${file}: ${err.message}`);
+        }
+      });
       this.streams.set(file, stream);
     }
     return stream;
