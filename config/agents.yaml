@@ -79,6 +79,9 @@ agents:
       - ux-flows.manifest.json
       - api-spec.manifest.json
       - components.manifest.json
+      - tech-spec.manifest.json
+      - code.manifest.json
+      - review.manifest.json
     outputs:
       - validation-report.md
     autonomy:

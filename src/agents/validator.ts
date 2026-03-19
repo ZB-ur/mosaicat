@@ -10,7 +10,15 @@ import {
   type UxFlowsManifest,
   type ApiSpecManifest,
   type ComponentsManifest,
+  type TechSpecManifest,
+  type CodeManifest,
 } from '../core/manifest.js';
+
+interface CheckResult {
+  name: string;
+  passed: boolean;
+  details: string | string[];
+}
 
 export class ValidatorAgent extends BaseAgent {
   getOutputSpec(): OutputSpec {
@@ -52,58 +60,60 @@ export class ValidatorAgent extends BaseAgent {
     const artifactMatch = raw.match(artifactPattern);
     let content = artifactMatch ? artifactMatch[1].trim() : raw.trim();
 
-    // Strip any LLM-generated Check 5/6 (we generate them programmatically)
+    // Strip any LLM-generated programmatic checks (we generate them)
     content = content.replace(/\n*### Check 5: File Integrity[\s\S]*$/, '').trimEnd();
     content = content.replace(/\n*### Check 6: Feature ID Traceability[\s\S]*$/, '').trimEnd();
+    content = content.replace(/\n*### Check 7: Tech-Spec Feature Coverage[\s\S]*$/, '').trimEnd();
+    content = content.replace(/\n*### Check 8: Code Task Coverage[\s\S]*$/, '').trimEnd();
 
     // Post-LLM: programmatic file integrity check (Check 5)
     const integrity = this.checkFileIntegrity();
-    content = this.appendIntegrityCheck(content, integrity);
+    content = this.appendCheck(content, integrity);
 
     // Post-LLM: programmatic Feature ID traceability check (Check 6)
     const traceability = this.checkFeatureIdTraceability();
-    content = this.appendTraceabilityCheck(content, traceability);
+    content = this.appendCheck(content, traceability);
+
+    // Post-LLM: programmatic tech-spec feature coverage (Check 7)
+    const techSpecCoverage = this.checkTechSpecFeatureCoverage();
+    content = this.appendCheck(content, techSpecCoverage);
+
+    // Post-LLM: programmatic code task coverage (Check 8)
+    const codeTaskCoverage = this.checkCodeTaskCoverage();
+    content = this.appendCheck(content, codeTaskCoverage);
 
     this.writeOutput('validation-report.md', content);
   }
 
-  private checkFileIntegrity(): { passed: boolean; missing: string[] } {
+  private checkFileIntegrity(): CheckResult {
     const missing: string[] = [];
 
     try {
       const manifest = readManifest<ComponentsManifest>('components.manifest.json');
 
-      // Check component files
       for (const comp of manifest.components) {
-        if (!artifactExists(comp.file)) {
-          missing.push(comp.file);
-        }
+        if (!artifactExists(comp.file)) missing.push(comp.file);
       }
-
-      // Check screenshots
       for (const screenshot of manifest.screenshots) {
-        if (!artifactExists(screenshot)) {
-          missing.push(screenshot);
-        }
+        if (!artifactExists(screenshot)) missing.push(screenshot);
       }
-
-      // Check previews (optional field)
       if (manifest.previews) {
         for (const preview of manifest.previews) {
-          if (!artifactExists(preview)) {
-            missing.push(preview);
-          }
+          if (!artifactExists(preview)) missing.push(preview);
         }
       }
-    } catch (err) {
-      // If manifest doesn't exist or is invalid, report as missing
+    } catch {
       missing.push('components.manifest.json (unreadable)');
     }
 
-    return { passed: missing.length === 0, missing };
+    const passed = missing.length === 0;
+    const details = passed
+      ? 'All referenced files exist on disk'
+      : `Missing files:\n${missing.map((f) => `  - \`${f}\``).join('\n')}`;
+    return { name: 'Check 5: File Integrity', passed, details };
   }
 
-  private checkFeatureIdTraceability(): { passed: boolean; details: string[] } {
+  private checkFeatureIdTraceability(): CheckResult {
     const details: string[] = [];
     let allFeatureIds: string[] = [];
 
@@ -112,124 +122,108 @@ export class ValidatorAgent extends BaseAgent {
       allFeatureIds = prd.features.map((f) => f.id);
       details.push(`PRD defines ${allFeatureIds.length} features: ${allFeatureIds.join(', ')}`);
     } catch {
-      details.push('prd.manifest.json unreadable — cannot trace features');
-      return { passed: false, details };
+      return { name: 'Check 6: Feature ID Traceability', passed: false, details: ['prd.manifest.json unreadable — cannot trace features'] };
     }
 
     if (allFeatureIds.length === 0) {
-      details.push('No features defined in PRD — skipping traceability');
-      return { passed: true, details };
+      return { name: 'Check 6: Feature ID Traceability', passed: true, details: ['No features defined in PRD — skipping traceability'] };
     }
 
-    // Check UX flows coverage
-    const uxCovered = new Set<string>();
-    try {
-      const ux = readManifest<UxFlowsManifest>('ux-flows.manifest.json');
-      for (const flow of ux.flows) {
-        for (const fid of flow.covers_features) uxCovered.add(fid);
+    const checkLayer = (manifestName: string, label: string, extractIds: (data: unknown) => Set<string>) => {
+      try {
+        const data = readManifest(manifestName);
+        const covered = extractIds(data);
+        const missing = allFeatureIds.filter((id) => !covered.has(id));
+        if (missing.length > 0) {
+          details.push(`${label} missing coverage for: ${missing.join(', ')}`);
+        } else {
+          details.push(`${label} cover all ${allFeatureIds.length} features`);
+        }
+      } catch {
+        details.push(`${manifestName} unreadable — ${label} traceability skipped`);
       }
-      const uxMissing = allFeatureIds.filter((id) => !uxCovered.has(id));
-      if (uxMissing.length > 0) {
-        details.push(`UX flows missing coverage for: ${uxMissing.join(', ')}`);
-      } else {
-        details.push(`UX flows cover all ${allFeatureIds.length} features`);
-      }
-    } catch {
-      details.push('ux-flows.manifest.json unreadable — UX traceability skipped');
-    }
+    };
 
-    // Check API endpoints coverage
-    const apiCovered = new Set<string>();
-    try {
-      const api = readManifest<ApiSpecManifest>('api-spec.manifest.json');
-      for (const ep of api.endpoints) {
-        for (const fid of ep.covers_features) apiCovered.add(fid);
-      }
-      const apiMissing = allFeatureIds.filter((id) => !apiCovered.has(id));
-      if (apiMissing.length > 0) {
-        details.push(`API endpoints missing coverage for: ${apiMissing.join(', ')}`);
-      } else {
-        details.push(`API endpoints cover all ${allFeatureIds.length} features`);
-      }
-    } catch {
-      details.push('api-spec.manifest.json unreadable — API traceability skipped');
-    }
+    checkLayer('ux-flows.manifest.json', 'UX flows', (data) => {
+      const ids = new Set<string>();
+      for (const flow of (data as UxFlowsManifest).flows) for (const fid of flow.covers_features) ids.add(fid);
+      return ids;
+    });
 
-    // Check components coverage
-    const compCovered = new Set<string>();
-    try {
-      const comps = readManifest<ComponentsManifest>('components.manifest.json');
-      for (const c of comps.components) {
-        for (const fid of c.covers_features) compCovered.add(fid);
-      }
-      const compMissing = allFeatureIds.filter((id) => !compCovered.has(id));
-      if (compMissing.length > 0) {
-        details.push(`Components missing coverage for: ${compMissing.join(', ')}`);
-      } else {
-        details.push(`Components cover all ${allFeatureIds.length} features`);
-      }
-    } catch {
-      details.push('components.manifest.json unreadable — component traceability skipped');
-    }
+    checkLayer('api-spec.manifest.json', 'API endpoints', (data) => {
+      const ids = new Set<string>();
+      for (const ep of (data as ApiSpecManifest).endpoints) for (const fid of ep.covers_features) ids.add(fid);
+      return ids;
+    });
 
-    // Determine pass/fail: all layers must cover all features (if readable)
+    checkLayer('components.manifest.json', 'Components', (data) => {
+      const ids = new Set<string>();
+      for (const c of (data as ComponentsManifest).components) for (const fid of c.covers_features) ids.add(fid);
+      return ids;
+    });
+
     const hasMissing = details.some((d) => d.includes('missing coverage for'));
-    return { passed: !hasMissing, details };
+    return { name: 'Check 6: Feature ID Traceability', passed: !hasMissing, details };
   }
 
-  private appendTraceabilityCheck(
-    content: string,
-    traceability: { passed: boolean; details: string[] },
-  ): string {
-    const status = traceability.passed ? 'PASS' : 'FAIL';
-    const detailLines = traceability.details.map((d) => `- ${d}`).join('\n');
-    const check6 = `\n\n### Check 6: Feature ID Traceability\n- Status: ${status}\n${detailLines}`;
-
-    let result = content + check6;
-
-    if (!traceability.passed) {
-      result = result.replace(
-        /- Checks passed: (\d+)\/(\d+)/,
-        (_, passed, total) => {
-          const newTotal = parseInt(total) + 1;
-          return `- Checks passed: ${passed}/${newTotal}`;
-        }
-      );
-      result = result.replace(
-        /- Status: PASS\n- Checks passed:/,
-        '- Status: FAIL\n- Checks passed:'
-      );
-    } else {
-      result = result.replace(
-        /- Checks passed: (\d+)\/(\d+)/,
-        (_, passed, total) => {
-          const newPassed = parseInt(passed) + 1;
-          const newTotal = parseInt(total) + 1;
-          return `- Checks passed: ${newPassed}/${newTotal}`;
-        }
-      );
+  private checkTechSpecFeatureCoverage(): CheckResult {
+    let allFeatureIds: string[] = [];
+    try {
+      const prd = readManifest<PrdManifest>('prd.manifest.json');
+      allFeatureIds = prd.features.map((f) => f.id);
+    } catch {
+      return { name: 'Check 7: Tech-Spec Feature Coverage', passed: true, details: 'prd.manifest.json unreadable — skipped (warning)' };
     }
 
-    return result;
+    try {
+      const techSpec = readManifest<TechSpecManifest>('tech-spec.manifest.json');
+      const covered = new Set<string>();
+      for (const mod of techSpec.modules) {
+        for (const fid of mod.covers_features) covered.add(fid);
+      }
+      const missing = allFeatureIds.filter((id) => !covered.has(id));
+      if (missing.length > 0) {
+        return { name: 'Check 7: Tech-Spec Feature Coverage', passed: false, details: `Tech-spec modules missing coverage for: ${missing.join(', ')}` };
+      }
+      return { name: 'Check 7: Tech-Spec Feature Coverage', passed: true, details: `Tech-spec modules cover all ${allFeatureIds.length} features` };
+    } catch {
+      return { name: 'Check 7: Tech-Spec Feature Coverage', passed: true, details: 'tech-spec.manifest.json unreadable — skipped (warning, stage may be skipped)' };
+    }
   }
 
-  private appendIntegrityCheck(
-    content: string,
-    integrity: { passed: boolean; missing: string[] },
-  ): string {
-    const status = integrity.passed ? 'PASS' : 'FAIL';
-    const details = integrity.passed
-      ? '- All referenced files exist on disk'
-      : `- Missing files:\n${integrity.missing.map((f) => `  - \`${f}\``).join('\n')}`;
+  private checkCodeTaskCoverage(): CheckResult {
+    let allTaskIds: string[] = [];
+    try {
+      const techSpec = readManifest<TechSpecManifest>('tech-spec.manifest.json');
+      allTaskIds = techSpec.implementation_tasks.map((t) => t.id);
+    } catch {
+      return { name: 'Check 8: Code Task Coverage', passed: true, details: 'tech-spec.manifest.json unreadable — skipped (warning, stage may be skipped)' };
+    }
 
-    const check5 = `\n\n### Check 5: File Integrity\n- Status: ${status}\n${details}`;
+    try {
+      const code = readManifest<CodeManifest>('code.manifest.json');
+      const coveredTasks = new Set(code.covers_tasks);
+      const missing = allTaskIds.filter((id) => !coveredTasks.has(id));
+      if (missing.length > 0) {
+        return { name: 'Check 8: Code Task Coverage', passed: false, details: `Code missing coverage for tasks: ${missing.join(', ')}` };
+      }
+      return { name: 'Check 8: Code Task Coverage', passed: true, details: `Code covers all ${allTaskIds.length} tasks` };
+    } catch {
+      return { name: 'Check 8: Code Task Coverage', passed: true, details: 'code.manifest.json unreadable — skipped (warning, stage may be skipped)' };
+    }
+  }
 
-    // Append Check 5 to the report
-    let result = content + check5;
+  /** Unified method to append a programmatic check to the report */
+  private appendCheck(content: string, check: CheckResult): string {
+    const status = check.passed ? 'PASS' : 'FAIL';
+    const details = typeof check.details === 'string'
+      ? `- ${check.details}`
+      : check.details.map((d) => `- ${d}`).join('\n');
 
-    // If Check 5 failed, override overall status to FAIL
-    if (!integrity.passed) {
-      // Update "Checks passed: N/M" to include Check 5
+    const section = `\n\n### ${check.name}\n- Status: ${status}\n${details}`;
+    let result = content + section;
+
+    if (!check.passed) {
       result = result.replace(
         /- Checks passed: (\d+)\/(\d+)/,
         (_, passed, total) => {
@@ -237,13 +231,11 @@ export class ValidatorAgent extends BaseAgent {
           return `- Checks passed: ${passed}/${newTotal}`;
         }
       );
-      // Force status to FAIL
       result = result.replace(
         /- Status: PASS\n- Checks passed:/,
         '- Status: FAIL\n- Checks passed:'
       );
     } else {
-      // Update counts to include Check 5 as passing
       result = result.replace(
         /- Checks passed: (\d+)\/(\d+)/,
         (_, passed, total) => {
