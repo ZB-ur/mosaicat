@@ -131,6 +131,7 @@ export interface Task {
   runId: string;
   stage: StageName;
   instruction: string;
+  autonomy?: AgentAutonomyConfig;
 }
 
 export interface AgentContext {

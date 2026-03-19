@@ -182,7 +182,8 @@ export class Orchestrator {
 
     try {
       // Build context (artifact isolation)
-      const task = { runId: run.id, stage, instruction: run.instruction };
+      const agentConfig = this.agentsConfig.agents[stage];
+      const task = { runId: run.id, stage, instruction: run.instruction, autonomy: agentConfig?.autonomy };
       const context = buildContext(this.agentsConfig, task);
 
       // Create and execute agent (with clarification handling)
