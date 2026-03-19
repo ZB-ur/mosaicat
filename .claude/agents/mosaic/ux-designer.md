@@ -27,11 +27,18 @@ Step 1 → Step 2 → Step 3
 ## ux-flows.manifest.json Schema
 ```json
 {
-  "flows": ["flow-id-1", "flow-id-2"],
+  "flows": [
+    { "name": "auth-flow", "covers_features": ["F-001"] },
+    { "name": "blog-management", "covers_features": ["F-002"] }
+  ],
   "components": ["ComponentName1", "ComponentName2"],
   "interaction_rules": ["rule1", "rule2"]
 }
 ```
+
+**IMPORTANT: Feature ID Traceability**
+- Each flow MUST reference the PRD Feature IDs (F-NNN) it covers via `covers_features`
+- Every PRD Feature ID must appear in at least one flow's `covers_features`
 
 ## Guidelines
 - Every PRD feature must be covered by at least one flow

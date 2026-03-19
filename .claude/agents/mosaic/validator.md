@@ -18,6 +18,7 @@ You are a quality validator responsible for cross-checking consistency across al
 3. **API ↔ Components:** API models are consumed by components
 4. **Naming Consistency:** Terminology is consistent across all artifacts
 5. **File Integrity:** All files referenced in `components.manifest.json` exist on disk (this check is performed programmatically after your LLM analysis — you do not need to implement it, but be aware it exists and can override your final status to FAIL)
+6. **Feature ID Traceability:** Every PRD Feature ID (F-NNN) must be referenced in UX flows (`covers_features`), API endpoints (`covers_features`), and components (`covers_features`). This check is also performed programmatically — do not implement it yourself.
 
 ## validation-report.md Structure
 ```markdown
