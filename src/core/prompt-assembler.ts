@@ -1,11 +1,21 @@
 import type { AgentContext } from './types.js';
 
+/**
+ * OutputSpec defines what an agent produces.
+ * - artifacts: file names the agent writes (e.g. 'research.md')
+ * - manifest: manifest file name (e.g. 'research.manifest.json')
+ */
 export interface OutputSpec {
   artifacts: string[];
   manifest?: string;
 }
 
-export function assemblePrompt(context: AgentContext, outputSpec: OutputSpec): string {
+/**
+ * Assemble a prompt from agent context.
+ * Only includes task description and input artifacts — no output format instructions.
+ * Output structure is enforced via --json-schema (structured output) at the provider level.
+ */
+export function assemblePrompt(context: AgentContext, _outputSpec: OutputSpec): string {
   const sections: string[] = [];
 
   // Task section
@@ -19,35 +29,6 @@ export function assemblePrompt(context: AgentContext, outputSpec: OutputSpec): s
     }
     sections.push(`## Input Artifacts\n${artifactSections.join('\n\n')}`);
   }
-
-  // Output Requirements section
-  const outputLines: string[] = [];
-  outputLines.push('Please produce the following outputs using the delimiter format shown below.\n');
-
-  for (const artifact of outputSpec.artifacts) {
-    outputLines.push(`### ${artifact}`);
-    outputLines.push(`Wrap the content with:`);
-    outputLines.push(`\`<!-- ARTIFACT:${artifact} -->\``);
-    outputLines.push(`...content...`);
-    outputLines.push(`\`<!-- END:${artifact} -->\``);
-    outputLines.push('');
-  }
-
-  if (outputSpec.manifest) {
-    outputLines.push(`### ${outputSpec.manifest}`);
-    outputLines.push(`Wrap the JSON manifest with:`);
-    outputLines.push(`\`<!-- MANIFEST:${outputSpec.manifest} -->\``);
-    outputLines.push(`...JSON...`);
-    outputLines.push(`\`<!-- END:MANIFEST -->\``);
-    outputLines.push('');
-  }
-
-  outputLines.push('If you need clarification from the user before producing output, wrap your question with:');
-  outputLines.push('`<!-- CLARIFICATION -->`');
-  outputLines.push('...question...');
-  outputLines.push('`<!-- END:CLARIFICATION -->`');
-
-  sections.push(`## Output Requirements\n${outputLines.join('\n')}`);
 
   return sections.join('\n\n');
 }
