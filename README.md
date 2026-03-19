@@ -30,15 +30,15 @@ Traditional software delivery methodologies — Scrum, Kanban, SAFe — were des
 
 Mosaicat restructures the delivery pipeline around this insight:
 
-- **Humans decide** at two critical points (PRD approval + design review). Everything else is autonomous.
+- **Humans decide** at four critical checkpoints (PRD approval, design review, architecture sign-off, code review). Everything else is autonomous.
 - **Agents coordinate through contracts**, not conversations. Each agent sees only its contracted inputs — never upstream reasoning. Errors stay local instead of propagating through shared context.
-- **Validation is programmatic**, not AI-judged. 8 deterministic checks on structural manifests (~500 bytes each), not 50k-token full-artifact reviews prone to hallucination.
+- **Validation is layered and controlled** — 4 fully deterministic programmatic checks (zero LLM) + 4 LLM checks scoped to structural manifests (~1–2 KB each), replacing 50k-token full-artifact reviews prone to hallucination.
 - **Knowledge accumulates** across runs. Prompt evolution and skill capture turn each delivery into organizational memory — with human approval as the safety gate.
 
 ```
 You:  "Build a personal finance tracker with income/expense logging and monthly reports"
        ↓
-       10 AI agents run autonomously, humans approve at 2 checkpoints
+       10 AI agents run autonomously, humans approve at 4 checkpoints
        ↓
 Out:  Research → PRD → UX Flows → OpenAPI Spec → 25 React Components + Screenshots
       → Tech Spec → Code → Code Review → 8-Check Validation Report
@@ -48,15 +48,15 @@ Out:  Research → PRD → UX Flows → OpenAPI Spec → 25 React Components + S
 
 ### Key Features
 
-- **10 autonomous agents** — mirrors a real product team: PM, designer, architect, coder, reviewer
+- **10 autonomous agents** — mirrors a real product team: consultant, researcher, PM, UX/UI designers, architect, tech lead, coder, reviewer, validator
 - **Configurable approval gates** — full autonomy, full manual, or anything in between per stage
-- **8 deterministic validation checks** — cross-artifact consistency verified without LLM
-- **Feature ID traceability** — `F-001` traced end-to-end from PRD → UX → API → Code → Review
+- **8 layered validation checks** — 4 programmatic (zero LLM, fully deterministic) + 4 LLM-assisted (scoped to lightweight manifests)
+- **Feature ID traceability** — `F-001` traced from PRD → UX → API → Components; task-level (`T-NNN`) from tech spec → code
 - **Visual design output** — React + Tailwind components with Playwright screenshots + HTML gallery
 - **GitHub-native workflow** — Draft PR, stage issues, PR review approval gates — fits existing team processes
 - **Self-evolution with human oversight** — prompt + skill accumulation, all proposals require approval
 - **3 pipeline profiles** — `design-only` / `full` / `frontend-only`, auto-recommended by intent analysis
-- **MCP compatible** — runs inside Claude Code as a tool server
+- **MCP compatible** — integrates with Claude Code as an external tool server
 
 ---
 
@@ -68,7 +68,7 @@ Out:  Research → PRD → UX Flows → OpenAPI Spec → 25 React Components + S
 | **Claude subscription** | [Claude Pro / Team / Enterprise](https://claude.ai/) — Mosaicat calls Claude CLI (`claude -p`) for LLM inference. No separate API key needed. |
 | **Claude CLI** | Installed and authenticated. Run `claude` in your terminal to verify. See [Claude Code docs](https://docs.anthropic.com/en/docs/claude-code/overview) for setup. |
 | **Playwright** (optional) | Required only for UI screenshot generation. Install with `npx playwright install chromium`. |
-| **GitHub account** (optional) | Required only for `--github` mode. Login via `npx tsx src/index.ts login`. |
+| **GitHub App** (optional) | Required only for `--github` mode. Install the [Mosaicat GitHub App](https://github.com/apps/mosaicat) on your target repository, then login via `npx tsx src/index.ts login`. |
 
 > **Enterprise / Team users**: Claude Team and Enterprise plans work out of the box. The pipeline uses `claude -p` with tool use, which is included in all Claude subscriptions. No API key management, no token budgets to configure.
 
@@ -77,7 +77,7 @@ Out:  Research → PRD → UX Flows → OpenAPI Spec → 25 React Components + S
 ## Quick Start
 
 ```bash
-git clone https://github.com/anthropics/mosaicat.git
+git clone https://github.com/ZB-ur/mosaicat.git
 cd mosaicat
 npm install
 ```
@@ -99,8 +99,9 @@ npx tsx src/index.ts run "Build a task management app" --auto-approve
 ### 3. GitHub Mode (team collaboration)
 
 ```bash
-npx tsx src/index.ts login                                    # one-time OAuth
-npx tsx src/index.ts run "Build a task management app" --github
+# 1. Install the Mosaicat GitHub App on your repo: https://github.com/apps/mosaicat
+npx tsx src/index.ts login                                    # 2. one-time OAuth
+npx tsx src/index.ts run "Build a task management app" --github  # 3. run in repo dir
 ```
 
 Creates a Draft PR with stage issues. Team members approve via `/approve` comments on the PR.

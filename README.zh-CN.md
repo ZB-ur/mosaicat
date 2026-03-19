@@ -30,15 +30,15 @@
 
 Mosaicat 围绕这一洞察重构交付流水线：
 
-- **人在两个关键点决策**（PRD 审批 + 设计评审），其余全部自治
+- **人仅在四个关键环节决策**（需求审批、设计评审、架构签署、代码审查），其余全部自治
 - **Agent 通过契约协调**，而非对话。每个 Agent 只看契约输入，绝不看上游推理过程。误差被隔离，不会关联传播
-- **验证是程序化的**，不靠 AI 判断。8 项确定性检查基于结构化 manifest（每份 ~500 字节），而非 50k token 的全量审查
+- **验证分层可控** — 4 项纯程序化检查（零 LLM，完全确定性）+ 4 项 LLM 分析严格限定在结构化 manifest（~1–2 KB）内，取代 50k token 的全量审查
 - **知识跨运行积累**。Prompt 进化和 Skill 捕获让每次交付成为组织记忆 — 人类审批是安全门控
 
 ```
 你:   "做一个个人记账 App，支持收入支出记录和月度报表查看"
        ↓
-       10 个 AI Agent 自主运行，人在 2 个检查点审批
+       10 个 AI Agent 自主运行，人在 4 个关键节点审批
        ↓
 产出: 调研 → PRD → UX 流程 → OpenAPI 规范 → 25 个 React 组件 + 截图
       → 技术方案 → 代码 → 代码审查 → 8 项交叉验证报告
@@ -48,15 +48,15 @@ Mosaicat 围绕这一洞察重构交付流水线：
 
 ### 核心特性
 
-- **10 个自治 Agent** — 模拟真实产品团队：PM、设计师、架构师、开发者、审查者
+- **10 个自治 Agent** — 对应真实产品团队角色：意图顾问、调研员、产品经理、UX/UI 设计师、API 架构师、技术负责人、开发者、审查者、质量校验
 - **可配置审批门控** — 全自治、全人工或按阶段任意组合
-- **8 项确定性验证** — 跨工件一致性校验，无 LLM 参与
-- **Feature ID 端到端追溯** — `F-001` 从 PRD → UX → API → 代码 → 审查全程可追踪
+- **8 项分层验证** — 4 项程序化确定性检查（零 LLM）+ 4 项 manifest 范围 LLM 辅助校验，跨工件一致性保障
+- **Feature ID 分层追溯** — `F-001` 贯穿 PRD → UX → API → 组件；任务级 `T-NNN` 贯穿技术方案 → 代码
 - **可视化设计产出** — React + Tailwind 组件 + Playwright 截图 + HTML 画廊
 - **GitHub 原生工作流** — Draft PR、Stage Issue、PR Review 审批 — 无缝融入现有团队流程
 - **人类监督下的自进化** — Prompt + Skill 积累，所有提案需人工批准
 - **3 种流水线 Profile** — `design-only` / `full` / `frontend-only`，意图分析自动推荐
-- **MCP 兼容** — 可作为 Claude Code 内置工具运行
+- **MCP 兼容** — 作为外部工具服务接入 Claude Code 等 IDE
 
 ---
 
@@ -68,7 +68,7 @@ Mosaicat 围绕这一洞察重构交付流水线：
 | **Claude 订阅** | [Claude Pro / Team / Enterprise](https://claude.ai/) — Mosaicat 通过 Claude CLI（`claude -p`）调用 LLM 推理，无需单独的 API Key。 |
 | **Claude CLI** | 已安装并完成认证。在终端运行 `claude` 验证。安装指南见 [Claude Code 文档](https://docs.anthropic.com/en/docs/claude-code/overview)。 |
 | **Playwright**（可选） | 仅 UI 截图生成需要。安装：`npx playwright install chromium`。 |
-| **GitHub 账号**（可选） | 仅 `--github` 模式需要。通过 `npx tsx src/index.ts login` 登录。 |
+| **GitHub App**（可选） | 仅 `--github` 模式需要。先将 [Mosaicat GitHub App](https://github.com/apps/mosaicat) 安装到目标仓库，再通过 `npx tsx src/index.ts login` 完成 OAuth 授权。 |
 
 > **企业 / 团队用户**：Claude Team 和 Enterprise 计划开箱即用。流水线使用 `claude -p` 的 tool use 能力，所有 Claude 订阅方案均包含此功能。无需管理 API Key，无需配置 token 预算。
 
@@ -77,7 +77,7 @@ Mosaicat 围绕这一洞察重构交付流水线：
 ## 快速开始
 
 ```bash
-git clone https://github.com/anthropics/mosaicat.git
+git clone https://github.com/ZB-ur/mosaicat.git
 cd mosaicat
 npm install
 ```
@@ -99,8 +99,9 @@ npx tsx src/index.ts run "做一个任务管理应用" --auto-approve
 ### 3. GitHub 模式（团队协作）
 
 ```bash
-npx tsx src/index.ts login                                    # 一次性 OAuth 授权
-npx tsx src/index.ts run "做一个任务管理应用" --github
+# 1. 安装 Mosaicat GitHub App 到目标仓库：https://github.com/apps/mosaicat
+npx tsx src/index.ts login                                    # 2. 一次性 OAuth 授权
+npx tsx src/index.ts run "做一个任务管理应用" --github           # 3. 在仓库目录下运行
 ```
 
 创建 Draft PR 和 Stage Issue，团队成员通过 PR 上的 `/approve` 评论审批。
