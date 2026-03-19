@@ -157,6 +157,30 @@ export interface GateResult {
   retryComponents?: string[];     // component names to rebuild (inferred from comments)
 }
 
+// --- Intent Brief (output of Intent Consultant) ---
+
+export interface IntentBrief {
+  problem: string;
+  target_users: string;
+  core_scenarios: string[];
+  mvp_boundary: string;
+  constraints: string[];
+  domain_specifics: string[];
+  recommended_profile: 'design-only' | 'full' | 'frontend-only';
+  profile_reason: string;
+}
+
+export const IntentBriefSchema = z.object({
+  problem: z.string().min(1),
+  target_users: z.string().min(1),
+  core_scenarios: z.array(z.string()),
+  mvp_boundary: z.string().min(1),
+  constraints: z.array(z.string()),
+  domain_specifics: z.array(z.string()),
+  recommended_profile: z.enum(['design-only', 'full', 'frontend-only']),
+  profile_reason: z.string().min(1),
+});
+
 // --- Zod Schemas for runtime validation ---
 
 export const StageStatusSchema = z.object({
