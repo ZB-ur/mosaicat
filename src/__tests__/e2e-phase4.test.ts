@@ -248,7 +248,7 @@ describe('Phase 4 E2E: GitHub Issue-based Approval', () => {
 
     // All stages done
     for (const stage of STAGE_ORDER) {
-      expect(result.stages[stage].state).toBe('done');
+      expect(result.stages[stage]!.state).toBe('done');
     }
 
     // Stage issues were created by orchestrator (6 stages = 6 completion issues)
@@ -310,7 +310,7 @@ describe('Phase 4 E2E: GitHub Issue-based Approval', () => {
     // Pipeline should still complete (trusted user eventually approved)
     expect(result.completedAt).toBeDefined();
     for (const stage of STAGE_ORDER) {
-      expect(result.stages[stage].state).toBe('done');
+      expect(result.stages[stage]!.state).toBe('done');
     }
 
     // Also verify snapshot metadata contains issue numbers (combined test to avoid race conditions)

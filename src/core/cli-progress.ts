@@ -4,21 +4,33 @@ import { eventBus } from './event-bus.js';
 import { CLIArtifactPresenter } from './artifact-presenter.js';
 
 const AGENT_LABELS: Record<StageName, string> = {
+  intent_consultant: 'IntentConsultant',
   researcher: 'Researcher',
   product_owner: 'ProductOwner',
   ux_designer: 'UXDesigner',
   api_designer: 'APIDesigner',
   ui_designer: 'UIDesigner',
+  tech_lead: 'TechLead',
+  coder: 'Coder',
+  reviewer: 'Reviewer',
   validator: 'Validator',
+  qa_lead: 'QALead',
+  tester: 'Tester',
 };
 
 const AGENT_DESC: Record<StageName, string> = {
+  intent_consultant: '意图深挖',
   researcher: '市场调研 & 竞品分析',
   product_owner: '产品需求文档',
   ux_designer: 'UX 流程 & 组件清单',
   api_designer: 'API 规范设计',
   ui_designer: 'React 组件 & 截图',
+  tech_lead: '技术方案设计',
+  coder: '代码生成',
+  reviewer: '代码审查',
   validator: '交叉验证报告',
+  qa_lead: 'QA 计划',
+  tester: '自动化测试',
 };
 
 const DIM = '\x1b[2m';

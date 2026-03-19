@@ -27,12 +27,18 @@ import { extractManifestSummary } from './manifest.js';
 import { IntentConsultantAgent } from '../agents/intent-consultant.js';
 import { artifactExists } from './artifact.js';
 const AGENT_DESC: Record<StageName, string> = {
+  intent_consultant: '意图深挖',
   researcher: '市场调研 & 竞品分析',
   product_owner: '产品需求文档',
   ux_designer: 'UX 流程 & 组件清单',
   api_designer: 'API 规范设计',
   ui_designer: 'React 组件 & 截图',
+  tech_lead: '技术方案设计',
+  coder: '代码生成',
+  reviewer: '代码审查',
   validator: '交叉验证报告',
+  qa_lead: 'QA 计划',
+  tester: '自动化测试',
 };
 
 interface StageMetrics {
@@ -142,7 +148,7 @@ export class Orchestrator {
     provider: LLMProvider,
     logger: Logger
   ): Promise<void> {
-    const stageConfig = this.pipelineConfig.stages[stage];
+    const stageConfig = this.pipelineConfig.stages[stage]!;
     const maxRetries = stageConfig.retry_max;
 
     run.currentStage = stage;
@@ -249,7 +255,7 @@ export class Orchestrator {
     } catch (err) {
       // ClarificationNeeded is handled inside executeAgent, not here
       const message = err instanceof Error ? err.message : String(err);
-      const stageStatus = run.stages[stage];
+      const stageStatus = run.stages[stage]!;
 
       if (stageStatus.retryCount < maxRetries) {
         stageStatus.retryCount++;
@@ -277,7 +283,7 @@ export class Orchestrator {
   private async commitStageArtifacts(stage: StageName, runId: string, logger: Logger): Promise<void> {
     if (!this.publisher) return;
     try {
-      const agentConfig = this.agentsConfig.agents[stage];
+      const agentConfig = this.agentsConfig.agents[stage]!;
       const files = (agentConfig.outputs ?? []).map((o: string) => `.mosaic/artifacts/${o}`);
       const issueNumber = this.stageIssues.get(`${runId}:${stage}`);
       await this.publisher.commitStage(stage, files, issueNumber);
@@ -392,7 +398,7 @@ export class Orchestrator {
         throw err;
       }
 
-      const stageConfig = this.pipelineConfig.stages[stage];
+      const stageConfig = this.pipelineConfig.stages[stage]!;
       if (!stageConfig.clarification) {
         // Stage doesn't support clarification, re-throw
         throw err;
@@ -430,6 +436,7 @@ export class Orchestrator {
     if (!this.adapter) return;
 
     const agentConfig = this.agentsConfig.agents[stage];
+    if (!agentConfig) return; // no config for this stage
     const metrics = this.stageMetrics.get(stage);
 
     // Extract manifest summary from disk (zero LLM cost)
@@ -456,7 +463,7 @@ export class Orchestrator {
       inputs: agentConfig.inputs ?? [],
       outputs: agentConfig.outputs ?? [],
       durationMs: metrics ? Date.now() - metrics.startTime : undefined,
-      retryCount: run.stages[stage].retryCount,
+      retryCount: run.stages[stage]?.retryCount ?? 0,
       clarificationQA: metrics?.clarificationQA,
       rejectionFeedback: metrics?.rejectionFeedback,
       manifestSummary: manifestSummary.length > 0 ? manifestSummary : undefined,

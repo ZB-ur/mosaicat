@@ -22,7 +22,7 @@ export function transitionStage(
   stage: StageName,
   newState: StageState
 ): void {
-  const status = run.stages[stage];
+  const status = run.stages[stage]!;
   validateTransition(status.state, newState);
 
   status.state = newState;
@@ -50,7 +50,7 @@ export function getNextStage(stage: StageName): StageName | null {
 
 // Valid state transitions
 const VALID_TRANSITIONS: Record<StageState, StageState[]> = {
-  idle: ['running'],
+  idle: ['running', 'skipped'],
   running: ['awaiting_clarification', 'awaiting_human', 'done', 'failed'],
   awaiting_clarification: ['running'],
   awaiting_human: ['approved', 'rejected'],
@@ -58,6 +58,7 @@ const VALID_TRANSITIONS: Record<StageState, StageState[]> = {
   rejected: ['idle'],  // rollback resets to idle
   failed: ['idle'],    // retry resets to idle
   done: [],
+  skipped: [],         // terminal state — skipped stages don't transition
 };
 
 function validateTransition(from: StageState, to: StageState): void {
