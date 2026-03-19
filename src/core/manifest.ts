@@ -74,6 +74,19 @@ export const TechSpecManifestSchema = z.object({
   ),
 });
 
+export const CodeManifestSchema = z.object({
+  files: z.array(
+    z.object({
+      path: z.string(),
+      module: z.string(),
+      description: z.string(),
+    })
+  ),
+  modules: z.array(z.string()),
+  covers_tasks: z.array(z.string()),
+  covers_features: z.array(z.string()),
+});
+
 // Schema registry by manifest name
 const MANIFEST_SCHEMAS: Record<string, z.ZodType> = {
   'research.manifest.json': ResearchManifestSchema,
@@ -82,6 +95,7 @@ const MANIFEST_SCHEMAS: Record<string, z.ZodType> = {
   'api-spec.manifest.json': ApiSpecManifestSchema,
   'components.manifest.json': ComponentsManifestSchema,
   'tech-spec.manifest.json': TechSpecManifestSchema,
+  'code.manifest.json': CodeManifestSchema,
 };
 
 export type ResearchManifest = z.infer<typeof ResearchManifestSchema>;
@@ -90,6 +104,7 @@ export type UxFlowsManifest = z.infer<typeof UxFlowsManifestSchema>;
 export type ApiSpecManifest = z.infer<typeof ApiSpecManifestSchema>;
 export type ComponentsManifest = z.infer<typeof ComponentsManifestSchema>;
 export type TechSpecManifest = z.infer<typeof TechSpecManifestSchema>;
+export type CodeManifest = z.infer<typeof CodeManifestSchema>;
 
 export function writeManifest(name: string, data: unknown): void {
   const schema = MANIFEST_SCHEMAS[name];
@@ -168,6 +183,15 @@ const SUMMARY_EXTRACTORS: Record<string, (data: Record<string, unknown>) => stri
     if (m.modules.length > 0) lines.push(`**Modules (${m.modules.length}):** ${m.modules.map((mod) => `${mod.name} [${mod.covers_features.join(', ')}]`).join(', ')}`);
     if (m.tech_stack.length > 0) lines.push(`**Tech Stack:** ${m.tech_stack.join(', ')}`);
     if (m.implementation_tasks.length > 0) lines.push(`**Tasks (${m.implementation_tasks.length}):** ${m.implementation_tasks.map((t) => `${t.id}: ${t.name}`).join(', ')}`);
+    return lines;
+  },
+  'code.manifest.json': (data) => {
+    const m = data as unknown as CodeManifest;
+    const lines: string[] = [];
+    if (m.files.length > 0) lines.push(`**Files (${m.files.length}):** ${m.files.map((f) => f.path).join(', ')}`);
+    if (m.modules.length > 0) lines.push(`**Modules:** ${m.modules.join(', ')}`);
+    if (m.covers_tasks.length > 0) lines.push(`**Covers tasks:** ${m.covers_tasks.join(', ')}`);
+    if (m.covers_features.length > 0) lines.push(`**Covers features:** ${m.covers_features.join(', ')}`);
     return lines;
   },
 };
