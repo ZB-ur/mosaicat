@@ -799,16 +799,16 @@ backend/
 
 | 阶段 | 范围 | PR | 状态 |
 |---|---|---|---|
-| Phase 0 | Provider 升级 + 结构化输出 + CLI 交互 + MCP 配置 + Agent 自主度 | — | 进行中 |
-| Phase 1 | Intent Consultant（多轮对话 + Intent Brief） | — | 待开始 |
-| Phase 2 | Feature ID 追溯链（manifest schema + Validator Check 6） | — | 待开始 |
-| Phase 3 | 扩展 StageName union + 注册新 Agent | — | 待开始 |
-| Phase 4 | Pipeline Profile + 条件跳过 | — | 待开始 |
-| Phase 5 | 进化系统升级（stage 级 + Skill 标准化） | — | 待开始 |
-| Phase 6 | TechLead Agent | — | 待开始 |
-| Phase 7 | Coder Agent（tool use + subagent 自主编码） | — | 待开始 |
-| Phase 8 | Reviewer Agent | — | 待开始 |
-| Phase 9 | 扩展 Validator + MCP 适配 + 收尾 | — | 待开始 |
+| Phase 0 | Provider 升级 + 结构化输出 + CLI 交互 + MCP 配置 + Agent 自主度 | #153 | ✅ |
+| Phase 1 | Intent Consultant（多轮对话 + Intent Brief） | #157 | ✅ |
+| Phase 2 | Feature ID 追溯链（manifest schema + Validator Check 6） | #161 | ✅ |
+| Phase 3 | 扩展 StageName union + 注册新 Agent | #165 | ✅ |
+| Phase 4 | Pipeline Profile + 条件跳过 | #168 | ✅ |
+| Phase 5 | 进化系统升级（stage 级 + Skill 标准化） | #171 | ✅ |
+| Phase 6 | TechLead Agent | #174 | ✅ |
+| Phase 7 | Coder Agent（tool use + subagent 自主编码） | #177 | ✅ |
+| Phase 8 | Reviewer Agent | #180 | ✅ |
+| Phase 9 | 扩展 Validator + MCP 适配 + 收尾 | — | ✅ |
 
 ---
 
