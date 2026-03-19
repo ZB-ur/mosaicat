@@ -1,4 +1,4 @@
-import readline from 'node:readline';
+import { select, input } from '@inquirer/prompts';
 import type { StageName, ClarificationOption, GateResult } from './types.js';
 import type { EvolutionProposal } from '../evolution/types.js';
 
@@ -17,36 +17,33 @@ export interface InteractionHandler {
 }
 
 export class CLIInteractionHandler implements InteractionHandler {
-  private askUser(question: string): Promise<string> {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
-    return new Promise((resolve) => {
-      rl.question(question, (answer) => {
-        rl.close();
-        resolve(answer);
-      });
-    });
-  }
-
   async onManualGate(stage: StageName, _runId: string): Promise<GateResult> {
-    console.log(`\n\x1b[33m🔍 [${stage}] Review the artifacts above and decide:\x1b[0m`);
-    const answer = await this.askUser(`   Approve? (yes/no): `);
-    if (answer.toLowerCase().startsWith('y')) {
+    console.log(`\n\x1b[33m🔍 [${stage}] Review the artifacts above and decide:\x1b[0m\n`);
+
+    const action = await select({
+      message: 'Decision:',
+      choices: [
+        { name: '✓ Approve', value: 'approve' },
+        { name: '✗ Reject with feedback', value: 'reject' },
+      ],
+    });
+
+    if (action === 'approve') {
       return { approved: true };
     }
 
     // Collect feedback on rejection
-    const feedback = await this.askUser(`   What needs to change?\n   > `);
+    const feedback = await input({
+      message: 'What needs to change?',
+    });
+
     const result: GateResult = { approved: false, feedback: feedback || undefined };
 
     // For UIDesigner, offer component selection
     if (stage === 'ui_designer') {
-      const components = await this.askUser(
-        `   Which components need rework? (comma-separated names, or "all"):\n   > `
-      );
+      const components = await input({
+        message: 'Which components need rework? (comma-separated names, or "all"):',
+      });
       if (components && components.trim().toLowerCase() !== 'all') {
         result.retryComponents = components.split(',').map((c) => c.trim()).filter(Boolean);
       }
@@ -60,132 +57,61 @@ export class CLIInteractionHandler implements InteractionHandler {
     options?: ClarificationOption[], allowCustom?: boolean
   ): Promise<string> {
     console.log(`\n\x1b[33m❓ [${stage}] Agent needs your input:\x1b[0m`);
-    console.log(`   ${question}`);
+    console.log(`   ${question}\n`);
 
     if (options && options.length > 0) {
-      console.log(`\x1b[2m   Select an option below${allowCustom !== false ? ', or choose custom input' : ''}:\x1b[0m`);
-      return this.showSelection(options, allowCustom ?? true);
+      const choices = options.map((opt) => ({
+        name: opt.description ? `${opt.label} — ${opt.description}` : opt.label,
+        value: opt.label,
+      }));
+
+      if (allowCustom !== false) {
+        choices.push({ name: '✏️  Custom input...', value: '__custom__' });
+      }
+
+      const answer = await select({
+        message: 'Select an option:',
+        choices,
+      });
+
+      if (answer === '__custom__') {
+        return input({ message: 'Your answer:' });
+      }
+
+      return answer;
     }
 
-    return this.askUser('\n   Your answer: ');
-  }
-
-  private showSelection(options: ClarificationOption[], allowCustom: boolean): Promise<string> {
-    return new Promise((resolve) => {
-      const allOptions = [...options];
-      if (allowCustom) {
-        allOptions.push({ label: '自定义输入...', description: '输入自定义回答' });
-      }
-
-      let selected = 0;
-      const stdin = process.stdin;
-      const isRaw = stdin.isTTY;
-
-      // Render the selection list
-      const render = () => {
-        // Move cursor up to overwrite previous render (except first time)
-        for (let i = 0; i < allOptions.length; i++) {
-          const prefix = i === selected ? '\x1b[36m❯\x1b[0m' : ' ';
-          const highlight = i === selected ? '\x1b[1m' : '\x1b[2m';
-          const reset = '\x1b[0m';
-          const desc = allOptions[i].description ? ` \x1b[90m— ${allOptions[i].description}\x1b[0m` : '';
-          process.stdout.write(`${prefix} ${highlight}${allOptions[i].label}${reset}${desc}\n`);
-        }
-        process.stdout.write('\x1b[90m(↑↓ 选择, Enter 确认)\x1b[0m\n');
-      };
-
-      const clearRender = () => {
-        // Move up and clear lines
-        const lines = allOptions.length + 1;
-        for (let i = 0; i < lines; i++) {
-          process.stdout.write('\x1b[1A\x1b[2K');
-        }
-      };
-
-      if (!isRaw) {
-        // Non-TTY fallback: just show numbered list and use readline
-        console.log('');
-        for (let i = 0; i < allOptions.length; i++) {
-          const desc = allOptions[i].description ? ` — ${allOptions[i].description}` : '';
-          console.log(`  ${i + 1}. ${allOptions[i].label}${desc}`);
-        }
-        this.askUser('\nEnter number: ').then((answer) => {
-          const idx = parseInt(answer) - 1;
-          if (idx >= 0 && idx < options.length) {
-            resolve(options[idx].label);
-          } else if (allowCustom && idx === options.length) {
-            this.askUser('Your custom answer: ').then(resolve);
-          } else {
-            resolve(allOptions[0].label);
-          }
-        });
-        return;
-      }
-
-      stdin.setRawMode(true);
-      stdin.resume();
-      stdin.setEncoding('utf8');
-
-      console.log('');
-      render();
-
-      const onKeypress = (key: string) => {
-        // Handle arrow keys (escape sequences)
-        if (key === '\x1b[A') {
-          // Up arrow
-          clearRender();
-          selected = (selected - 1 + allOptions.length) % allOptions.length;
-          render();
-        } else if (key === '\x1b[B') {
-          // Down arrow
-          clearRender();
-          selected = (selected + 1) % allOptions.length;
-          render();
-        } else if (key === '\r' || key === '\n') {
-          // Enter
-          stdin.removeListener('data', onKeypress);
-          stdin.setRawMode(false);
-          stdin.pause();
-          clearRender();
-
-          const chosen = allOptions[selected];
-          console.log(`\x1b[32m✓\x1b[0m ${chosen.label}\n`);
-
-          if (allowCustom && selected === options.length) {
-            // Custom input selected
-            this.askUser('Your custom answer: ').then(resolve);
-          } else {
-            resolve(chosen.label);
-          }
-        } else if (key === '\x03') {
-          // Ctrl+C
-          stdin.removeListener('data', onKeypress);
-          stdin.setRawMode(false);
-          stdin.pause();
-          resolve(allOptions[0].label);
-        }
-      };
-
-      stdin.on('data', onKeypress);
-    });
+    return input({ message: 'Your answer:' });
   }
 
   async onEvolutionProposal(proposal: EvolutionProposal): Promise<EvolutionApprovalResult> {
-    console.log(`\n[evolution] ${proposal.type} proposal for ${proposal.agentStage}:`);
+    console.log(`\n\x1b[35m[evolution]\x1b[0m ${proposal.type} proposal for ${proposal.agentStage}:`);
     console.log(`  Reason: ${proposal.reason}`);
     if (proposal.skillMetadata) {
       console.log(`  Skill: ${proposal.skillMetadata.name} (${proposal.skillMetadata.scope})`);
     }
     console.log(`  Content preview: ${proposal.proposedContent.slice(0, 200)}...`);
-    const answer = await this.askUser('\nApprove this evolution? (yes/no): ');
-    const approved = answer.toLowerCase().startsWith('y');
-    if (!approved) {
-      const reason = await this.askUser('Rejection reason (optional): ');
-      return { approved: false, reason: reason || undefined };
+
+    const action = await select({
+      message: 'Approve this evolution?',
+      choices: [
+        { name: '✓ Approve', value: 'approve' },
+        { name: '✗ Reject', value: 'reject' },
+      ],
+    });
+
+    if (action === 'approve') {
+      return { approved: true };
     }
-    return { approved: true };
+
+    const reason = await input({
+      message: 'Rejection reason (optional):',
+    });
+    return { approved: false, reason: reason || undefined };
   }
 }
+
+// --- Deferred Interaction Handler (MCP mode) ---
 
 interface DeferredPromise<T> {
   promise: Promise<T>;
