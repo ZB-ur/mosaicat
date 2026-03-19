@@ -99,10 +99,19 @@ export class IntentConsultantAgent extends BaseAgent {
         parsed = { ready_to_converge: true, intent_brief: { problem: instruction, target_users: 'unknown', core_scenarios: [], mvp_boundary: instruction, constraints: [], domain_specifics: [], recommended_profile: 'design-only', profile_reason: 'Default fallback' } };
       }
 
-      // Check if converged or has final brief
-      if (parsed.ready_to_converge && parsed.intent_brief) {
+      // Check if converged or has final brief (but force at least 1 round of questions)
+      if (round > 0 && parsed.ready_to_converge && parsed.intent_brief) {
         this.writeBrief(parsed.intent_brief);
         return;
+      }
+
+      // Force questions on first round if LLM didn't provide any
+      if (round === 0 && (!parsed.questions || parsed.questions.length === 0)) {
+        parsed.questions = [
+          { question: '目标用户是谁？', options: ['个人用户', '企业用户', '开发者', '其他'] },
+          { question: '目标平台是什么？', options: ['Web 网页', '移动端 App', '桌面应用', '跨平台'] },
+          { question: 'MVP 最核心的功能是什么？（可多选或自定义）', options: ['基础 CRUD', '用户认证', '数据可视化', '其他'] },
+        ];
       }
 
       // Ask questions
