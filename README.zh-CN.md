@@ -26,7 +26,7 @@
 
 ## 为什么选择 Mosaicat？
 
-传统交付方法论 — Scrum、看板、SAFe — 为优化**人的执行效率**而设计。在 AI 时代，执行从人转移到 Agent，瓶颈随之转移到**人的决策效率**：我们在做正确的事吗？设计合理吗？
+传统交付方法论 — Scrum、看板、SAFe — 为优化**人的执行效率**而设计。在 AI 时代，执行从人转移到 Agent，瓶颈随之转移到**人的决策效率**：
 
 Mosaicat 围绕这一洞察重构交付流水线：
 
@@ -97,9 +97,8 @@ npx tsx src/index.ts run "做一个任务管理应用" --auto-approve
 ```
 
 ### 3. GitHub 模式（团队协作）
-
+※ 前置需安装 Mosaicat GitHub App 到目标仓库：https://github.com/apps/mosaicat
 ```bash
-# 1. 安装 Mosaicat GitHub App 到目标仓库：https://github.com/apps/mosaicat
 npx tsx src/index.ts login                                    # 2. 一次性 OAuth 授权
 npx tsx src/index.ts run "做一个任务管理应用" --github           # 3. 在仓库目录下运行
 ```
