@@ -10,14 +10,24 @@ export const ResearchManifestSchema = z.object({
   risks: z.array(z.string()),
 });
 
+export const FeatureSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+});
+
 export const PrdManifestSchema = z.object({
-  features: z.array(z.string()),
+  features: z.array(FeatureSchema),
   constraints: z.array(z.string()),
   out_of_scope: z.array(z.string()),
 });
 
 export const UxFlowsManifestSchema = z.object({
-  flows: z.array(z.string()),
+  flows: z.array(
+    z.object({
+      name: z.string(),
+      covers_features: z.array(z.string()),
+    })
+  ),
   components: z.array(z.string()),
   interaction_rules: z.array(z.string()),
 });
@@ -27,7 +37,7 @@ export const ApiSpecManifestSchema = z.object({
     z.object({
       method: z.string(),
       path: z.string(),
-      covers_feature: z.string(),
+      covers_features: z.array(z.string()),
     })
   ),
   models: z.array(z.string()),
@@ -38,7 +48,7 @@ export const ComponentsManifestSchema = z.object({
     z.object({
       name: z.string(),
       file: z.string(),
-      covers_flow: z.string(),
+      covers_features: z.array(z.string()),
     })
   ),
   screenshots: z.array(z.string()),
@@ -104,7 +114,7 @@ const SUMMARY_EXTRACTORS: Record<string, (data: Record<string, unknown>) => stri
   'prd.manifest.json': (data) => {
     const m = data as unknown as PrdManifest;
     const lines: string[] = [];
-    if (m.features.length > 0) lines.push(`**Features (${m.features.length}):** ${m.features.join(', ')}`);
+    if (m.features.length > 0) lines.push(`**Features (${m.features.length}):** ${m.features.map((f) => `${f.id}: ${f.name}`).join(', ')}`);
     if (m.constraints.length > 0) lines.push(`**Constraints:** ${m.constraints.join(', ')}`);
     if (m.out_of_scope.length > 0) lines.push(`**Out of scope:** ${m.out_of_scope.join(', ')}`);
     return lines;
@@ -112,21 +122,21 @@ const SUMMARY_EXTRACTORS: Record<string, (data: Record<string, unknown>) => stri
   'ux-flows.manifest.json': (data) => {
     const m = data as unknown as UxFlowsManifest;
     const lines: string[] = [];
-    if (m.flows.length > 0) lines.push(`**Flows (${m.flows.length}):** ${m.flows.join(', ')}`);
+    if (m.flows.length > 0) lines.push(`**Flows (${m.flows.length}):** ${m.flows.map((f) => `${f.name} [${f.covers_features.join(', ')}]`).join(', ')}`);
     if (m.components.length > 0) lines.push(`**Components (${m.components.length}):** ${m.components.join(', ')}`);
     return lines;
   },
   'api-spec.manifest.json': (data) => {
     const m = data as unknown as ApiSpecManifest;
     const lines: string[] = [];
-    for (const ep of m.endpoints) lines.push(`\`${ep.method} ${ep.path}\` — ${ep.covers_feature}`);
+    for (const ep of m.endpoints) lines.push(`\`${ep.method} ${ep.path}\` — [${ep.covers_features.join(', ')}]`);
     if (m.models.length > 0) lines.push(`**Models:** ${m.models.join(', ')}`);
     return lines;
   },
   'components.manifest.json': (data) => {
     const m = data as unknown as ComponentsManifest;
     const lines: string[] = [];
-    for (const c of m.components) lines.push(`**${c.name}** (\`${c.file}\`) — ${c.covers_flow}`);
+    for (const c of m.components) lines.push(`**${c.name}** (\`${c.file}\`) — [${c.covers_features.join(', ')}]`);
     if (m.screenshots.length > 0) lines.push(`**Screenshots:** ${m.screenshots.length} captured`);
     if (m.previews && m.previews.length > 0) lines.push(`**Previews:** ${m.previews.length} generated`);
     return lines;

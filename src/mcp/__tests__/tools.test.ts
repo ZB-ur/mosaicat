@@ -17,7 +17,7 @@ class MockLLMProvider implements LLMProvider {
     this.callCount++;
     // UIDesigner planner sub-phase
     if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
-      return { content: `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "C1", "file": "components/C1.tsx", "preview": "previews/C1.html", "purpose": "Test", "covers_flow": "main", "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->` };
+      return { content: `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "C1", "file": "components/C1.tsx", "preview": "previews/C1.html", "purpose": "Test", "covers_features": ["F-001"], "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->` };
     }
     // UIDesigner builder sub-phase
     if (sys.includes('UIBuilder') || sys.includes('builder phase of the UI designer')) {
@@ -26,9 +26,9 @@ class MockLLMProvider implements LLMProvider {
 
     const stageResponses: Record<string, string> = {
       researcher: JSON.stringify({ artifact: "## Market Overview\nTest", manifest: { competitors: ["A"], key_insights: ["t"], feasibility: "high", risks: [] } }),
-      product_owner: JSON.stringify({ artifact: "## Goal\nTest\n## Features\n- f1", manifest: { features: ["f1"], constraints: [], out_of_scope: [] } }),
-      ux_designer: JSON.stringify({ artifact: "## User Journeys\n### Flow 1: main\nA → B\n## Component Inventory\n- C1", manifest: { flows: ["main"], components: ["C1"], interaction_rules: [] } }),
-      api_designer: JSON.stringify({ artifact: "openapi: \"3.0.0\"\ninfo:\n  title: T\npaths:\n  /t:\n    get:\n      summary: T", manifest: { endpoints: [{ method: "GET", path: "/t", covers_feature: "f1" }], models: ["M"] } }),
+      product_owner: JSON.stringify({ artifact: "## Goal\nTest\n## Features\n- f1", manifest: { features: [{ id: "F-001", name: "f1" }], constraints: [], out_of_scope: [] } }),
+      ux_designer: JSON.stringify({ artifact: "## User Journeys\n### Flow 1: main\nA → B\n## Component Inventory\n- C1", manifest: { flows: [{ name: "main", covers_features: ["F-001"] }], components: ["C1"], interaction_rules: [] } }),
+      api_designer: JSON.stringify({ artifact: "openapi: \"3.0.0\"\ninfo:\n  title: T\npaths:\n  /t:\n    get:\n      summary: T", manifest: { endpoints: [{ method: "GET", path: "/t", covers_features: ["F-001"] }], models: ["M"] } }),
       validator: `<!-- ARTIFACT:validation-report.md -->\n## Validation Summary\n- Status: PASS\n<!-- END:validation-report.md -->`,
     };
 

@@ -26,8 +26,8 @@ class MockUIProvider implements LLMProvider {
 {
   "design_tokens": {"primary": "blue-600"},
   "components": [
-    {"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "First component", "covers_flow": "flow-a", "parent": null, "children": [], "props": ["text: string"], "priority": 1},
-    {"name": "CompB", "file": "components/CompB.tsx", "preview": "previews/CompB.html", "purpose": "Second component", "covers_flow": "flow-b", "parent": null, "children": [], "props": [], "priority": 2}
+    {"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "First component", "covers_features": ["F-001"], "parent": null, "children": [], "props": ["text: string"], "priority": 1},
+    {"name": "CompB", "file": "components/CompB.tsx", "preview": "previews/CompB.html", "purpose": "Second component", "covers_features": ["F-002"], "parent": null, "children": [], "props": [], "priority": 2}
   ]
 }
 <!-- END:ui-plan.json -->` };
@@ -141,7 +141,7 @@ describe('UIDesignerAgent', () => {
     expect(manifest.components).toHaveLength(2);
     expect(manifest.components[0].name).toBe('CompA');
     expect(manifest.components[0].file).toBe('components/CompA.tsx');
-    expect(manifest.components[0].covers_flow).toBe('flow-a');
+    expect(manifest.components[0].covers_features).toEqual(['F-001']);
     expect(manifest.previews).toHaveLength(2);
   });
 

@@ -17,7 +17,7 @@ class MockLLMProvider implements LLMProvider {
     this.callCount++;
     // UIDesigner planner sub-phase
     if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
-      return { content: `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "Test", "covers_flow": "main-flow", "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->` };
+      return { content: `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "Test", "covers_features": ["F-001"], "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->` };
     }
     // UIDesigner builder sub-phase
     if (sys.includes('UIBuilder') || sys.includes('builder phase of the UI designer')) {
@@ -28,9 +28,9 @@ class MockLLMProvider implements LLMProvider {
 
     const responses: Record<string, string> = {
       researcher: JSON.stringify({ artifact: "## Market Overview\nTest research content", manifest: { competitors: ["A"], key_insights: ["test"], feasibility: "high", risks: [] } }),
-      product_owner: JSON.stringify({ artifact: "## Goal\nTest goal\n## Features\n- feat-a", manifest: { features: ["feat-a"], constraints: [], out_of_scope: [] } }),
-      ux_designer: JSON.stringify({ artifact: "## User Journeys\n### Flow 1: main-flow\nStep 1 → Step 2\n## Component Inventory\n- CompA", manifest: { flows: ["main-flow"], components: ["CompA"], interaction_rules: [] } }),
-      api_designer: JSON.stringify({ artifact: "openapi: \"3.0.0\"\ninfo:\n  title: Test\npaths:\n  /test:\n    get:\n      summary: Test", manifest: { endpoints: [{ method: "GET", path: "/test", covers_feature: "feat-a" }], models: ["TestModel"] } }),
+      product_owner: JSON.stringify({ artifact: "## Goal\nTest goal\n## Features\n- feat-a", manifest: { features: [{ id: "F-001", name: "feat-a" }], constraints: [], out_of_scope: [] } }),
+      ux_designer: JSON.stringify({ artifact: "## User Journeys\n### Flow 1: main-flow\nStep 1 → Step 2\n## Component Inventory\n- CompA", manifest: { flows: [{ name: "main-flow", covers_features: ["F-001"] }], components: ["CompA"], interaction_rules: [] } }),
+      api_designer: JSON.stringify({ artifact: "openapi: \"3.0.0\"\ninfo:\n  title: Test\npaths:\n  /test:\n    get:\n      summary: Test", manifest: { endpoints: [{ method: "GET", path: "/test", covers_features: ["F-001"] }], models: ["TestModel"] } }),
       validator: `<!-- ARTIFACT:validation-report.md -->\n## Validation Summary\n- Status: PASS\n- Checks passed: 4/4\n<!-- END:validation-report.md -->`,
     };
 
