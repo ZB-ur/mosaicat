@@ -5,19 +5,24 @@
 
 ---
 
-## MVP Pipeline
+## Pipeline（M3 目标：design-only / full profile）
 
 ```
-Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Validator
+design-only: IntentConsultant → Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Validator
+full:        IntentConsultant → Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → TechLead → Coder → Reviewer → Validator
 ```
 
 | Agent | 输入 | 输出 | 澄清 | 门控 |
 |---|---|---|---|---|
-| Researcher | 用户指令 | `research.md` + `research.manifest.json` | 开启 | auto |
-| ProductOwner | 用户指令 + `research.md` | `prd.md` + `prd.manifest.json` | 关闭 | manual |
+| IntentConsultant | 用户指令 | `intent-brief.json` | 多轮动态 | auto |
+| Researcher | `intent-brief.json` | `research.md` + `research.manifest.json` | 开启 | auto |
+| ProductOwner | `intent-brief.json` + `research.md` | `prd.md` + `prd.manifest.json` | 关闭 | manual |
 | UXDesigner | `prd.md` | `ux-flows.md` + `ux-flows.manifest.json` | 开启 | auto |
 | APIDesigner | `prd.md` + `ux-flows.md` | `api-spec.yaml` + `api-spec.manifest.json` | 开启 | auto |
 | UIDesigner | `prd.md` + `ux-flows.md` + `api-spec.yaml` | `components/` + `previews/` + `screenshots/` + `gallery.html` + `components.manifest.json` | 关闭 | manual |
+| TechLead | `prd.md` + `ux-flows.md` + `api-spec.yaml` | `tech-spec.md` + `tech-spec.manifest.json` | 开启 | manual |
+| Coder | `tech-spec.md` + `api-spec.yaml` | `code/` + `code.manifest.json` | 关闭 | auto |
+| Reviewer | `tech-spec.md` + `code/` | `review-report.md` + `review.manifest.json` | 关闭 | manual |
 | Validator | 所有 `*.manifest.json` | `validation-report.md` | 关闭 | auto |
 
 ---
@@ -43,8 +48,9 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 |---|---|
 | 语言 | TypeScript / Node.js |
 | MCP SDK | @modelcontextprotocol/sdk |
-| LLM 调用 (MVP) | Claude CLI (`claude --print`) + PQueue 串行队列 |
+| LLM 调用 (MVP) | Claude CLI (`claude -p` + tool use + 结构化输出) + PQueue 串行队列 |
 | LLM 调用 | @anthropic-ai/sdk |
+| CLI 交互 | @inquirer/prompts |
 | Git 操作 | @octokit/rest |
 | UI 输出 | React + Tailwind CSS + Playwright |
 | 工件校验 | zod |
@@ -61,41 +67,55 @@ Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Va
 | `core/pipeline.ts` | 状态机引擎 | `createPipelineRun()`, `transitionStage()` |
 | `core/agent.ts` | Agent 基类 | `BaseAgent`, `StubAgent` |
 | `core/artifact.ts` | 工件磁盘 I/O | `writeArtifact()`, `readArtifact()` |
-| `core/manifest.ts` | manifest 读写 + zod schema | `writeManifest()`, `readManifest()` |
-| `core/llm-provider.ts` | LLM 接口定义 | `LLMProvider` interface, `LLMResponse`, `LLMUsage`, `StubProvider` |
-| `core/prompt-assembler.ts` | Prompt 拼装 | `assemblePrompt()` |
-| `core/response-parser.ts` | 响应解析 | `parseResponse()` |
-| `core/event-bus.ts` | 事件总线 | `eventBus` singleton, `PipelineEvents` (含 `agent:usage`, `pipeline:usage`) |
 | `core/logger.ts` | JSONL 日志 | `Logger` class |
 | `core/snapshot.ts` | 阶段快照 | `createSnapshot()` |
-| `agents/llm-agent.ts` | Agent 模板基类 | `LLMAgent` abstract class |
 | `adapters/types.ts` | Git 适配器接口 | `GitPlatformAdapter` interface, `PRRef`, Git Data API types |
-| `providers/claude-cli.ts` | Claude CLI 调用 | `ClaudeCLIProvider` |
-| `providers/anthropic-sdk.ts` | Anthropic SDK 调用 | `AnthropicSDKProvider` |
 | `core/screenshot-renderer.ts` | Playwright 截图渲染 | `renderScreenshots()`, `renderPreviewScreenshots()` |
+| `core/git-publisher.ts` | Git PR 流程（纯 API） | Draft PR + 逐步 commit via GitHub API |
+| `core/github-interaction-handler.ts` | PR Review 审批 | `GitHubInteractionHandler` |
+| `adapters/github.ts` | GitHub 适配器 | `GitHubAdapter` |
+| `auth/*` | 整个认证模块 | OAuth + Token + AuthStore |
+
+### M3 重写模块（REWRITE — 接口或实现将大幅变更）
+| 模块 | 职责 | M3 变更 |
+|------|------|---------|
+| `providers/claude-cli.ts` | Claude CLI 调用 | 重写：tool use + `--allowedTools` + `--json-schema` 结构化输出 |
+| `providers/anthropic-sdk.ts` | Anthropic SDK 调用 | 同步适配 LLMCallOptions 扩展 |
+| `core/llm-provider.ts` | LLM 接口定义 | 扩展：`allowedTools`、`jsonSchema`；移除 `LLMUsage` |
+| `core/response-parser.ts` | 响应解析 | **删除**（结构化输出替代 delimiter 正则） |
+| `core/prompt-assembler.ts` | Prompt 拼装 | 重写：移除 delimiter 语法，只保留任务 + 上下文拼装 |
+| `agents/llm-agent.ts` | Agent 模板基类 | 重写：结构化输出模式，`getOutputSpec()` 返回 JSON schema |
+| `core/event-bus.ts` | 事件总线 | 精简：移除 `agent:usage`、`pipeline:usage` 事件 |
+| `core/cli-progress.ts` | 终端进度 | 重写：移除费用显示 |
+| `core/orchestrator.ts` | 全局编排 | 大改：去 usage、加 Profile、加 Intent Consultant、stage 级进化 |
+| `core/pr-body-generator.ts` | PR body 生成 | 移除 token 统计区块 |
+| `core/security.ts` | 信任模型 | 移除 metrics 相关参数 |
+| `index.ts` | CLI 入口 | 大改：`--profile` flag、新入口流程 |
 
 ### 活跃模块（ACTIVE — 可能需要修改）
 | 模块 | 职责 | 改动场景 |
 |------|------|----------|
-| `core/orchestrator.ts` | 全局编排 | 新增 pipeline 钩子 |
-| `core/context-manager.ts` | 上下文组装 | Skill 注入、输入源变更 |
-| `core/run-manager.ts` | MCP 运行管理 | 新增 MCP 工具 |
-| `core/cli-progress.ts` | 终端进度 | 新增事件监听 |
-| `core/security.ts` | 信任模型 | 新增安全策略 |
-| `core/interaction-handler.ts` | 用户交互抽象 | 新增交互渠道 |
-| `evolution/*` | 自进化系统 | 提案流程、Skill 管理 |
-| `mcp/tools.ts` | MCP 工具注册 | 新增/修改工具 |
-| `agents/*.ts` | 具体 Agent | Prompt 输出格式调整 |
-| `index.ts` | CLI 入口 | 新增命令/Flag |
-| `core/artifact-presenter.ts` | 产出链接格式化 | 新增链接格式（M2-T2） |
-| `core/git-publisher.ts` | Git PR 流程（纯 API） | Draft PR + 逐步 commit via GitHub API，不使用本地 git |
-| `core/issue-manager.ts` | Issue 分层管理 | Stage/Step Issue（M2-T4） |
-| `core/pr-body-generator.ts` | PR body 生成 | 截图 + 预览 + token 统计（M2-T5） |
-| `auth/types.ts` | Auth 域类型 | AuthConfig, CachedAuth, InstallationInfo |
-| `auth/auth-store.ts` | 认证持久化 | `~/.mosaicat/auth.json` 读写 |
-| `auth/oauth-device-flow.ts` | OAuth Device Flow | `mosaicat login` 浏览器授权 |
-| `auth/token-service.ts` | 后端通信 | installations 查询 + installation token 交换 |
-| `auth/resolve-auth.ts` | 认证编排 | GitHub App 认证 + git remote 自动匹配 |
+| `core/types.ts` | 全局类型 | StageName 扩展到 12、新增 IntentBrief、skipped 状态、profiles |
+| `core/manifest.ts` | manifest 读写 + zod schema | Feature ID schema、新 Agent manifest |
+| `core/context-manager.ts` | 上下文组装 | Skill 注入格式对齐 |
+| `core/agent-factory.ts` | Agent 实例工厂 | 注册新 Agent、autonomy 配置 |
+| `core/interaction-handler.ts` | 用户交互抽象 | inquirer 风格改造 |
+| `core/run-manager.ts` | MCP 运行管理 | profile 参数 |
+| `evolution/*` | 自进化系统 | Stage 级进化、Skill 格式标准化 |
+| `mcp/tools.ts` | MCP 工具注册 | profile 参数、扩展 STAGE_NAMES |
+| `agents/*.ts` | 具体 Agent | 适配结构化输出 + Feature ID |
+| `core/artifact-presenter.ts` | 产出链接格式化 | 新 Agent 链接 |
+| `core/issue-manager.ts` | Issue 分层管理 | 新 Stage Issue |
+
+### M3 新增模块
+| 模块 | 职责 | Phase |
+|------|------|-------|
+| `config/mcp-servers.yaml` | 预设 MCP server 列表 | Phase 0 |
+| `core/mcp-loader.ts` | 加载预设 MCP server 配置 | Phase 0 |
+| `agents/intent-consultant.ts` | Intent Consultant Agent | Phase 1 |
+| `agents/tech-lead.ts` | TechLead Agent | Phase 6 |
+| `agents/coder.ts` | Coder Agent（tool use + subagent） | Phase 7 |
+| `agents/reviewer.ts` | Reviewer Agent | Phase 8 |
 
 ### 跨模块依赖关系
 ```
