@@ -3,17 +3,32 @@ import { z } from 'zod';
 // --- Stage Names ---
 
 export const STAGE_NAMES = [
+  'intent_consultant',
+  'researcher',
+  'product_owner',
+  'ux_designer',
+  'api_designer',
+  'ui_designer',
+  'tech_lead',
+  'coder',
+  'reviewer',
+  'validator',
+  // M4 预留
+  'qa_lead',
+  'tester',
+] as const;
+
+export type StageName = (typeof STAGE_NAMES)[number];
+
+/** Default design-only pipeline order. Phase 4 will replace with profile-based stage lists. */
+export const STAGE_ORDER: readonly StageName[] = [
   'researcher',
   'product_owner',
   'ux_designer',
   'api_designer',
   'ui_designer',
   'validator',
-] as const;
-
-export type StageName = (typeof STAGE_NAMES)[number];
-
-export const STAGE_ORDER: readonly StageName[] = STAGE_NAMES;
+];
 
 // --- Stage States ---
 
@@ -26,6 +41,7 @@ export const STAGE_STATES = [
   'rejected',
   'failed',
   'done',
+  'skipped',
 ] as const;
 
 export type StageState = (typeof STAGE_STATES)[number];
@@ -43,7 +59,7 @@ export interface StageStatus {
 export interface PipelineRun {
   id: string;
   instruction: string;
-  stages: Record<StageName, StageStatus>;
+  stages: Partial<Record<StageName, StageStatus>>;
   currentStage: StageName | null;
   autoApprove: boolean;
   createdAt: string;
@@ -74,7 +90,7 @@ export interface EvolutionConfig {
 }
 
 export interface PipelineConfig {
-  stages: Record<StageName, StageConfig>;
+  stages: Partial<Record<StageName, StageConfig>>;
   pipeline: {
     max_retries_per_stage: number;
     snapshot: string;
@@ -103,7 +119,7 @@ export interface AgentOutputConfig {
 }
 
 export interface AgentsConfig {
-  agents: Record<StageName, AgentOutputConfig>;
+  agents: Partial<Record<StageName, AgentOutputConfig>>;
 }
 
 // --- Task & Agent Context ---

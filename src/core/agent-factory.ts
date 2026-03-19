@@ -12,13 +12,18 @@ import {
   ValidatorAgent,
 } from '../agents/index.js';
 
-const AGENT_MAP: Record<StageName, new (stage: StageName, provider: LLMProvider, logger: Logger) => BaseAgent> = {
+type AgentConstructor = new (stage: StageName, provider: LLMProvider, logger: Logger) => BaseAgent;
+
+const AGENT_MAP: Partial<Record<StageName, AgentConstructor>> = {
   researcher: ResearcherAgent,
   product_owner: ProductOwnerAgent,
   ux_designer: UXDesignerAgent,
   api_designer: APIDesignerAgent,
   ui_designer: UIDesignerAgent,
   validator: ValidatorAgent,
+  // tech_lead, coder, reviewer — registered in Phase 6-8
+  // intent_consultant — handled separately in orchestrator
+  // qa_lead, tester — M4
 };
 
 export function createAgent(
@@ -33,5 +38,8 @@ export function createAgent(
   }
 
   const AgentClass = AGENT_MAP[stage];
+  if (!AgentClass) {
+    throw new Error(`No agent implementation registered for stage: ${stage}`);
+  }
   return new AgentClass(stage, provider, logger);
 }

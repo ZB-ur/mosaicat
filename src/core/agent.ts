@@ -54,7 +54,7 @@ interface StubOutputDef {
   manifest?: { name: string; data: unknown };
 }
 
-const STUB_OUTPUTS: Record<StageName, StubOutputDef> = {
+const STUB_OUTPUTS: Partial<Record<StageName, StubOutputDef>> = {
   researcher: {
     artifact: 'research.md',
     content: `## Market Overview\n[Stub] Market analysis placeholder.\n\n## Competitor Analysis\n| Competitor | Core Features | Strengths | Weaknesses |\n|---|---|---|---|\n| N/A | N/A | N/A | N/A |\n\n## Feasibility\n[Stub] High feasibility.\n\n## Key Insights\n- Placeholder insight`,
@@ -74,7 +74,7 @@ const STUB_OUTPUTS: Record<StageName, StubOutputDef> = {
     manifest: {
       name: 'prd.manifest.json',
       data: {
-        features: ['feature-1'],
+        features: [{ id: 'F-001', name: 'feature-1' }],
         constraints: ['no-placeholder'],
         out_of_scope: ['placeholder-exclusion'],
       },
@@ -86,7 +86,7 @@ const STUB_OUTPUTS: Record<StageName, StubOutputDef> = {
     manifest: {
       name: 'ux-flows.manifest.json',
       data: {
-        flows: ['main-flow'],
+        flows: [{ name: 'main-flow', covers_features: ['F-001'] }],
         components: ['MainComponent'],
         interaction_rules: ['placeholder-rule'],
       },
@@ -99,7 +99,7 @@ const STUB_OUTPUTS: Record<StageName, StubOutputDef> = {
       name: 'api-spec.manifest.json',
       data: {
         endpoints: [
-          { method: 'GET', path: '/api/placeholder', covers_feature: 'feature-1' },
+          { method: 'GET', path: '/api/placeholder', covers_features: ['F-001'] },
         ],
         models: ['PlaceholderModel'],
       },
@@ -109,14 +109,14 @@ const STUB_OUTPUTS: Record<StageName, StubOutputDef> = {
     artifact: 'ui-plan.json',
     content: JSON.stringify({
       components: [
-        { name: 'MainComponent', file: 'components/MainComponent.tsx', preview: 'previews/MainComponent.html', purpose: 'Main placeholder', covers_flow: 'main-flow', parent: null, children: [], props: [], priority: 1 },
+        { name: 'MainComponent', file: 'components/MainComponent.tsx', preview: 'previews/MainComponent.html', purpose: 'Main placeholder', covers_features: ['F-001'], parent: null, children: [], props: [], priority: 1 },
       ],
     }, null, 2),
     manifest: {
       name: 'components.manifest.json',
       data: {
         components: [
-          { name: 'MainComponent', file: 'components/MainComponent.tsx', covers_flow: 'main-flow' },
+          { name: 'MainComponent', file: 'components/MainComponent.tsx', covers_features: ['F-001'] },
         ],
         screenshots: ['screenshots/MainComponent.png'],
         previews: ['previews/MainComponent.html'],
@@ -132,6 +132,9 @@ const STUB_OUTPUTS: Record<StageName, StubOutputDef> = {
 export class StubAgent extends BaseAgent {
   async run(_context: AgentContext): Promise<void> {
     const def = STUB_OUTPUTS[this.stage];
+    if (!def) {
+      throw new Error(`No stub output defined for stage: ${this.stage}`);
+    }
     this.writeOutput(def.artifact, def.content);
     if (def.manifest) {
       this.writeOutputManifest(def.manifest.name, def.manifest.data);

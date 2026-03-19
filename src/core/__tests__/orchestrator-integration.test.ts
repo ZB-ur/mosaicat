@@ -175,7 +175,7 @@ describe('Orchestrator Integration (Mock LLM)', () => {
 
     // All stages done
     for (const stage of STAGE_ORDER) {
-      expect(result.stages[stage].state).toBe('done');
+      expect(result.stages[stage]!.state).toBe('done');
     }
 
     // Artifacts exist

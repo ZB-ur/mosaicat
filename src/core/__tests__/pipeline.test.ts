@@ -14,20 +14,20 @@ describe('Pipeline', () => {
     expect(run.id).toBe('run-1');
     expect(run.instruction).toBe('test instruction');
     for (const stage of STAGE_ORDER) {
-      expect(run.stages[stage].state).toBe('idle');
-      expect(run.stages[stage].retryCount).toBe(0);
+      expect(run.stages[stage]!.state).toBe('idle');
+      expect(run.stages[stage]!.retryCount).toBe(0);
     }
   });
 
   it('should transition stage states correctly', () => {
     const run = createPipelineRun('run-1', 'test', false);
     transitionStage(run, 'researcher', 'running');
-    expect(run.stages.researcher.state).toBe('running');
-    expect(run.stages.researcher.startedAt).toBeDefined();
+    expect(run.stages.researcher!.state).toBe('running');
+    expect(run.stages.researcher!.startedAt).toBeDefined();
 
     transitionStage(run, 'researcher', 'done');
-    expect(run.stages.researcher.state).toBe('done');
-    expect(run.stages.researcher.completedAt).toBeDefined();
+    expect(run.stages.researcher!.state).toBe('done');
+    expect(run.stages.researcher!.completedAt).toBeDefined();
   });
 
   it('should reject invalid transitions', () => {
