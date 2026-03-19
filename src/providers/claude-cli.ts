@@ -96,9 +96,15 @@ export class ClaudeCLIProvider implements LLMProvider {
   private parseOutput(stdout: string, options?: LLMCallOptions): LLMResponse {
     try {
       const json = JSON.parse(stdout.trim());
+
+      // When --json-schema is used, structured output is in json.structured_output
+      if (options?.jsonSchema && json.structured_output != null) {
+        return { content: JSON.stringify(json.structured_output) };
+      }
+
       const rawContent = json.result ?? stdout.trim();
 
-      // If jsonSchema was requested, the result should be valid JSON — extract it
+      // If jsonSchema was requested but no structured_output, try result field
       if (options?.jsonSchema) {
         return { content: this.extractJsonContent(rawContent) };
       }
