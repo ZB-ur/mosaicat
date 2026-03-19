@@ -87,6 +87,22 @@ export const CodeManifestSchema = z.object({
   covers_features: z.array(z.string()),
 });
 
+export const ReviewManifestSchema = z.object({
+  issues: z.array(
+    z.object({
+      severity: z.enum(['critical', 'major', 'minor', 'suggestion']),
+      file: z.string(),
+      description: z.string(),
+    })
+  ),
+  spec_coverage: z.object({
+    total_tasks: z.number(),
+    covered_tasks: z.number(),
+    missing_tasks: z.array(z.string()),
+  }),
+  verdict: z.enum(['pass', 'pass_with_suggestions', 'fail']),
+});
+
 // Schema registry by manifest name
 const MANIFEST_SCHEMAS: Record<string, z.ZodType> = {
   'research.manifest.json': ResearchManifestSchema,
@@ -96,6 +112,7 @@ const MANIFEST_SCHEMAS: Record<string, z.ZodType> = {
   'components.manifest.json': ComponentsManifestSchema,
   'tech-spec.manifest.json': TechSpecManifestSchema,
   'code.manifest.json': CodeManifestSchema,
+  'review.manifest.json': ReviewManifestSchema,
 };
 
 export type ResearchManifest = z.infer<typeof ResearchManifestSchema>;
@@ -105,6 +122,7 @@ export type ApiSpecManifest = z.infer<typeof ApiSpecManifestSchema>;
 export type ComponentsManifest = z.infer<typeof ComponentsManifestSchema>;
 export type TechSpecManifest = z.infer<typeof TechSpecManifestSchema>;
 export type CodeManifest = z.infer<typeof CodeManifestSchema>;
+export type ReviewManifest = z.infer<typeof ReviewManifestSchema>;
 
 export function writeManifest(name: string, data: unknown): void {
   const schema = MANIFEST_SCHEMAS[name];
@@ -192,6 +210,19 @@ const SUMMARY_EXTRACTORS: Record<string, (data: Record<string, unknown>) => stri
     if (m.modules.length > 0) lines.push(`**Modules:** ${m.modules.join(', ')}`);
     if (m.covers_tasks.length > 0) lines.push(`**Covers tasks:** ${m.covers_tasks.join(', ')}`);
     if (m.covers_features.length > 0) lines.push(`**Covers features:** ${m.covers_features.join(', ')}`);
+    return lines;
+  },
+  'review.manifest.json': (data) => {
+    const m = data as unknown as ReviewManifest;
+    const lines: string[] = [];
+    lines.push(`**Verdict:** ${m.verdict}`);
+    lines.push(`**Spec Coverage:** ${m.spec_coverage.covered_tasks}/${m.spec_coverage.total_tasks} tasks`);
+    if (m.spec_coverage.missing_tasks.length > 0) lines.push(`**Missing tasks:** ${m.spec_coverage.missing_tasks.join(', ')}`);
+    if (m.issues.length > 0) {
+      const critical = m.issues.filter((i) => i.severity === 'critical').length;
+      const major = m.issues.filter((i) => i.severity === 'major').length;
+      lines.push(`**Issues:** ${m.issues.length} total (${critical} critical, ${major} major)`);
+    }
     return lines;
   },
 };

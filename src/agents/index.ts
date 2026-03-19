@@ -6,4 +6,5 @@ export { APIDesignerAgent } from './api-designer.js';
 export { UIDesignerAgent } from './ui-designer.js';
 export { TechLeadAgent } from './tech-lead.js';
 export { CoderAgent } from './coder.js';
+export { ReviewerAgent } from './reviewer.js';
 export { ValidatorAgent } from './validator.js';
