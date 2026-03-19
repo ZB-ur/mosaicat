@@ -41,7 +41,10 @@ export class GitPublisher {
     const treeEntries: GitTreeEntry[] = [];
     for (const filePath of resolvedFiles) {
       const content = this.readFileAsBase64(filePath);
-      if (content === null) continue; // file doesn't exist
+      if (content === null) {
+        console.warn(`[git-publisher] Skipping missing file: ${filePath}`);
+        continue;
+      }
 
       const blob = await this.adapter.createBlob(content, 'base64');
       treeEntries.push({
