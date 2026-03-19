@@ -42,6 +42,37 @@ stages:
     gate: manual
     retry_max: 3
 
+profiles:
+  design-only:
+    - intent_consultant
+    - researcher
+    - product_owner
+    - ux_designer
+    - api_designer
+    - ui_designer
+    - validator
+  full:
+    - intent_consultant
+    - researcher
+    - product_owner
+    - ux_designer
+    - api_designer
+    - ui_designer
+    - tech_lead
+    - coder
+    - reviewer
+    - validator
+  frontend-only:
+    - intent_consultant
+    - researcher
+    - product_owner
+    - ux_designer
+    - ui_designer
+    - tech_lead
+    - coder
+    - reviewer
+    - validator
+
 pipeline:
   max_retries_per_stage: 3
   snapshot: on_stage_complete

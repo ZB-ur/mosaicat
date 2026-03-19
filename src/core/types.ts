@@ -89,8 +89,11 @@ export interface EvolutionConfig {
   cooldown_hours: number;
 }
 
+export type PipelineProfile = 'design-only' | 'full' | 'frontend-only';
+
 export interface PipelineConfig {
   stages: Partial<Record<StageName, StageConfig>>;
+  profiles?: Record<PipelineProfile, StageName[]>;
   pipeline: {
     max_retries_per_stage: number;
     snapshot: string;

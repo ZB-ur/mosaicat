@@ -1,9 +1,14 @@
 import type { StageName, StageState, StageStatus, PipelineRun, StageConfig } from './types.js';
 import { STAGE_ORDER } from './types.js';
 
-export function createPipelineRun(id: string, instruction: string, autoApprove: boolean): PipelineRun {
-  const stages = {} as Record<StageName, StageStatus>;
-  for (const name of STAGE_ORDER) {
+export function createPipelineRun(
+  id: string,
+  instruction: string,
+  autoApprove: boolean,
+  stageNames?: readonly StageName[],
+): PipelineRun {
+  const stages: Partial<Record<StageName, StageStatus>> = {};
+  for (const name of (stageNames ?? STAGE_ORDER)) {
     stages[name] = { state: 'idle', retryCount: 0 };
   }
 

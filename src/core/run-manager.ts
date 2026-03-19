@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import yaml from 'js-yaml';
-import type { StageName, PipelineRun, PipelineConfig, ClarificationOption } from './types.js';
+import type { StageName, PipelineRun, PipelineConfig, PipelineProfile, ClarificationOption } from './types.js';
 import { Orchestrator } from './orchestrator.js';
 import { DeferredInteractionHandler } from './interaction-handler.js';
 import type { InteractionHandler } from './interaction-handler.js';
@@ -43,7 +43,7 @@ interface ManagedRun {
 export class RunManager {
   private runs = new Map<string, ManagedRun>();
 
-  async startRun(instruction: string, autoApprove = false): Promise<string> {
+  async startRun(instruction: string, autoApprove = false, profile?: PipelineProfile): Promise<string> {
     const id = `managed-${Date.now()}`;
 
     const pipelineConfig = yaml.load(
@@ -85,7 +85,7 @@ export class RunManager {
     };
 
     managedRun.promise = orchestrator
-      .run(instruction, autoApprove)
+      .run(instruction, autoApprove, profile)
       .then((result) => {
         managedRun.pipelineRun = result;
         managedRun.state = 'completed';

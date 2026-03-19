@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import yaml from 'js-yaml';
-import type { PipelineConfig, AgentsConfig, StageName, PipelineRun, AgentContext } from './types.js';
+import type { PipelineConfig, AgentsConfig, StageName, PipelineRun, AgentContext, PipelineProfile } from './types.js';
 import { STAGE_ORDER, ClarificationNeeded } from './types.js';
 import {
   createPipelineRun,
@@ -70,13 +70,17 @@ export class Orchestrator {
     this.adapter = adapter;
   }
 
-  async run(instruction: string, autoApprove = false): Promise<PipelineRun> {
+  async run(instruction: string, autoApprove = false, profile?: PipelineProfile): Promise<PipelineRun> {
     const runId = `run-${Date.now()}`;
-    const pipelineRun = createPipelineRun(runId, instruction, autoApprove);
+
+    // Resolve stage list from profile
+    const stageList = this.resolveStageList(profile);
+
+    const pipelineRun = createPipelineRun(runId, instruction, autoApprove, stageList);
     const logger = new Logger(runId);
     const provider = createProvider();
 
-    logger.pipeline('info', 'pipeline:start', { runId, instruction });
+    logger.pipeline('info', 'pipeline:start', { runId, instruction, profile: profile ?? 'default' });
     eventBus.emit('pipeline:start', runId);
 
     // Initialize GitPublisher for GitHub mode
@@ -97,7 +101,9 @@ export class Orchestrator {
       // Intent Consultant: multi-turn dialogue before pipeline
       await this.runIntentConsultant(pipelineRun, provider, logger);
 
-      for (const stage of STAGE_ORDER) {
+      // Filter stage list: skip intent_consultant (handled above)
+      const pipelineStages = stageList.filter((s) => s !== 'intent_consultant');
+      for (const stage of pipelineStages) {
         await this.executeStage(pipelineRun, stage, provider, logger);
       }
 
@@ -140,6 +146,15 @@ export class Orchestrator {
     }
 
     return pipelineRun;
+  }
+
+  private resolveStageList(profile?: PipelineProfile): readonly StageName[] {
+    if (!profile) return STAGE_ORDER;
+    const profiles = this.pipelineConfig.profiles;
+    if (!profiles || !profiles[profile]) {
+      throw new Error(`Unknown pipeline profile: ${profile}. Available: ${profiles ? Object.keys(profiles).join(', ') : 'none'}`);
+    }
+    return profiles[profile];
   }
 
   private async executeStage(
