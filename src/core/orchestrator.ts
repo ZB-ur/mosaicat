@@ -536,13 +536,17 @@ export class Orchestrator {
     logger.pipeline('info', 'intent-consultant:start', { runId: run.id });
     console.log(`\n\x1b[1m[0/6] IntentConsultant\x1b[0m \x1b[2m— 意图深挖\x1b[0m`);
 
+    // Intent Consultant always uses CLI interaction (multi-turn dialogue needs terminal,
+    // not GitHub Issue polling). GitHub mode kicks in after the brief is produced.
+    const cliHandler = new CLIInteractionHandler();
+
     // Use 'researcher' as placeholder StageName — IntentConsultant is not a pipeline stage yet
     const placeholderStage = 'researcher' as StageName;
     const agent = new IntentConsultantAgent(
       placeholderStage,
       provider,
       logger,
-      this.handler,
+      cliHandler,
     );
 
     const context: AgentContext = {
