@@ -11,8 +11,7 @@ import { EvolutionEngine } from '../evolution/engine.js';
 import { listPromptVersions, rollbackPrompt } from '../evolution/prompt-versioning.js';
 import { StubProvider } from '../core/llm-provider.js';
 import { Logger } from '../core/logger.js';
-
-const ARTIFACTS_DIR = '.mosaic/artifacts';
+import { getArtifactsDir } from '../core/artifact.js';
 
 export function registerTools(server: McpServer, runManager: RunManager): void {
   server.tool(
@@ -103,7 +102,7 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
     async ({ artifact_name }) => {
       if (artifact_name) {
         // Read specific artifact
-        const filePath = path.join(ARTIFACTS_DIR, artifact_name);
+        const filePath = path.join(getArtifactsDir(), artifact_name);
         try {
           const content = fs.readFileSync(filePath, 'utf-8');
           return {
@@ -125,7 +124,7 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
 
       // List all artifacts
       try {
-        const files = listFilesRecursive(ARTIFACTS_DIR);
+        const files = listFilesRecursive(getArtifactsDir());
         return {
           content: [{
             type: 'text' as const,

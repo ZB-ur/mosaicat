@@ -25,7 +25,7 @@ import { GitPublisher } from './git-publisher.js';
 import { generatePRBody } from './pr-body-generator.js';
 import { extractManifestSummary } from './manifest.js';
 import { IntentConsultantAgent } from '../agents/intent-consultant.js';
-import { artifactExists } from './artifact.js';
+import { artifactExists, initArtifactsDir, getArtifactsDir } from './artifact.js';
 const AGENT_DESC: Record<StageName, string> = {
   intent_consultant: '意图深挖',
   researcher: '市场调研 & 竞品分析',
@@ -77,10 +77,11 @@ export class Orchestrator {
     const stageList = this.resolveStageList(profile);
 
     const pipelineRun = createPipelineRun(runId, instruction, autoApprove, stageList);
+    const artifactsDir = initArtifactsDir(runId);
     const logger = new Logger(runId);
     const provider = createProvider(this.pipelineConfig);
 
-    logger.pipeline('info', 'pipeline:start', { runId, instruction, profile: profile ?? 'default' });
+    logger.pipeline('info', 'pipeline:start', { runId, instruction, profile: profile ?? 'default', artifactsDir });
     eventBus.emit('pipeline:start', runId, stageList);
 
     // Initialize GitPublisher for GitHub mode
@@ -305,7 +306,7 @@ export class Orchestrator {
     if (!this.publisher) return;
     try {
       const agentConfig = this.agentsConfig.agents[stage]!;
-      const files = (agentConfig.outputs ?? []).map((o: string) => `.mosaic/artifacts/${o}`);
+      const files = (agentConfig.outputs ?? []).map((o: string) => `${getArtifactsDir()}/${o}`);
       const issueNumber = this.stageIssues.get(`${runId}:${stage}`);
       await this.publisher.commitStage(stage, files, issueNumber);
 
@@ -344,14 +345,14 @@ export class Orchestrator {
       const lines: string[] = ['## 🎨 UIDesigner — Component Preview', ''];
 
       // Screenshots
-      const screenshotsDir = '.mosaic/artifacts/screenshots';
+      const screenshotsDir = `${getArtifactsDir()}/screenshots`;
       const screenshots = this.safeReadDir(screenshotsDir).filter(f => f.endsWith('.png'));
       if (screenshots.length > 0) {
         lines.push('### Screenshots');
         lines.push('');
         for (const file of screenshots) {
           const name = file.replace('.png', '');
-          const imgUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/.mosaic/artifacts/screenshots/${file}`;
+          const imgUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${getArtifactsDir()}/screenshots/${file}`;
           lines.push(`<details><summary>${name}</summary>`);
           lines.push('');
           lines.push(`![${name}](${imgUrl})`);
@@ -362,14 +363,14 @@ export class Orchestrator {
       }
 
       // Interactive preview links
-      const previewsDir = '.mosaic/artifacts/previews';
+      const previewsDir = `${getArtifactsDir()}/previews`;
       const previews = this.safeReadDir(previewsDir).filter(f => f.endsWith('.html'));
       if (previews.length > 0) {
         lines.push('### Interactive Previews');
         lines.push('');
         for (const file of previews) {
           const name = file.replace('.html', '');
-          const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/.mosaic/artifacts/previews/${file}`;
+          const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${getArtifactsDir()}/previews/${file}`;
           const previewUrl = `https://htmlpreview.github.io/?${rawUrl}`;
           lines.push(`- [${name}](${previewUrl})`);
         }
@@ -377,8 +378,8 @@ export class Orchestrator {
       }
 
       // Gallery link
-      if (fs.existsSync('.mosaic/artifacts/gallery.html')) {
-        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/.mosaic/artifacts/gallery.html`;
+      if (fs.existsSync(`${getArtifactsDir()}/gallery.html`)) {
+        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${getArtifactsDir()}/gallery.html`;
         const galleryUrl = `https://htmlpreview.github.io/?${rawUrl}`;
         lines.push(`### [View Gallery](${galleryUrl})`);
         lines.push('');
@@ -520,7 +521,7 @@ export class Orchestrator {
   }
 
   private collectScreenshots(): string[] {
-    const dir = '.mosaic/artifacts/screenshots';
+    const dir = `${getArtifactsDir()}/screenshots`;
     try {
       return fs.readdirSync(dir)
         .filter((f: string) => f.endsWith('.png'))
@@ -576,7 +577,7 @@ export class Orchestrator {
     }
 
     logger.pipeline('info', 'intent-consultant:start', { runId: run.id });
-    console.log(`\n\x1b[1m[0/6] IntentConsultant\x1b[0m \x1b[2m— 意图深挖\x1b[0m`);
+    eventBus.emit('stage:start', 'intent_consultant', run.id);
 
     // Intent Consultant always uses CLI interaction (multi-turn dialogue needs terminal,
     // not GitHub Issue polling). GitHub mode kicks in after the brief is produced.

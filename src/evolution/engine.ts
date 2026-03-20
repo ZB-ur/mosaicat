@@ -3,6 +3,7 @@ import path from 'node:path';
 import yaml from 'js-yaml';
 import type { LLMProvider } from '../core/llm-provider.js';
 import type { Logger } from '../core/logger.js';
+import { getArtifactsDir } from '../core/artifact.js';
 import type { StageName, PipelineConfig } from '../core/types.js';
 import { STAGE_NAMES } from '../core/types.js';
 import type { EvolutionProposal, EvolutionState, EvolutionType, LLMProposalCandidate } from './types.js';
@@ -184,7 +185,7 @@ export class EvolutionEngine {
 
   private buildStageSummary(stage: StageName): string | null {
     const parts: string[] = [];
-    const artifactsDir = '.mosaic/artifacts';
+    const artifactsDir = getArtifactsDir();
 
     if (!fs.existsSync(artifactsDir)) return null;
 
@@ -217,13 +218,13 @@ export class EvolutionEngine {
     const parts: string[] = [];
 
     // Read validation report
-    const validationPath = '.mosaic/artifacts/validation-report.md';
+    const validationPath = `${getArtifactsDir()}/validation-report.md`;
     if (fs.existsSync(validationPath)) {
       parts.push('## Validation Report\n' + fs.readFileSync(validationPath, 'utf-8'));
     }
 
     // Read all manifests
-    const artifactsDir = '.mosaic/artifacts';
+    const artifactsDir = getArtifactsDir();
     if (fs.existsSync(artifactsDir)) {
       const files = fs.readdirSync(artifactsDir);
       for (const file of files) {

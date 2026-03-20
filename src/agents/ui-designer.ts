@@ -6,7 +6,7 @@ import { BaseAgent } from '../core/agent.js';
 import type { OutputSpec } from '../core/prompt-assembler.js';
 import { eventBus } from '../core/event-bus.js';
 import type { ReviewComment } from '../core/types.js';
-import { readArtifact, artifactExists } from '../core/artifact.js';
+import { readArtifact, artifactExists, getArtifactsDir } from '../core/artifact.js';
 import { UIPlanSchema, type UIPlan, type UIPlanComponent } from './ui-plan-schema.js';
 import { trimApiSpec } from './ui-api-trimmer.js';
 
@@ -723,14 +723,14 @@ ${outputLines.join('\n\n')}`);
   private async renderPreviewsAndGallery(previewFiles: string[]): Promise<void> {
     try {
       const { renderPreviewScreenshots, generateGallery } = await import('../core/screenshot-renderer.js');
-      const results = await renderPreviewScreenshots(previewFiles, '.mosaic/artifacts');
+      const results = await renderPreviewScreenshots(previewFiles, getArtifactsDir());
       this.logger.agent(this.stage, 'info', 'screenshots:rendered', {
         count: results.length,
         files: results.map((r) => r.screenshotPath),
       });
 
       if (results.length > 0) {
-        const galleryPath = generateGallery(results, '.mosaic/artifacts');
+        const galleryPath = generateGallery(results, getArtifactsDir());
         this.logger.agent(this.stage, 'info', 'gallery:generated', {
           path: galleryPath,
         });

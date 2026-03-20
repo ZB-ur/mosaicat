@@ -90,7 +90,7 @@ if (command === 'login') {
     const result = await orchestrator.run(instruction, autoApprove, profileArg);
 
     console.log(`\x1b[2mRun ID: ${result.id}\x1b[0m`);
-    console.log(`\x1b[2mArtifacts: .mosaic/artifacts/\x1b[0m`);
+    console.log(`\x1b[2mArtifacts: .mosaic/artifacts/${result.id}/\x1b[0m`);
     console.log(`\x1b[2mLogs: .mosaic/logs/${result.id}/\x1b[0m`);
     detach();
   };

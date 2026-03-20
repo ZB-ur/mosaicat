@@ -1,6 +1,5 @@
 import path from 'node:path';
-
-const ARTIFACTS_DIR = '.mosaic/artifacts';
+import { getArtifactsDir } from './artifact.js';
 
 export interface ArtifactPresenter {
   /** Format a clickable link for a single artifact */
@@ -27,7 +26,7 @@ export class CLIArtifactPresenter implements ArtifactPresenter {
   private baseDir: string;
 
   constructor(baseDir?: string) {
-    this.baseDir = path.resolve(baseDir ?? ARTIFACTS_DIR);
+    this.baseDir = path.resolve(baseDir ?? getArtifactsDir());
   }
 
   formatLink(artifactName: string, size: number): string {
@@ -52,11 +51,11 @@ export class GitHubArtifactPresenter implements ArtifactPresenter {
   private branch: string;
   private artifactsPrefix: string;
 
-  constructor(owner: string, repo: string, branch: string, artifactsPrefix = ARTIFACTS_DIR) {
+  constructor(owner: string, repo: string, branch: string, artifactsPrefix?: string) {
     this.owner = owner;
     this.repo = repo;
     this.branch = branch;
-    this.artifactsPrefix = artifactsPrefix;
+    this.artifactsPrefix = artifactsPrefix ?? getArtifactsDir();
   }
 
   formatLink(artifactName: string, size: number): string {
