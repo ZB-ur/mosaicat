@@ -1,10 +1,12 @@
 import { execSync } from 'node:child_process';
+import { select } from '@inquirer/prompts';
 import { loadCachedAuth } from './auth-store.js';
 import { listInstallations, getInstallationToken } from './token-service.js';
 import type { AuthConfig, InstallationInfo } from './types.js';
 
 /**
  * Resolve GitHub authentication via GitHub App mode.
+ * Interactive: prompts user to select repo when multiple are available.
  * Requires: `mosaicat login` + GitHub App installed on target repo.
  */
 export async function resolveGitHubAuth(): Promise<AuthConfig> {
@@ -23,14 +25,17 @@ export async function resolveGitHubAuth(): Promise<AuthConfig> {
     );
   }
 
-  const match = matchRepo(installations);
-  if (!match) {
+  // Collect all repos across all installations
+  const allRepos = collectRepos(installations);
+  if (allRepos.length === 0) {
     throw new Error(
-      'Could not determine target repository.\n' +
-      'Run this command inside a git repo with a GitHub remote, or ensure the App is installed on exactly one repo.'
+      'GitHub App is installed but no accessible repositories found.\n' +
+      'Check App permissions at: https://github.com/apps/mosaicat'
     );
   }
 
+  // Resolve which repo to use
+  const match = await resolveRepo(allRepos);
   const { installation, owner, repo } = match;
 
   const tokenResult = await getInstallationToken(installation.id, cached.userToken);
@@ -44,15 +49,15 @@ export async function resolveGitHubAuth(): Promise<AuthConfig> {
   };
 }
 
-interface RepoMatch {
+interface RepoEntry {
   installation: InstallationInfo;
+  fullName: string;
   owner: string;
   repo: string;
 }
 
-function matchRepo(installations: InstallationInfo[]): RepoMatch | null {
-  // Collect all repos across all installations
-  const allRepos: Array<{ installation: InstallationInfo; fullName: string; owner: string; repo: string }> = [];
+function collectRepos(installations: InstallationInfo[]): RepoEntry[] {
+  const allRepos: RepoEntry[] = [];
   for (const inst of installations) {
     for (const r of inst.repositories) {
       const [owner, repo] = r.full_name.split('/');
@@ -61,21 +66,38 @@ function matchRepo(installations: InstallationInfo[]): RepoMatch | null {
       }
     }
   }
+  return allRepos;
+}
 
-  // Try to match via git remote
+async function resolveRepo(allRepos: RepoEntry[]): Promise<RepoEntry> {
+  // 1. Try to match via git remote
   const remoteSlug = detectGitRemoteSlug();
   if (remoteSlug) {
     const found = allRepos.find((r) => r.fullName === remoteSlug);
     if (found) return found;
   }
 
-  // Single repo → auto-select
+  // 2. Single repo → auto-select
   if (allRepos.length === 1) {
     return allRepos[0];
   }
 
-  // Multiple repos, no match
-  return null;
+  // 3. Multiple repos → interactive selection
+  console.log(`\n\x1b[2mGitHub App 已安装在 ${allRepos.length} 个仓库上\x1b[0m`);
+  if (remoteSlug) {
+    console.log(`\x1b[2m当前 git remote: ${remoteSlug}（不在已安装列表中）\x1b[0m`);
+  }
+
+  const chosen = await select({
+    message: '选择目标仓库:',
+    choices: allRepos.map(r => ({
+      name: r.fullName,
+      value: r,
+    })),
+  });
+
+  console.log(`\x1b[32m✓ 已选择: ${chosen.fullName}\x1b[0m`);
+  return chosen;
 }
 
 /**
