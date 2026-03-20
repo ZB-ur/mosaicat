@@ -50,6 +50,8 @@ Out:  Research → PRD → UX Flows → OpenAPI Spec → 25 React Components + S
 
 - **Spec-driven pipeline** — intent → layered specifications (PRD → UX → API → tech spec) → code; each spec layer is the sole input contract for the next agent
 - **10 autonomous agents** — mirrors a real product team: consultant, researcher, PM, UX/UI designers, architect, tech lead, coder, reviewer, validator
+- **Multi-LLM support** — Claude, GPT-4o, Gemini, Qwen, Doubao, Kimi; run `mosaicat setup` to switch providers
+- **Batch UI generation** — components grouped by category for 80%+ fewer LLM calls; API spec auto-trimmed per batch
 - **Configurable approval gates** — full autonomy, full manual, or anything in between per stage
 - **8 layered validation checks** — 4 programmatic (zero LLM, fully deterministic) + 4 LLM-assisted (scoped to lightweight manifests)
 - **Feature ID traceability** — `F-001` traced from PRD → UX → API → Components; task-level (`T-NNN`) from tech spec → code
@@ -66,12 +68,11 @@ Out:  Research → PRD → UX Flows → OpenAPI Spec → 25 React Components + S
 | Requirement | Details |
 |---|---|
 | **Node.js** | v18 or later |
-| **Claude subscription** | [Claude Pro / Team / Enterprise](https://claude.ai/) — Mosaicat calls Claude CLI (`claude -p`) for LLM inference. No separate API key needed. |
-| **Claude CLI** | Installed and authenticated. Run `claude` in your terminal to verify. See [Claude Code docs](https://docs.anthropic.com/en/docs/claude-code/overview) for setup. |
+| **LLM Provider** | Default: Claude CLI (requires [Claude subscription](https://claude.ai/)). Or run `mosaicat setup` to configure: Anthropic API, GPT-4o, Gemini, Qwen, Doubao, Kimi. |
 | **Playwright** (optional) | Required only for UI screenshot generation. Install with `npx playwright install chromium`. |
 | **GitHub App** (optional) | Required only for `--github` mode. Install the [Mosaicat GitHub App](https://github.com/apps/mosaicat) on your target repository, then login via `npx tsx src/index.ts login`. |
 
-> **Enterprise / Team users**: Claude Team and Enterprise plans work out of the box. The pipeline uses `claude -p` with tool use, which is included in all Claude subscriptions. No API key management, no token budgets to configure.
+> **Claude CLI users**: Claude Pro / Team / Enterprise plans work out of the box. The pipeline uses `claude -p` with tool use, no separate API key needed. For other providers, run `mosaicat setup` and enter your API key.
 
 ---
 
@@ -82,6 +83,16 @@ git clone https://github.com/ZB-ur/mosaicat.git
 cd mosaicat
 npm install
 ```
+
+### 0. Configure LLM (first time)
+
+```bash
+npx tsx src/index.ts setup
+```
+
+Interactive wizard: select provider → enter API key → test connection → done. Run again anytime to switch providers.
+
+> Skip this step if using Claude CLI (default) — no configuration needed.
 
 ### 1. Basic Run
 
@@ -338,9 +349,9 @@ graph TB
     end
 
     subgraph Infra["Infrastructure"]
-        Provider["LLM Provider — Claude CLI / Anthropic SDK"]
+        Provider["LLM Provider — Claude CLI / Anthropic SDK / OpenAI-Compatible (GPT, Gemini, Qwen, Doubao, Kimi)"]
         Git["Git Publisher — GitHub Data API"]
-        Artifacts["Artifact I/O — Disk-based"]
+        Artifacts["Artifact I/O — Per-run isolated"]
         Evolution["Evolution Engine — Prompt + Skill"]
     end
 
@@ -359,10 +370,10 @@ graph TB
 
 ## Outputs
 
-A single `--profile full` run produces:
+Each run produces artifacts in an isolated directory:
 
 ```
-.mosaic/artifacts/
+.mosaic/artifacts/{run-id}/
 ├── intent-brief.json              # Structured intent from multi-turn dialogue
 ├── research.md                    # Market research + feasibility
 ├── prd.md                         # PRD with Feature IDs (F-001, F-002, ...)
@@ -390,7 +401,8 @@ A single `--profile full` run produces:
 | **M1** — MVP Pipeline | ✅ Done | 6 agents, state machine, CLI provider |
 | **M2** — Observability + Delivery | ✅ Done | GitHub mode, screenshots, logging |
 | **M3** — Idea to Code | ✅ Done | 10 agents, 3 profiles, Feature ID, self-evolution |
-| **M4** — Quality + Scale | Planned | QA team agents, DAG engine, brownfield project support |
+| **M4** — Optimization + Multi-LLM | ✅ Done | Batch UI generation (86% fewer calls), 7 LLM providers, setup wizard, artifact isolation |
+| **M5** — Quality + Scale | Planned | QA team agents, DAG engine, per-agent LLM routing, brownfield project support |
 
 ---
 

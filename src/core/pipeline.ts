@@ -1,14 +1,13 @@
 import type { StageName, StageState, StageStatus, PipelineRun, StageConfig } from './types.js';
-import { STAGE_ORDER } from './types.js';
 
 export function createPipelineRun(
   id: string,
   instruction: string,
   autoApprove: boolean,
-  stageNames?: readonly StageName[],
+  stageNames: readonly StageName[],
 ): PipelineRun {
   const stages: Partial<Record<StageName, StageStatus>> = {};
-  for (const name of (stageNames ?? STAGE_ORDER)) {
+  for (const name of stageNames) {
     stages[name] = { state: 'idle', retryCount: 0 };
   }
 
@@ -43,22 +42,29 @@ export function shouldAutoApprove(run: PipelineRun, stageConfig: StageConfig): b
   return stageConfig.gate === 'auto' || run.autoApprove;
 }
 
-export function getPreviousStage(stage: StageName): StageName | null {
-  const idx = STAGE_ORDER.indexOf(stage);
-  return idx > 0 ? STAGE_ORDER[idx - 1] : null;
+/** Get ordered stage list from a PipelineRun */
+export function getRunStages(run: PipelineRun): StageName[] {
+  return Object.keys(run.stages) as StageName[];
 }
 
-export function getNextStage(stage: StageName): StageName | null {
-  const idx = STAGE_ORDER.indexOf(stage);
-  return idx < STAGE_ORDER.length - 1 ? STAGE_ORDER[idx + 1] : null;
+export function getPreviousStage(run: PipelineRun, stage: StageName): StageName | null {
+  const stages = getRunStages(run);
+  const idx = stages.indexOf(stage);
+  return idx > 0 ? stages[idx - 1] : null;
+}
+
+export function getNextStage(run: PipelineRun, stage: StageName): StageName | null {
+  const stages = getRunStages(run);
+  const idx = stages.indexOf(stage);
+  return idx < stages.length - 1 ? stages[idx + 1] : null;
 }
 
 // Valid state transitions
 const VALID_TRANSITIONS: Record<StageState, StageState[]> = {
   idle: ['running', 'skipped'],
   running: ['awaiting_clarification', 'awaiting_human', 'done', 'failed'],
-  awaiting_clarification: ['running'],
-  awaiting_human: ['approved', 'rejected'],
+  awaiting_clarification: ['running', 'failed'],
+  awaiting_human: ['approved', 'rejected', 'failed'],
   approved: ['done'],
   rejected: ['idle'],  // rollback resets to idle
   failed: ['idle'],    // retry resets to idle

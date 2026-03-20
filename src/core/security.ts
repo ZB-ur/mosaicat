@@ -1,4 +1,5 @@
 import type { PipelineConfig } from './types.js';
+import { getArtifactsDir } from './artifact.js';
 
 export enum TrustLevel {
   Initiator = 0,
@@ -90,7 +91,7 @@ export function buildIssueBody(params: StageIssueParams): string {
   lines.push('');
   for (const o of params.outputs) {
     if (params.repoSlug && params.commitSha) {
-      const url = `https://github.com/${params.repoSlug}/blob/${params.commitSha}/.mosaic/artifacts/${o}`;
+      const url = `https://github.com/${params.repoSlug}/blob/${params.commitSha}/${getArtifactsDir()}/${o}`;
       lines.push(`- [\`${o}\`](${url})`);
     } else {
       lines.push(`- \`${o}\``);
@@ -104,7 +105,7 @@ export function buildIssueBody(params: StageIssueParams): string {
     lines.push('');
     for (const file of params.screenshots) {
       const name = file.replace(/^screenshots\//, '').replace(/\.png$/, '');
-      const imgUrl = `https://raw.githubusercontent.com/${params.repoSlug}/${params.branch}/.mosaic/artifacts/${file}`;
+      const imgUrl = `https://raw.githubusercontent.com/${params.repoSlug}/${params.branch}/${getArtifactsDir()}/${file}`;
       lines.push(`<details><summary>${name}</summary>`);
       lines.push('');
       lines.push(`![${name}](${imgUrl})`);

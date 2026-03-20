@@ -1,5 +1,4 @@
 import type { StageName } from './types.js';
-import { STAGE_ORDER } from './types.js';
 import { eventBus } from './event-bus.js';
 import { CLIArtifactPresenter } from './artifact-presenter.js';
 
@@ -57,13 +56,10 @@ function formatDuration(ms: number): string {
   return `${min}m${sec}s`;
 }
 
-function stageIndex(stage: StageName): number {
-  return STAGE_ORDER.indexOf(stage) + 1;
-}
-
 export function attachCLIProgress(): () => void {
   const stageTimers = new Map<StageName, number>();
   const pipelineStart = Date.now();
+  let activeStages: readonly StageName[] = [];
 
   const handlers: Array<[string, (...args: any[]) => void]> = [];
 
@@ -77,10 +73,12 @@ export function attachCLIProgress(): () => void {
 
   // ── Pipeline ──
 
-  on('pipeline:start', (runId) => {
+  on('pipeline:start', (runId, stages, provider) => {
+    if (stages) activeStages = stages;
     console.log(`\n${BOLD}${CYAN}━━━ Mosaicat Pipeline ━━━${RESET}`);
     console.log(`${DIM}Run: ${runId}${RESET}`);
-    console.log(`${DIM}Stages: ${STAGE_ORDER.map((s, i) => `${i + 1}.${AGENT_LABELS[s]}`).join(' → ')}${RESET}\n`);
+    if (provider) console.log(`${DIM}LLM: ${provider}${RESET}`);
+    console.log(`${DIM}Stages: ${activeStages.map((s, i) => `${i + 1}.${AGENT_LABELS[s]}`).join(' → ')}${RESET}\n`);
   });
 
   on('pipeline:complete', (_runId) => {
@@ -98,10 +96,11 @@ export function attachCLIProgress(): () => void {
 
   on('stage:start', (stage, _runId) => {
     stageTimers.set(stage, Date.now());
-    const idx = stageIndex(stage);
+    const idx = activeStages.indexOf(stage) + 1;
     const label = AGENT_LABELS[stage];
     const desc = AGENT_DESC[stage];
-    console.log(`${BOLD}[${idx}/6] ${label}${RESET} ${DIM}— ${desc}${RESET}`);
+    const total = activeStages.length;
+    console.log(`${BOLD}[${idx}/${total}] ${label}${RESET} ${DIM}— ${desc}${RESET}`);
   });
 
   on('stage:complete', (stage, _runId) => {
@@ -152,6 +151,11 @@ export function attachCLIProgress(): () => void {
 
   on('agent:clarification', (stage, question) => {
     console.log(`  ${YELLOW}? clarification needed:${RESET} ${question}`);
+  });
+
+  on('clarification:answered', (_stage, _question, answer, source) => {
+    const sourceLabel = source === 'github' ? 'GitHub PR' : source;
+    console.log(`  ${CYAN}↳ 通过 ${sourceLabel} 回复: "${answer}"${RESET}`);
   });
 
   // ── Artifacts ──

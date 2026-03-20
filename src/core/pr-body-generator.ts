@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-
-const ARTIFACTS_DIR = '.mosaic/artifacts';
+import { getArtifactsDir } from './artifact.js';
 
 interface PRBodyOptions {
   runId: string;
@@ -27,14 +26,14 @@ export function generatePRBody(options: PRBodyOptions): string {
   sections.push(`## Mosaicat Pipeline Output\n\n**Run:** \`${runId}\``);
 
   // Component screenshots
-  const screenshotsDir = path.join(ARTIFACTS_DIR, 'screenshots');
+  const screenshotsDir = path.join(getArtifactsDir(), 'screenshots');
   if (fs.existsSync(screenshotsDir)) {
     const screenshots = fs.readdirSync(screenshotsDir).filter((f) => f.endsWith('.png'));
     if (screenshots.length > 0) {
       const rows: string[] = ['### Component Screenshots\n'];
       for (const file of screenshots) {
         const name = path.basename(file, '.png');
-        const imgUrl = rawUrl(owner, repo, branch, `${ARTIFACTS_DIR}/screenshots/${file}`);
+        const imgUrl = rawUrl(owner, repo, branch, `${getArtifactsDir()}/screenshots/${file}`);
         rows.push(`<details><summary>${name}</summary>\n\n![${name}](${imgUrl})\n\n</details>`);
       }
       sections.push(rows.join('\n'));
@@ -42,13 +41,13 @@ export function generatePRBody(options: PRBodyOptions): string {
   }
 
   // Interactive preview links
-  const previewsDir = path.join(ARTIFACTS_DIR, 'previews');
+  const previewsDir = path.join(getArtifactsDir(), 'previews');
   if (fs.existsSync(previewsDir)) {
     const previews = fs.readdirSync(previewsDir).filter((f) => f.endsWith('.html'));
     if (previews.length > 0) {
       const links = previews.map((f) => {
         const name = path.basename(f, '.html');
-        const url = previewUrl(owner, repo, branch, `${ARTIFACTS_DIR}/previews/${f}`);
+        const url = previewUrl(owner, repo, branch, `${getArtifactsDir()}/previews/${f}`);
         return `- [${name}](${url})`;
       });
       sections.push(`### Interactive Previews\n\n${links.join('\n')}`);
@@ -56,13 +55,13 @@ export function generatePRBody(options: PRBodyOptions): string {
   }
 
   // Gallery link
-  if (fs.existsSync(path.join(ARTIFACTS_DIR, 'gallery.html'))) {
-    const galleryUrl = previewUrl(owner, repo, branch, `${ARTIFACTS_DIR}/gallery.html`);
+  if (fs.existsSync(path.join(getArtifactsDir(), 'gallery.html'))) {
+    const galleryUrl = previewUrl(owner, repo, branch, `${getArtifactsDir()}/gallery.html`);
     sections.push(`### Gallery\n\n[View all components](${galleryUrl})`);
   }
 
   // Validation status
-  const validationPath = path.join(ARTIFACTS_DIR, 'validation-report.md');
+  const validationPath = path.join(getArtifactsDir(), 'validation-report.md');
   if (fs.existsSync(validationPath)) {
     const report = fs.readFileSync(validationPath, 'utf-8');
     const statusMatch = report.match(/- Status: (PASS|FAIL)/);

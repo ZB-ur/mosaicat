@@ -50,6 +50,8 @@ Mosaicat 提出 **Spec Coding**（规约驱动开发）— 人负责编写和审
 
 - **规约驱动流水线** — 意图 → 分层规约（PRD → UX → API → 技术方案）→ 代码；每层规约是下一个 Agent 的唯一输入契约
 - **10 个自治 Agent** — 对应真实产品团队角色：IntentConsultant、Researcher、ProductOwner、UX/UI Designer、APIDesigner、TechLead、Coder、Reviewer、Validator
+- **多 LLM 支持** — Claude、GPT-4o、Gemini、通义千问、豆包、Kimi；运行 `mosaicat setup` 一键切换，重复执行可随时更换供应商
+- **批量 UI 生成** — 组件按类别分组生成，LLM 调用减少 80% 以上；API spec 按 Feature 自动裁剪
 - **可配置审批门控** — 全自治、全人工或按阶段任意组合
 - **8 项分层验证** — 4 项程序化确定性检查（零 LLM）+ 4 项 manifest 范围 LLM 辅助校验，跨工件一致性保障
 - **Feature ID 分层追溯** — `F-001` 贯穿 PRD → UX → API → 组件；任务级 `T-NNN` 贯穿技术方案 → 代码
@@ -66,12 +68,11 @@ Mosaicat 提出 **Spec Coding**（规约驱动开发）— 人负责编写和审
 | 要求 | 说明 |
 |---|---|
 | **Node.js** | v18 或更高版本 |
-| **Claude 订阅** | [Claude Pro / Team / Enterprise](https://claude.ai/) — Mosaicat 通过 Claude CLI（`claude -p`）调用 LLM 推理，无需单独的 API Key。 |
-| **Claude CLI** | 已安装并完成认证。在终端运行 `claude` 验证。安装指南见 [Claude Code 文档](https://docs.anthropic.com/en/docs/claude-code/overview)。 |
+| **LLM 供应商** | 默认：Claude CLI（需要 [Claude 订阅](https://claude.ai/)）。或运行 `mosaicat setup` 配置：Anthropic API、GPT-4o、Gemini、通义千问、豆包、Kimi。 |
 | **Playwright**（可选） | 仅 UI 截图生成需要。安装：`npx playwright install chromium`。 |
 | **GitHub App**（可选） | 仅 `--github` 模式需要。先将 [Mosaicat GitHub App](https://github.com/apps/mosaicat) 安装到目标仓库，再通过 `npx tsx src/index.ts login` 完成 OAuth 授权。 |
 
-> **企业 / 团队用户**：Claude Team 和 Enterprise 计划开箱即用。流水线使用 `claude -p` 的 tool use 能力，所有 Claude 订阅方案均包含此功能。无需管理 API Key，无需配置 token 预算。
+> **Claude CLI 用户**：Claude Pro / Team / Enterprise 开箱即用，使用 `claude -p` 的 tool use 能力，无需单独的 API Key。使用其他供应商请运行 `mosaicat setup` 输入 API Key。
 
 ---
 
@@ -82,6 +83,16 @@ git clone https://github.com/ZB-ur/mosaicat.git
 cd mosaicat
 npm install
 ```
+
+### 0. 配置 LLM（首次使用）
+
+```bash
+npx tsx src/index.ts setup
+```
+
+交互式引导：选择供应商 → 输入 API Key → 测试连接 → 完成。随时再次运行可切换供应商。
+
+> 使用 Claude CLI（默认）可跳过此步骤，无需额外配置。
 
 ### 1. 基本运行
 
@@ -337,9 +348,9 @@ graph TB
     end
 
     subgraph Infra["基础设施"]
-        Provider["LLM Provider — Claude CLI / Anthropic SDK"]
+        Provider["LLM Provider — Claude CLI / Anthropic SDK / OpenAI-Compatible (GPT, Gemini, Qwen, Doubao, Kimi)"]
         Git["Git Publisher — GitHub Data API"]
-        Artifacts["Artifact I/O — 磁盘读写"]
+        Artifacts["Artifact I/O — 按 Run 隔离"]
         Evolution["Evolution Engine — Prompt + Skill 进化"]
     end
 
@@ -358,10 +369,10 @@ graph TB
 
 ## 产出物
 
-单次 `--profile full` 运行的完整产出：
+每次运行的产出物存储在独立目录中：
 
 ```
-.mosaic/artifacts/
+.mosaic/artifacts/{run-id}/
 ├── intent-brief.json              # 多轮对话提取的结构化意图
 ├── research.md                    # 市场调研 + 可行性分析
 ├── prd.md                         # PRD，含 Feature ID（F-001, F-002...）
@@ -389,7 +400,8 @@ graph TB
 | **M1** — MVP Pipeline | ✅ 完成 | 6 个 Agent，状态机，CLI Provider |
 | **M2** — 可观测性 + 交付 | ✅ 完成 | GitHub 模式，截图，日志系统 |
 | **M3** — 想法到代码 | ✅ 完成 | 10 个 Agent，3 个 Profile，Feature ID，自进化 |
-| **M4** — 质量 + 规模 | 计划中 | QA 团队 Agent，DAG 引擎，棕地项目支持 |
+| **M4** — 优化 + 多 LLM | ✅ 完成 | 批量 UI 生成（调用减少 86%），7 家 LLM 供应商，Setup 引导，Artifact 隔离 |
+| **M5** — 质量 + 规模 | 计划中 | QA 团队 Agent，DAG 引擎，Per-agent LLM 路由，棕地项目支持 |
 
 ---
 

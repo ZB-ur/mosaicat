@@ -200,14 +200,14 @@ export class RunManager {
       return inner.onManualGate(stage, runId);
     };
 
-    tracked.onClarification = async (stage: StageName, question: string, runId: string, options?: ClarificationOption[], allowCustom?: boolean) => {
+    tracked.onClarification = async (stage: StageName, question: string, runId: string, options?: ClarificationOption[], allowCustom?: boolean, context?: string, impact?: string) => {
       const m = managed();
       if (m) {
         m.orchestratorRunId = runId;
         m.state = 'awaiting_clarification';
         m.clarificationQuestion = question;
       }
-      return inner.onClarification(stage, question, runId, options, allowCustom);
+      return inner.onClarification(stage, question, runId, options, allowCustom, context, impact);
     };
 
     return tracked;

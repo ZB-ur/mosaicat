@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../llm-provider.js';
 import { Orchestrator } from '../orchestrator.js';
-import { STAGE_ORDER } from '../types.js';
+import { DEFAULT_STAGES } from '../types.js';
 
 // Mock provider — routes UIDesigner sub-phases by system prompt
 class MockLLMProvider implements LLMProvider {
@@ -52,7 +52,7 @@ class MockLLMProvider implements LLMProvider {
     }
 
     // Determine which stage based on non-UI call count
-    const nonUIStages = STAGE_ORDER.filter((s) => s !== 'ui_designer');
+    const nonUIStages = DEFAULT_STAGES.filter((s) => s !== 'ui_designer');
     const stage = nonUIStages[this.stageCallCount];
     this.stageCallCount++;
 
@@ -174,7 +174,7 @@ describe('Orchestrator Integration (Mock LLM)', () => {
     expect(result.currentStage).toBe('validator');
 
     // All stages done
-    for (const stage of STAGE_ORDER) {
+    for (const stage of DEFAULT_STAGES) {
       expect(result.stages[stage]!.state).toBe('done');
     }
 

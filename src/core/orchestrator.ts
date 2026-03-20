@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import yaml from 'js-yaml';
 import type { PipelineConfig, AgentsConfig, StageName, PipelineRun, AgentContext, PipelineProfile } from './types.js';
-import { STAGE_ORDER, ClarificationNeeded } from './types.js';
+import { ClarificationNeeded } from './types.js';
 import {
   createPipelineRun,
   transitionStage,
@@ -25,7 +25,8 @@ import { GitPublisher } from './git-publisher.js';
 import { generatePRBody } from './pr-body-generator.js';
 import { extractManifestSummary } from './manifest.js';
 import { IntentConsultantAgent } from '../agents/intent-consultant.js';
-import { artifactExists } from './artifact.js';
+import { artifactExists, initArtifactsDir, getArtifactsDir } from './artifact.js';
+import { loadUserLLMConfig } from './llm-config-store.js';
 const AGENT_DESC: Record<StageName, string> = {
   intent_consultant: '意图深挖',
   researcher: '市场调研 & 竞品分析',
@@ -77,11 +78,14 @@ export class Orchestrator {
     const stageList = this.resolveStageList(profile);
 
     const pipelineRun = createPipelineRun(runId, instruction, autoApprove, stageList);
+    const artifactsDir = initArtifactsDir(runId);
     const logger = new Logger(runId);
-    const provider = createProvider();
+    const provider = createProvider(this.pipelineConfig);
+    const userLLMConfig = loadUserLLMConfig();
+    const providerName = userLLMConfig?.provider ?? this.pipelineConfig.llm?.default ?? 'claude-cli';
 
-    logger.pipeline('info', 'pipeline:start', { runId, instruction, profile: profile ?? 'default' });
-    eventBus.emit('pipeline:start', runId);
+    logger.pipeline('info', 'pipeline:start', { runId, instruction, profile: profile ?? 'default', artifactsDir, provider: providerName });
+    eventBus.emit('pipeline:start', runId, stageList, providerName);
 
     // Initialize GitPublisher for GitHub mode
     if (this.adapter) {
@@ -149,12 +153,12 @@ export class Orchestrator {
   }
 
   private resolveStageList(profile?: PipelineProfile): readonly StageName[] {
-    if (!profile) return STAGE_ORDER;
     const profiles = this.pipelineConfig.profiles;
-    if (!profiles || !profiles[profile]) {
-      throw new Error(`Unknown pipeline profile: ${profile}. Available: ${profiles ? Object.keys(profiles).join(', ') : 'none'}`);
+    const resolvedProfile = profile ?? 'full';
+    if (!profiles || !profiles[resolvedProfile]) {
+      throw new Error(`Unknown pipeline profile: ${resolvedProfile}. Available: ${profiles ? Object.keys(profiles).join(', ') : 'none'}`);
     }
-    return profiles[profile];
+    return profiles[resolvedProfile];
   }
 
   private async executeStage(
@@ -288,7 +292,7 @@ export class Orchestrator {
       }
 
       // Rollback to previous stage
-      const prev = getPreviousStage(stage);
+      const prev = getPreviousStage(run, stage);
       if (prev) {
         transitionStage(run, stage, 'failed');
         logger.pipeline('warn', 'stage:rollback', { from: stage, to: prev });
@@ -305,7 +309,7 @@ export class Orchestrator {
     if (!this.publisher) return;
     try {
       const agentConfig = this.agentsConfig.agents[stage]!;
-      const files = (agentConfig.outputs ?? []).map((o: string) => `.mosaic/artifacts/${o}`);
+      const files = (agentConfig.outputs ?? []).map((o: string) => `${getArtifactsDir()}/${o}`);
       const issueNumber = this.stageIssues.get(`${runId}:${stage}`);
       await this.publisher.commitStage(stage, files, issueNumber);
 
@@ -344,14 +348,14 @@ export class Orchestrator {
       const lines: string[] = ['## 🎨 UIDesigner — Component Preview', ''];
 
       // Screenshots
-      const screenshotsDir = '.mosaic/artifacts/screenshots';
+      const screenshotsDir = `${getArtifactsDir()}/screenshots`;
       const screenshots = this.safeReadDir(screenshotsDir).filter(f => f.endsWith('.png'));
       if (screenshots.length > 0) {
         lines.push('### Screenshots');
         lines.push('');
         for (const file of screenshots) {
           const name = file.replace('.png', '');
-          const imgUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/.mosaic/artifacts/screenshots/${file}`;
+          const imgUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${getArtifactsDir()}/screenshots/${file}`;
           lines.push(`<details><summary>${name}</summary>`);
           lines.push('');
           lines.push(`![${name}](${imgUrl})`);
@@ -362,14 +366,14 @@ export class Orchestrator {
       }
 
       // Interactive preview links
-      const previewsDir = '.mosaic/artifacts/previews';
+      const previewsDir = `${getArtifactsDir()}/previews`;
       const previews = this.safeReadDir(previewsDir).filter(f => f.endsWith('.html'));
       if (previews.length > 0) {
         lines.push('### Interactive Previews');
         lines.push('');
         for (const file of previews) {
           const name = file.replace('.html', '');
-          const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/.mosaic/artifacts/previews/${file}`;
+          const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${getArtifactsDir()}/previews/${file}`;
           const previewUrl = `https://htmlpreview.github.io/?${rawUrl}`;
           lines.push(`- [${name}](${previewUrl})`);
         }
@@ -377,8 +381,8 @@ export class Orchestrator {
       }
 
       // Gallery link
-      if (fs.existsSync('.mosaic/artifacts/gallery.html')) {
-        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/.mosaic/artifacts/gallery.html`;
+      if (fs.existsSync(`${getArtifactsDir()}/gallery.html`)) {
+        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${getArtifactsDir()}/gallery.html`;
         const galleryUrl = `https://htmlpreview.github.io/?${rawUrl}`;
         lines.push(`### [View Gallery](${galleryUrl})`);
         lines.push('');
@@ -432,9 +436,23 @@ export class Orchestrator {
       transitionStage(run, stage, 'awaiting_clarification');
       logger.pipeline('info', 'stage:clarification', { stage, question: err.question });
 
-      const answer = await this.handler.onClarification(
-        stage, err.question, run.id, err.options, err.allowCustom
-      );
+      let answer: string;
+      if (run.autoApprove) {
+        // Auto-select: last option (convention: default/fallback) or generic default
+        const lastOption = err.options?.[err.options.length - 1];
+        answer = lastOption?.label ?? 'default';
+        logger.pipeline('info', 'stage:clarification-auto', {
+          stage,
+          answer,
+          reason: 'auto-approve mode',
+        });
+        eventBus.emit('clarification:answered', stage, err.question, answer, 'auto-approve');
+      } else {
+        answer = await this.handler.onClarification(
+          stage, err.question, run.id, err.options, err.allowCustom,
+          err.context, err.impact,
+        );
+      }
 
       // Record Q&A for issue report
       if (clMetrics) clMetrics.clarificationQA = { question: err.question, answer };
@@ -506,7 +524,7 @@ export class Orchestrator {
   }
 
   private collectScreenshots(): string[] {
-    const dir = '.mosaic/artifacts/screenshots';
+    const dir = `${getArtifactsDir()}/screenshots`;
     try {
       return fs.readdirSync(dir)
         .filter((f: string) => f.endsWith('.png'))
@@ -562,7 +580,7 @@ export class Orchestrator {
     }
 
     logger.pipeline('info', 'intent-consultant:start', { runId: run.id });
-    console.log(`\n\x1b[1m[0/6] IntentConsultant\x1b[0m \x1b[2m— 意图深挖\x1b[0m`);
+    eventBus.emit('stage:start', 'intent_consultant', run.id);
 
     // Intent Consultant always uses CLI interaction (multi-turn dialogue needs terminal,
     // not GitHub Issue polling). GitHub mode kicks in after the brief is produced.

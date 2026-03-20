@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
-import { STAGE_ORDER } from '../core/types.js';
+import { DEFAULT_STAGES } from '../core/types.js';
 
 // Mock provider with formatted responses for all 6 stages
 // UIDesigner uses multi-pass: 1 planner call + N builder calls
@@ -36,9 +36,9 @@ class MockLLMProvider implements LLMProvider {
 
     // Sequential stage dispatch for non-UIDesigner stages
     // Count only non-UI calls for stage mapping
-    const nonUIStages = STAGE_ORDER.filter((s) => s !== 'ui_designer');
+    const nonUIStages = DEFAULT_STAGES.filter((s) => s !== 'ui_designer');
     const nonUICallIndex = this.callCount - 1 - (this.uiBuilderCallCount > 0 ? this.uiBuilderCallCount + 1 : 0);
-    const stage = nonUIStages[nonUICallIndex] ?? STAGE_ORDER[this.callCount - 1];
+    const stage = nonUIStages[nonUICallIndex] ?? DEFAULT_STAGES[this.callCount - 1];
 
     const responses: Record<string, string> = {
       researcher: JSON.stringify({

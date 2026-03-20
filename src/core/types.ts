@@ -20,13 +20,17 @@ export const STAGE_NAMES = [
 
 export type StageName = (typeof STAGE_NAMES)[number];
 
-/** Default design-only pipeline order. Phase 4 will replace with profile-based stage lists. */
-export const STAGE_ORDER: readonly StageName[] = [
+/** Default stage order for tests and fallbacks. Production code should use profile-based stage lists from pipeline.yaml. */
+export const DEFAULT_STAGES: readonly StageName[] = [
+  'intent_consultant',
   'researcher',
   'product_owner',
   'ux_designer',
   'api_designer',
   'ui_designer',
+  'tech_lead',
+  'coder',
+  'reviewer',
   'validator',
 ];
 
@@ -91,6 +95,18 @@ export interface EvolutionConfig {
 
 export type PipelineProfile = 'design-only' | 'full' | 'frontend-only';
 
+export interface LLMProviderConfig {
+  type: string;             // 'claude-cli' | 'anthropic-sdk' | 'openai-compatible'
+  model?: string;
+  base_url?: string;
+  api_key_env?: string;     // environment variable name, not the key itself
+}
+
+export interface LLMConfig {
+  default: string;          // provider name from the pool
+  providers: Record<string, LLMProviderConfig>;
+}
+
 export interface PipelineConfig {
   stages: Partial<Record<StageName, StageConfig>>;
   profiles?: Record<PipelineProfile, StageName[]>;
@@ -104,6 +120,7 @@ export interface PipelineConfig {
   };
   github: GitHubConfig;
   evolution?: EvolutionConfig;
+  llm?: LLMConfig;
 }
 
 export interface AgentAutonomyConfig {
@@ -151,13 +168,23 @@ export class ClarificationNeeded extends Error {
   readonly question: string;
   readonly options?: ClarificationOption[];
   readonly allowCustom?: boolean;
+  readonly context?: string;
+  readonly impact?: string;
 
-  constructor(question: string, options?: ClarificationOption[], allowCustom?: boolean) {
+  constructor(
+    question: string,
+    options?: ClarificationOption[],
+    allowCustom?: boolean,
+    context?: string,
+    impact?: string,
+  ) {
     super(`Clarification needed: ${question}`);
     this.name = 'ClarificationNeeded';
     this.question = question;
     this.options = options;
     this.allowCustom = allowCustom;
+    this.context = context;
+    this.impact = impact;
   }
 }
 

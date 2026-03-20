@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
-import { STAGE_ORDER } from '../core/types.js';
+import { DEFAULT_STAGES } from '../core/types.js';
 import type { GitPlatformAdapter, CreateIssueParams, IssueComment, IssueDetails, PRRef, GitRef, GitBlob, GitTreeEntry, GitTree, GitCommit } from '../adapters/types.js';
 import type { GitHubConfig } from '../core/types.js';
 import type { SecurityConfig } from '../core/security.js';
@@ -171,7 +171,7 @@ class MockLLMProvider implements LLMProvider {
     }
 
     // Fallback: use call count for early sequential stages
-    const nonUIStages = STAGE_ORDER.filter((s) => s !== 'ui_designer');
+    const nonUIStages = DEFAULT_STAGES.filter((s) => s !== 'ui_designer');
     const stage = nonUIStages[this.callCount - 1];
     return { content: stageResponses[stage] ?? '[mock] unknown stage' };
   }
@@ -247,7 +247,7 @@ describe('Phase 4 E2E: GitHub Issue-based Approval', () => {
     expect(result.completedAt).toBeDefined();
 
     // All stages done
-    for (const stage of STAGE_ORDER) {
+    for (const stage of DEFAULT_STAGES) {
       expect(result.stages[stage]!.state).toBe('done');
     }
 
@@ -309,7 +309,7 @@ describe('Phase 4 E2E: GitHub Issue-based Approval', () => {
 
     // Pipeline should still complete (trusted user eventually approved)
     expect(result.completedAt).toBeDefined();
-    for (const stage of STAGE_ORDER) {
+    for (const stage of DEFAULT_STAGES) {
       expect(result.stages[stage]!.state).toBe('done');
     }
 
