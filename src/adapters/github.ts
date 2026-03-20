@@ -27,6 +27,12 @@ export class GitHubAdapter implements GitPlatformAdapter {
   private owner: string;
   private repo: string;
 
+  /**
+   * @param params.token - Static token string or async provider function.
+   *   When a function is provided, Octokit is initialized with an empty auth string.
+   *   Callers MUST call `refreshToken()` before making any API calls to obtain a
+   *   valid token. The sole call site (`createGitHubAdapterFromAuth`) already does this.
+   */
   constructor(params: { token: TokenProvider; owner: string; repo: string }) {
     this.tokenProvider = typeof params.token === 'function' ? params.token : null;
     const initialToken = typeof params.token === 'string' ? params.token : '';

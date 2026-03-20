@@ -76,6 +76,9 @@ class MockGitAdapter implements GitPlatformAdapter {
   }
   async listReviews(_prNumber: number) { return []; }
   async listReviewComments(_prNumber: number) { return []; }
+
+  getOwner(): string { return 'test-owner'; }
+  getRepo(): string { return 'test-repo'; }
 }
 
 describe('GitPublisher (API mode)', () => {
