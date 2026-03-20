@@ -242,7 +242,9 @@ export class UIDesignerAgent extends BaseAgent {
           throw new ClarificationNeeded(
             parsed.question,
             parsed.options,
-            parsed.allow_custom ?? true
+            parsed.allow_custom ?? true,
+            parsed.context,
+            parsed.impact,
           );
         }
       } catch (err) {

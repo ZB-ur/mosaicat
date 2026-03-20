@@ -33,6 +33,8 @@ If the PRD does **not** specify design direction, you **must** analyze the PRD c
 <!-- CLARIFICATION -->
 {
   "question": "根据产品定位，推荐以下设计方向：",
+  "context": "PRD 未指定设计风格，需要确认方向",
+  "impact": "此选择将决定所有 UI 组件的配色、圆角、间距等视觉基调",
   "options": [
     { "label": "<style 1>", "description": "<why it fits this product>" },
     { "label": "<style 2>", "description": "<why it fits this product>" },
