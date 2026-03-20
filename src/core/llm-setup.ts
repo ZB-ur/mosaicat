@@ -1,4 +1,4 @@
-import { select, input, password } from '@inquirer/prompts';
+import { select, password } from '@inquirer/prompts';
 import { saveUserLLMConfig, loadUserLLMConfig, getConfigPath } from './llm-config-store.js';
 import type { UserLLMConfig } from './llm-config-store.js';
 
@@ -73,7 +73,7 @@ export async function runSetup(): Promise<void> {
   console.log('\n\x1b[1m\x1b[36m━━━ Mosaicat LLM 配置 ━━━\x1b[0m\n');
 
   if (existing) {
-    console.log(`\x1b[2m当前配置: ${existing.provider}${existing.model ? ` (${existing.model})` : ''}\x1b[0m`);
+    console.log(`\x1b[2m当前配置: ${existing.provider}\x1b[0m`);
     console.log(`\x1b[2m配置文件: ${getConfigPath()}\x1b[0m\n`);
   }
 
@@ -106,18 +106,7 @@ export async function runSetup(): Promise<void> {
     config.apiKey = apiKey.trim();
   }
 
-  // Step 3: Model override (optional)
-  if (provider.defaultModel) {
-    const customModel = await input({
-      message: `模型 (回车使用默认 ${provider.defaultModel}):`,
-      default: provider.defaultModel,
-    });
-    if (customModel && customModel !== provider.defaultModel) {
-      config.model = customModel;
-    }
-  }
-
-  // Step 4: Test connection
+  // Step 3: Test connection
   console.log('\n\x1b[2m测试连接...\x1b[0m');
   const ok = await testConnection(config, provider);
 
