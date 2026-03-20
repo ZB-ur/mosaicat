@@ -50,7 +50,7 @@ Out:  Research → PRD → UX Flows → OpenAPI Spec → 25 React Components + S
 
 - **Spec-driven pipeline** — intent → layered specifications (PRD → UX → API → tech spec) → code; each spec layer is the sole input contract for the next agent
 - **10 autonomous agents** — mirrors a real product team: consultant, researcher, PM, UX/UI designers, architect, tech lead, coder, reviewer, validator
-- **Multi-LLM support** — Claude, GPT-4o, Gemini, Qwen, Doubao, Kimi; run `mosaicat setup` to switch providers
+- **Multi-LLM support** — Claude, OpenAI, Gemini, Qwen, Doubao, Kimi; run `mosaicat setup` to switch providers
 - **Batch UI generation** — components grouped by category for 80%+ fewer LLM calls; API spec auto-trimmed per batch
 - **Configurable approval gates** — full autonomy, full manual, or anything in between per stage
 - **8 layered validation checks** — 4 programmatic (zero LLM, fully deterministic) + 4 LLM-assisted (scoped to lightweight manifests)
@@ -68,7 +68,7 @@ Out:  Research → PRD → UX Flows → OpenAPI Spec → 25 React Components + S
 | Requirement | Details |
 |---|---|
 | **Node.js** | v18 or later |
-| **LLM Provider** | Default: Claude CLI (requires [Claude subscription](https://claude.ai/)). Or run `mosaicat setup` to configure: Anthropic API, GPT-4o, Gemini, Qwen, Doubao, Kimi. |
+| **LLM Provider** | Default: Claude CLI (requires [Claude subscription](https://claude.ai/)). Or run `mosaicat setup` to configure: Anthropic API, OpenAI, Gemini, Qwen, Doubao, Kimi. |
 | **Playwright** (optional) | Required only for UI screenshot generation. Install with `npx playwright install chromium`. |
 | **GitHub App** (optional) | Required only for `--github` mode. Install the [Mosaicat GitHub App](https://github.com/apps/mosaicat) on your target repository, then login via `npx tsx src/index.ts login`. |
 

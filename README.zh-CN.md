@@ -50,7 +50,7 @@ Mosaicat 提出 **Spec Coding**（规约驱动开发）— 人负责编写和审
 
 - **规约驱动流水线** — 意图 → 分层规约（PRD → UX → API → 技术方案）→ 代码；每层规约是下一个 Agent 的唯一输入契约
 - **10 个自治 Agent** — 对应真实产品团队角色：IntentConsultant、Researcher、ProductOwner、UX/UI Designer、APIDesigner、TechLead、Coder、Reviewer、Validator
-- **多 LLM 支持** — Claude、GPT-4o、Gemini、通义千问、豆包、Kimi；运行 `mosaicat setup` 一键切换，重复执行可随时更换供应商
+- **多 LLM 支持** — Claude、OpenAI、Gemini、通义千问、豆包、Kimi；运行 `mosaicat setup` 一键切换，重复执行可随时更换供应商
 - **批量 UI 生成** — 组件按类别分组生成，LLM 调用减少 80% 以上；API spec 按 Feature 自动裁剪
 - **可配置审批门控** — 全自治、全人工或按阶段任意组合
 - **8 项分层验证** — 4 项程序化确定性检查（零 LLM）+ 4 项 manifest 范围 LLM 辅助校验，跨工件一致性保障
@@ -68,7 +68,7 @@ Mosaicat 提出 **Spec Coding**（规约驱动开发）— 人负责编写和审
 | 要求 | 说明 |
 |---|---|
 | **Node.js** | v18 或更高版本 |
-| **LLM 供应商** | 默认：Claude CLI（需要 [Claude 订阅](https://claude.ai/)）。或运行 `mosaicat setup` 配置：Anthropic API、GPT-4o、Gemini、通义千问、豆包、Kimi。 |
+| **LLM 供应商** | 默认：Claude CLI（需要 [Claude 订阅](https://claude.ai/)）。或运行 `mosaicat setup` 配置：Anthropic API、OpenAI、Gemini、通义千问、豆包、Kimi。 |
 | **Playwright**（可选） | 仅 UI 截图生成需要。安装：`npx playwright install chromium`。 |
 | **GitHub App**（可选） | 仅 `--github` 模式需要。先将 [Mosaicat GitHub App](https://github.com/apps/mosaicat) 安装到目标仓库，再通过 `npx tsx src/index.ts login` 完成 OAuth 授权。 |
 

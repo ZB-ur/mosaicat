@@ -19,14 +19,14 @@ const PROVIDERS: ProviderChoice[] = [
     keyEnvHint: '',
   },
   {
-    name: 'Anthropic API (Claude Sonnet/Opus)',
+    name: 'Anthropic API (Claude)',
     value: 'anthropic-sdk',
     needsKey: true,
     keyEnvHint: 'https://console.anthropic.com/account/keys',
     defaultModel: 'claude-sonnet-4-20250514',
   },
   {
-    name: 'OpenAI GPT-4o',
+    name: 'OpenAI (GPT)',
     value: 'gpt-4o',
     needsKey: true,
     keyEnvHint: 'https://platform.openai.com/api-keys',
@@ -34,7 +34,7 @@ const PROVIDERS: ProviderChoice[] = [
     baseUrl: 'https://api.openai.com/v1',
   },
   {
-    name: 'Google Gemini 2.5 Pro',
+    name: 'Google Gemini',
     value: 'gemini',
     needsKey: true,
     keyEnvHint: 'https://aistudio.google.com/apikey',
@@ -42,7 +42,7 @@ const PROVIDERS: ProviderChoice[] = [
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
   },
   {
-    name: '通义千问 Qwen-Max',
+    name: '通义千问 (Qwen)',
     value: 'qwen-max',
     needsKey: true,
     keyEnvHint: 'https://dashscope.console.aliyun.com/apiKey',
@@ -50,7 +50,7 @@ const PROVIDERS: ProviderChoice[] = [
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   },
   {
-    name: '豆包 Doubao Pro',
+    name: '豆包 (Doubao)',
     value: 'doubao',
     needsKey: true,
     keyEnvHint: 'https://console.volcengine.com/ark',
