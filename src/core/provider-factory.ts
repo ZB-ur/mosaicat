@@ -13,6 +13,8 @@ const OPENAI_COMPATIBLE_PROVIDERS: Record<string, { baseUrl: string; defaultMode
   'qwen-max': { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModel: 'qwen-max' },
   'doubao': { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', defaultModel: 'doubao-pro-256k' },
   'kimi': { baseUrl: 'https://api.moonshot.cn/v1', defaultModel: 'moonshot-v1-128k' },
+  'deepseek': { baseUrl: 'https://api.deepseek.com/v1', defaultModel: 'deepseek-chat' },
+  'minimax': { baseUrl: 'https://api.minimax.chat/v1', defaultModel: 'MiniMax-Text-01' },
 };
 
 /**
