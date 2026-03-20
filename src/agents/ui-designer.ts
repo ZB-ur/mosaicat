@@ -38,9 +38,28 @@ export class UIDesignerAgent extends BaseAgent {
       // Partial retry: skip planner, only rebuild specified components
       await this.runPartialRetry(context, retryComponents, reviewComments);
     } else {
-      // Full run (or full retry with feedback injected into planner)
-      const plan = await this.runPlanner(context);
-      const builtComponents = await this.runBatchBuilders(context, plan);
+      // Full run — but check if a previous attempt left artifacts on disk
+      let plan: UIPlan;
+      let builtComponents: Map<string, string>;
+
+      if (artifactExists('ui-plan.json')) {
+        // Plan exists from prior attempt — reuse it, only rebuild missing components
+        plan = UIPlanSchema.parse(JSON.parse(readArtifact('ui-plan.json')));
+        builtComponents = this.loadExistingComponents(plan);
+        const missing = plan.components.filter(c => !builtComponents.has(c.name));
+        this.logger.agent(this.stage, 'info', 'retry:reuse-plan', {
+          totalComponents: plan.components.length,
+          alreadyBuilt: builtComponents.size,
+          missing: missing.length,
+        });
+        if (missing.length > 0) {
+          await this.runBatchBuildersForComponents(context, plan, missing, builtComponents);
+        }
+      } else {
+        plan = await this.runPlanner(context);
+        builtComponents = await this.runBatchBuilders(context, plan);
+      }
+
       await this.postProcess(plan, builtComponents);
     }
 
@@ -63,13 +82,7 @@ export class UIDesignerAgent extends BaseAgent {
       totalComponents: plan.components.length,
     });
 
-    // Load existing built components from disk (preserve unchanged ones)
-    const builtComponents = new Map<string, string>();
-    for (const comp of plan.components) {
-      if (artifactExists(comp.file)) {
-        builtComponents.set(comp.name, readArtifact(comp.file));
-      }
-    }
+    const builtComponents = this.loadExistingComponents(plan);
 
     // Resolve retry component specs
     const retrySpecs: UIPlanComponent[] = [];
@@ -180,6 +193,66 @@ export class UIDesignerAgent extends BaseAgent {
 
     (this as { _previewFiles?: string[] })._previewFiles = previewFiles;
     await this.postProcess(plan, builtComponents);
+  }
+
+  /**
+   * Load already-built component TSX from disk for a given plan.
+   */
+  private loadExistingComponents(plan: UIPlan): Map<string, string> {
+    const builtComponents = new Map<string, string>();
+    for (const comp of plan.components) {
+      if (artifactExists(comp.file)) {
+        builtComponents.set(comp.name, readArtifact(comp.file));
+      }
+    }
+    return builtComponents;
+  }
+
+  /**
+   * Build only the specified components (subset of a plan), reusing existing batch logic.
+   * Mutates builtComponents in place as new components are written.
+   */
+  private async runBatchBuildersForComponents(
+    context: AgentContext,
+    plan: UIPlan,
+    components: UIPlanComponent[],
+    builtComponents: Map<string, string>,
+  ): Promise<void> {
+    const builderPrompt = fs.readFileSync(BUILDER_PROMPT_PATH, 'utf-8');
+    const sorted = [...components].sort((a, b) => a.priority - b.priority);
+    const previewFiles: string[] = [];
+
+    const batches = this.createBatches(sorted, plan);
+
+    this.logger.agent(this.stage, 'info', 'batch:plan', {
+      totalComponents: sorted.length,
+      totalBatches: batches.length,
+      breakdown: batches.map(b => ({ category: b[0]?.category ?? 'unknown', size: b.length })),
+    });
+
+    for (const batch of batches) {
+      if (batch.length === 1) {
+        await this.buildSingleComponent(context, plan, batch[0], builtComponents, previewFiles, builderPrompt);
+      } else {
+        try {
+          await this.buildBatch(context, plan, batch, builtComponents, previewFiles, builderPrompt);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.agent(this.stage, 'warn', 'batch:fallback', {
+            components: batch.map(c => c.name),
+            error: message,
+          });
+          for (const comp of batch) {
+            await this.buildSingleComponent(context, plan, comp, builtComponents, previewFiles, builderPrompt);
+          }
+        }
+      }
+    }
+
+    (this as { _previewFiles?: string[] })._previewFiles = [
+      ...((this as { _previewFiles?: string[] })._previewFiles ?? []),
+      ...previewFiles,
+    ];
   }
 
   /**
