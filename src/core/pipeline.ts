@@ -57,8 +57,8 @@ export function getNextStage(stage: StageName): StageName | null {
 const VALID_TRANSITIONS: Record<StageState, StageState[]> = {
   idle: ['running', 'skipped'],
   running: ['awaiting_clarification', 'awaiting_human', 'done', 'failed'],
-  awaiting_clarification: ['running'],
-  awaiting_human: ['approved', 'rejected'],
+  awaiting_clarification: ['running', 'failed'],
+  awaiting_human: ['approved', 'rejected', 'failed'],
   approved: ['done'],
   rejected: ['idle'],  // rollback resets to idle
   failed: ['idle'],    // retry resets to idle
