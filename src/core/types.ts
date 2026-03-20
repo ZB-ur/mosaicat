@@ -20,13 +20,17 @@ export const STAGE_NAMES = [
 
 export type StageName = (typeof STAGE_NAMES)[number];
 
-/** Default design-only pipeline order. Phase 4 will replace with profile-based stage lists. */
-export const STAGE_ORDER: readonly StageName[] = [
+/** Default stage order for tests and fallbacks. Production code should use profile-based stage lists from pipeline.yaml. */
+export const DEFAULT_STAGES: readonly StageName[] = [
+  'intent_consultant',
   'researcher',
   'product_owner',
   'ux_designer',
   'api_designer',
   'ui_designer',
+  'tech_lead',
+  'coder',
+  'reviewer',
   'validator',
 ];
 

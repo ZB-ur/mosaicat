@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-provider.js';
-import { STAGE_ORDER } from '../../core/types.js';
+import { DEFAULT_STAGES } from '../../core/types.js';
 
 // Mock provider — routes UIDesigner sub-phases by system prompt
 class MockLLMProvider implements LLMProvider {
@@ -41,7 +41,7 @@ class MockLLMProvider implements LLMProvider {
     }
 
     // Fallback
-    const nonUIStages = STAGE_ORDER.filter((s) => s !== 'ui_designer');
+    const nonUIStages = DEFAULT_STAGES.filter((s) => s !== 'ui_designer');
     const stage = nonUIStages[this.callCount - 1];
     return { content: stageResponses[stage] ?? '[mock] unknown' };
   }

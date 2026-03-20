@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import yaml from 'js-yaml';
 import type { PipelineConfig, AgentsConfig, StageName, PipelineRun, AgentContext, PipelineProfile } from './types.js';
-import { STAGE_ORDER, ClarificationNeeded } from './types.js';
+import { ClarificationNeeded } from './types.js';
 import {
   createPipelineRun,
   transitionStage,
@@ -150,17 +150,11 @@ export class Orchestrator {
 
   private resolveStageList(profile?: PipelineProfile): readonly StageName[] {
     const profiles = this.pipelineConfig.profiles;
-    if (profile) {
-      if (!profiles || !profiles[profile]) {
-        throw new Error(`Unknown pipeline profile: ${profile}. Available: ${profiles ? Object.keys(profiles).join(', ') : 'none'}`);
-      }
-      return profiles[profile];
+    const resolvedProfile = profile ?? 'full';
+    if (!profiles || !profiles[resolvedProfile]) {
+      throw new Error(`Unknown pipeline profile: ${resolvedProfile}. Available: ${profiles ? Object.keys(profiles).join(', ') : 'none'}`);
     }
-    // No profile specified — default to 'design-only' from config, fallback to STAGE_ORDER
-    if (profiles?.['design-only']) {
-      return profiles['design-only'];
-    }
-    return STAGE_ORDER;
+    return profiles[resolvedProfile];
   }
 
   private async executeStage(
@@ -294,7 +288,7 @@ export class Orchestrator {
       }
 
       // Rollback to previous stage
-      const prev = getPreviousStage(stage);
+      const prev = getPreviousStage(run, stage);
       if (prev) {
         transitionStage(run, stage, 'failed');
         logger.pipeline('warn', 'stage:rollback', { from: stage, to: prev });

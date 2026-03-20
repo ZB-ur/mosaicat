@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../llm-provider.js';
-import { STAGE_ORDER } from '../types.js';
+import { DEFAULT_STAGES } from '../types.js';
 
 // Mock provider — routes UIDesigner sub-phases by system prompt
 class MockLLMProvider implements LLMProvider {
@@ -24,7 +24,7 @@ class MockLLMProvider implements LLMProvider {
       return { content: `<!-- ARTIFACT:components/CompA.tsx -->\nexport default function CompA() {\n  return <div className="p-4">Test</div>;\n}\n<!-- END:components/CompA.tsx -->\n\n<!-- ARTIFACT:previews/CompA.html -->\n<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div class="p-4">Test</div></body></html>\n<!-- END:previews/CompA.html -->` };
     }
 
-    const stage = STAGE_ORDER[this.callCount - 1];
+    const stage = DEFAULT_STAGES[this.callCount - 1];
 
     const responses: Record<string, string> = {
       researcher: JSON.stringify({ artifact: "## Market Overview\nTest research content", manifest: { competitors: ["A"], key_insights: ["test"], feasibility: "high", risks: [] } }),

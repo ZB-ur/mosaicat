@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
 import type { StageName, GateResult } from '../core/types.js';
-import { STAGE_ORDER } from '../core/types.js';
+import { DEFAULT_STAGES } from '../core/types.js';
 import type { InteractionHandler, EvolutionApprovalResult } from '../core/interaction-handler.js';
 import type { EvolutionProposal } from '../evolution/types.js';
 import { Orchestrator } from '../core/orchestrator.js';
@@ -65,7 +65,7 @@ class EvolutionMockProvider implements LLMProvider {
 
     // Normal pipeline stage responses
     const stageIdx = this.callCount - 1;
-    const stage = STAGE_ORDER[stageIdx % STAGE_ORDER.length];
+    const stage = DEFAULT_STAGES[stageIdx % DEFAULT_STAGES.length];
 
     const responses: Record<string, string> = {
       researcher: JSON.stringify({ artifact: "## Market\nTest", manifest: { competitors: ["A"], key_insights: ["test"], feasibility: "high", risks: [] } }),

@@ -1,5 +1,4 @@
 import type { StageName } from './types.js';
-import { STAGE_ORDER } from './types.js';
 import { eventBus } from './event-bus.js';
 import { CLIArtifactPresenter } from './artifact-presenter.js';
 
@@ -57,14 +56,10 @@ function formatDuration(ms: number): string {
   return `${min}m${sec}s`;
 }
 
-function stageIndex(stage: StageName): number {
-  return STAGE_ORDER.indexOf(stage) + 1;
-}
-
 export function attachCLIProgress(): () => void {
   const stageTimers = new Map<StageName, number>();
   const pipelineStart = Date.now();
-  let activeStages: readonly StageName[] = STAGE_ORDER;
+  let activeStages: readonly StageName[] = [];
 
   const handlers: Array<[string, (...args: any[]) => void]> = [];
 
