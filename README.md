@@ -70,7 +70,7 @@ Out:  Research → PRD → UX Flows → OpenAPI Spec → 25 React Components + S
 | **Node.js** | v18 or later |
 | **LLM Provider** | Default: Claude CLI (requires [Claude subscription](https://claude.ai/)). Or run `mosaicat setup` to configure: Anthropic API, OpenAI, Gemini, DeepSeek, Qwen, Doubao, Kimi, MiniMax. |
 | **Playwright** (optional) | Required only for UI screenshot generation. Install with `npx playwright install chromium`. |
-| **GitHub App** (optional) | Required only for `--github` mode. Install the [Mosaicat GitHub App](https://github.com/apps/mosaicat) on your target repository, then login via `npx tsx src/index.ts login`. |
+| **GitHub App** (optional) | Required only for `--github` mode. Install the [Mosaicat GitHub App](https://github.com/apps/mosaicatie) on your target repository, then login via `npx tsx src/index.ts login`. |
 
 > **Claude CLI users**: Claude Pro / Team / Enterprise plans work out of the box. The pipeline uses `claude -p` with tool use, no separate API key needed. For other providers, run `mosaicat setup` and enter your API key.
 
@@ -110,13 +110,27 @@ npx tsx src/index.ts run "Build a task management app" --auto-approve
 
 ### 3. GitHub Mode (team collaboration)
 
+**Step 1 — Install the GitHub App**
+
+1. Visit [github.com/apps/mosaicatie](https://github.com/apps/mosaicatie) and click **Install**
+2. Choose the account/organization to install on
+3. Select **Only select repositories** and pick your target repo (recommended), or **All repositories**
+4. Click **Install** — the App requests these permissions:
+   - **Contents** (read & write) — commit artifacts to your repo
+   - **Issues** (read & write) — create stage tracking issues
+   - **Pull requests** (read & write) — create Draft PRs and manage review gates
+   - **Metadata** (read-only) — required by GitHub
+
+**Step 2 — Login & Run**
+
 ```bash
-# 1. Install the Mosaicat GitHub App on your repo: https://github.com/apps/mosaicat
-npx tsx src/index.ts login                                    # 2. one-time OAuth
-npx tsx src/index.ts run "Build a task management app" --github  # 3. run in repo dir
+npx tsx src/index.ts login                                       # one-time OAuth (device flow)
+npx tsx src/index.ts run "Build a task management app" --github  # run in your repo directory
 ```
 
-Creates a Draft PR with stage issues. Team members approve via `/approve` comments on the PR.
+The `login` command displays a one-time code — paste it at the GitHub verification page to authorize. Credentials are saved locally at `~/.mosaicat/auth.json`.
+
+Creates a Draft PR with stage issues. Team members approve via `/approve` comments on the PR. If the App is installed on multiple repos, an interactive prompt lets you choose the target.
 
 ### 4. MCP Mode (IDE integration)
 

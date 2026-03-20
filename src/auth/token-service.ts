@@ -45,7 +45,7 @@ export async function getInstallationToken(
 
   if (!res.ok) {
     if (res.status === 404) {
-      throw new Error('GitHub App is not installed for this repository. Install at: https://github.com/apps/mosaicat');
+      throw new Error('GitHub App is not installed for this repository. Install at: https://github.com/apps/mosaicatie');
     }
     throw new Error(`Failed to get installation token: ${res.status} ${res.statusText}`);
   }

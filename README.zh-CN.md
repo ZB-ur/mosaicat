@@ -70,7 +70,7 @@ Mosaicat 提出 **Spec Coding**（规约驱动开发）— 人负责编写和审
 | **Node.js** | v18 或更高版本 |
 | **LLM 供应商** | 默认：Claude CLI（需要 [Claude 订阅](https://claude.ai/)）。或运行 `mosaicat setup` 配置：Anthropic API、OpenAI、Gemini、DeepSeek、通义千问、豆包、Kimi、MiniMax。 |
 | **Playwright**（可选） | 仅 UI 截图生成需要。安装：`npx playwright install chromium`。 |
-| **GitHub App**（可选） | 仅 `--github` 模式需要。先将 [Mosaicat GitHub App](https://github.com/apps/mosaicat) 安装到目标仓库，再通过 `npx tsx src/index.ts login` 完成 OAuth 授权。 |
+| **GitHub App**（可选） | 仅 `--github` 模式需要。先将 [Mosaicat GitHub App](https://github.com/apps/mosaicatie) 安装到目标仓库，再通过 `npx tsx src/index.ts login` 完成 OAuth 授权。 |
 
 > **Claude CLI 用户**：Claude Pro / Team / Enterprise 开箱即用，使用 `claude -p` 的 tool use 能力，无需单独的 API Key。使用其他供应商请运行 `mosaicat setup` 输入 API Key。
 
@@ -109,13 +109,28 @@ npx tsx src/index.ts run "做一个任务管理应用" --auto-approve
 ```
 
 ### 3. GitHub 模式（团队协作）
-※ 前置需安装 Mosaicat GitHub App 到目标仓库：https://github.com/apps/mosaicat
+
+**第一步 — 安装 GitHub App**
+
+1. 访问 [github.com/apps/mosaicatie](https://github.com/apps/mosaicatie)，点击 **Install**
+2. 选择要安装到的账户/组织
+3. 推荐选择 **Only select repositories** 并勾选目标仓库，也可选 **All repositories**
+4. 点击 **Install** — App 会请求以下权限：
+   - **Contents**（读写）— 向仓库提交工件文件
+   - **Issues**（读写）— 创建阶段跟踪 Issue
+   - **Pull requests**（读写）— 创建 Draft PR 和管理审批门控
+   - **Metadata**（只读）— GitHub 基础要求
+
+**第二步 — 登录并运行**
+
 ```bash
-npx tsx src/index.ts login                                    # 2. 一次性 OAuth 授权
-npx tsx src/index.ts run "做一个任务管理应用" --github           # 3. 在仓库目录下运行
+npx tsx src/index.ts login                                       # 一次性 OAuth 授权（设备流）
+npx tsx src/index.ts run "做一个任务管理应用" --github              # 在仓库目录下运行
 ```
 
-创建 Draft PR 和 Stage Issue，团队成员通过 PR 上的 `/approve` 评论审批。
+`login` 命令会显示一个一次性验证码 — 在 GitHub 验证页面粘贴即可完成授权。凭证保存在本地 `~/.mosaicat/auth.json`。
+
+创建 Draft PR 和 Stage Issue，团队成员通过 PR 上的 `/approve` 评论审批。如果 App 安装在多个仓库上，会交互式提示选择目标仓库。
 
 ### 4. MCP 模式（IDE 集成）
 
