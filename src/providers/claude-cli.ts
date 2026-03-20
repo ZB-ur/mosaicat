@@ -1,19 +1,29 @@
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import PQueue from 'p-queue';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
 
 const TIMEOUT_MS = 600_000; // 10 minutes — complex stages (ui_designer, coder) need time
 const MAX_BUFFER = 10 * 1024 * 1024; // 10MB
 
+/** Resolve full path to claude CLI to avoid ENOENT in spawn */
+function resolveClaudePath(): string {
+  try {
+    return execSync('which claude', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  } catch {
+    return 'claude'; // fallback to PATH lookup
+  }
+}
+
 export class ClaudeCLIProvider implements LLMProvider {
   private queue = new PQueue({ concurrency: 1 });
+  private claudePath = resolveClaudePath();
 
   async call(prompt: string, options?: LLMCallOptions): Promise<LLMResponse> {
     return this.queue.add(async () => {
       const args = this.buildArgs(options);
 
       return new Promise<LLMResponse>((resolve, reject) => {
-        const child = spawn('claude', args, {
+        const child = spawn(this.claudePath, args, {
           stdio: ['pipe', 'pipe', 'pipe'],
         });
 
