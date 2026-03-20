@@ -182,7 +182,8 @@ export class GitHubInteractionHandler implements InteractionHandler {
 
   private async pollForCommentReply(prNumber: number): Promise<string> {
     const deadline = Date.now() + this.githubConfig.poll_timeout_ms;
-    const sinceTime = new Date().toISOString();
+    // Subtract 2s buffer to avoid missing fast replies due to clock skew
+    const sinceTime = new Date(Date.now() - 2000).toISOString();
 
     while (Date.now() < deadline) {
       // PR comments are issue comments (PRs are issues in GitHub)

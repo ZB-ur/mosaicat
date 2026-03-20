@@ -17,13 +17,25 @@ if (command === 'login') {
   // ── OAuth Device Flow login ──
   console.log('[mosaicat] Starting GitHub login...');
 
-  oauthDeviceFlow({
-    onUserCode: (userCode, verificationUri) => {
-      console.log(`\n! Paste this code in your browser: \x1b[1m${userCode}\x1b[0m`);
-      console.log(`  → ${verificationUri}\n`);
-      console.log('Waiting for authorization...');
-    },
-  })
+  const LOGIN_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+  const loginTimeout = new Promise<never>((_, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('Login timed out after 10 minutes')),
+      LOGIN_TIMEOUT_MS,
+    );
+    timer.unref(); // Don't block process exit
+  });
+
+  Promise.race([
+    oauthDeviceFlow({
+      onUserCode: (userCode, verificationUri) => {
+        console.log(`\n! Paste this code in your browser: \x1b[1m${userCode}\x1b[0m`);
+        console.log(`  → ${verificationUri}\n`);
+        console.log('Waiting for authorization...');
+      },
+    }),
+    loginTimeout,
+  ])
     .then(({ accessToken, userLogin }) => {
       saveCachedAuth({ userToken: accessToken, userLogin });
       console.log(`\x1b[32m✓\x1b[0m Logged in as \x1b[1m@${userLogin}\x1b[0m`);

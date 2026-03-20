@@ -68,8 +68,17 @@ export abstract class LLMAgent extends BaseAgent {
       parsed = JSON.parse(raw);
     } catch {
       // Fallback: if JSON parsing fails, treat entire response as artifact content
+      // Guard against saving error messages or trivially short responses as artifacts
+      if (raw.length < 50) {
+        this.logger.agent(this.stage, 'error', 'llm:json-parse-fallback:too-short', {
+          rawLength: raw.length,
+          preview: raw.slice(0, 100),
+        });
+        throw new Error(`LLM returned non-JSON response too short to be a valid artifact (${raw.length} chars): ${raw.slice(0, 100)}`);
+      }
       this.logger.agent(this.stage, 'warn', 'llm:json-parse-fallback', {
         rawLength: raw.length,
+        preview: raw.slice(0, 200),
       });
       parsed = { artifact: raw };
     }
