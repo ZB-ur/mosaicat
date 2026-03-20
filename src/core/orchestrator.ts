@@ -78,7 +78,7 @@ export class Orchestrator {
 
     const pipelineRun = createPipelineRun(runId, instruction, autoApprove, stageList);
     const logger = new Logger(runId);
-    const provider = createProvider();
+    const provider = createProvider(this.pipelineConfig);
 
     logger.pipeline('info', 'pipeline:start', { runId, instruction, profile: profile ?? 'default' });
     eventBus.emit('pipeline:start', runId);
