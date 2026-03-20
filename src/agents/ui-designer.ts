@@ -75,10 +75,8 @@ export class UIDesignerAgent extends BaseAgent {
       }
     }
 
-    // Only rebuild specified components
-    const builderPrompt = fs.readFileSync(BUILDER_PROMPT_PATH, 'utf-8');
-    const previewFiles: string[] = [];
-
+    // Resolve retry component specs
+    const retrySpecs: UIPlanComponent[] = [];
     for (const compName of retryComponents) {
       const comp = plan.components.find((c) => c.name === compName);
       if (!comp) {
@@ -87,64 +85,114 @@ export class UIDesignerAgent extends BaseAgent {
         });
         continue;
       }
+      retrySpecs.push(comp);
+    }
 
-      // Build feedback section for this component
-      const compComments = reviewComments?.filter(
-        (c) => c.file === comp.file || c.file.includes(compName)
-      );
-      const feedbackSection = this.buildComponentFeedback(compName, compComments);
+    // Group retry components by category for batching
+    const builderPrompt = fs.readFileSync(BUILDER_PROMPT_PATH, 'utf-8');
+    const previewFiles: string[] = [];
+    const retryBatches = this.createBatches(retrySpecs, plan);
 
-      const userPrompt = this.buildBuilderUserPrompt(context, plan, comp, builtComponents)
-        + (feedbackSection ? `\n\n${feedbackSection}` : '');
+    this.logger.agent(this.stage, 'info', 'partial-retry:batches', {
+      totalRetry: retrySpecs.length,
+      batchCount: retryBatches.length,
+    });
 
-      this.logger.agent(this.stage, 'info', 'builder:call', {
-        component: comp.name,
-        promptLength: userPrompt.length,
-        isRetry: true,
-      });
-      eventBus.emit('agent:thinking', this.stage, userPrompt.length);
+    for (const batch of retryBatches) {
+      // Build per-component feedback sections
+      const feedbackMap = new Map<string, string>();
+      for (const comp of batch) {
+        const compComments = reviewComments?.filter(
+          (c) => c.file === comp.file || c.file.includes(comp.name)
+        );
+        const feedback = this.buildComponentFeedback(comp.name, compComments);
+        if (feedback) feedbackMap.set(comp.name, feedback);
+      }
 
-      try {
-        const response = await this.provider.call(userPrompt, {
-          systemPrompt: builderPrompt,
+      if (batch.length === 1) {
+        // Single component retry with feedback
+        const comp = batch[0];
+        const userPrompt = this.buildBuilderUserPrompt(context, plan, comp, builtComponents)
+          + (feedbackMap.has(comp.name) ? `\n\n${feedbackMap.get(comp.name)}` : '');
+
+        this.logger.agent(this.stage, 'info', 'builder:call', {
+          component: comp.name,
+          promptLength: userPrompt.length,
+          isRetry: true,
         });
-        const raw = response.content;
+        eventBus.emit('agent:thinking', this.stage, userPrompt.length);
 
+        try {
+          const response = await this.provider.call(userPrompt, { systemPrompt: builderPrompt });
+          this.extractAndWriteArtifacts(response.content, [comp], builtComponents, previewFiles);
+          this.logger.agent(this.stage, 'info', 'builder:complete', { component: comp.name, isRetry: true });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.agent(this.stage, 'warn', 'builder:failed', { component: comp.name, error: message, isRetry: true });
+        }
+      } else {
+        // Batch retry with per-component feedback appended
+        const userPrompt = this.buildBatchBuilderUserPrompt(context, plan, batch, builtComponents)
+          + this.buildBatchFeedbackSection(feedbackMap);
 
-        // Extract artifacts (same logic as runBuilders)
-        const artifactPattern = /<!-- ARTIFACT:([\S]+) -->\s*([\s\S]*?)\s*<!-- END:\1 -->/g;
-        let match;
-        while ((match = artifactPattern.exec(raw)) !== null) {
-          const name = match[1];
-          const content = match[2].trim()
-            .replace(/^```(?:tsx|html|json)?\s*\n?/, '')
-            .replace(/\n?```\s*$/, '');
-          this.writeOutput(name, content);
+        const componentNames = batch.map(c => c.name);
+        this.logger.agent(this.stage, 'info', 'builder:call', {
+          components: componentNames,
+          batchSize: batch.length,
+          promptLength: userPrompt.length,
+          isRetry: true,
+        });
+        eventBus.emit('agent:thinking', this.stage, userPrompt.length);
 
-          if (name === comp.file) {
-            builtComponents.set(comp.name, content);
+        try {
+          const response = await this.provider.call(userPrompt, { systemPrompt: builderPrompt });
+          const written = this.extractAndWriteArtifacts(response.content, batch, builtComponents, previewFiles);
+
+          // Retry missing individually
+          const missing = batch.filter(c => !written.has(c.name));
+          for (const comp of missing) {
+            const singlePrompt = this.buildBuilderUserPrompt(context, plan, comp, builtComponents)
+              + (feedbackMap.has(comp.name) ? `\n\n${feedbackMap.get(comp.name)}` : '');
+            try {
+              const resp = await this.provider.call(singlePrompt, { systemPrompt: builderPrompt });
+              this.extractAndWriteArtifacts(resp.content, [comp], builtComponents, previewFiles);
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              this.logger.agent(this.stage, 'warn', 'builder:failed', { component: comp.name, error: message, isRetry: true });
+            }
           }
-          if (name === comp.preview) {
-            previewFiles.push(name);
+
+          this.logger.agent(this.stage, 'info', 'builder:complete', { components: componentNames, isRetry: true });
+        } catch (err) {
+          // Batch failed — degrade to individual
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.agent(this.stage, 'warn', 'batch:fallback', { components: componentNames, error: message, isRetry: true });
+          for (const comp of batch) {
+            const singlePrompt = this.buildBuilderUserPrompt(context, plan, comp, builtComponents)
+              + (feedbackMap.has(comp.name) ? `\n\n${feedbackMap.get(comp.name)}` : '');
+            try {
+              const resp = await this.provider.call(singlePrompt, { systemPrompt: builderPrompt });
+              this.extractAndWriteArtifacts(resp.content, [comp], builtComponents, previewFiles);
+            } catch (innerErr) {
+              const innerMsg = innerErr instanceof Error ? innerErr.message : String(innerErr);
+              this.logger.agent(this.stage, 'warn', 'builder:failed', { component: comp.name, error: innerMsg, isRetry: true });
+            }
           }
         }
-
-        this.logger.agent(this.stage, 'info', 'builder:complete', {
-          component: comp.name,
-          isRetry: true,
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        this.logger.agent(this.stage, 'warn', 'builder:failed', {
-          component: comp.name,
-          error: message,
-          isRetry: true,
-        });
       }
     }
 
     (this as { _previewFiles?: string[] })._previewFiles = previewFiles;
     await this.postProcess(plan, builtComponents);
+  }
+
+  /**
+   * Build a combined feedback section for batch retry prompts.
+   */
+  private buildBatchFeedbackSection(feedbackMap: Map<string, string>): string {
+    if (feedbackMap.size === 0) return '';
+    const sections = [...feedbackMap.values()];
+    return '\n\n' + sections.join('\n\n');
   }
 
   private buildComponentFeedback(
