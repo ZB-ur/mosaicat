@@ -58,7 +58,8 @@ If the PRD already specifies design preferences, skip clarification.
       "parent": "App",
       "children": [],
       "props": ["onAdd: (text: string) => void", "placeholder?: string"],
-      "priority": 1
+      "priority": 1,
+      "category": "atomic"
     }
   ]
 }
@@ -74,13 +75,14 @@ If the PRD already specifies design preferences, skip clarification.
 - **children**: List of child component names
 - **props**: TypeScript-style prop signatures
 - **priority**: Build order (1 = build first, higher = later). Leaf components first, containers last.
+- **category**: Component complexity classification. `atomic`: stateless leaf components (buttons, inputs, badges); `composite`: components that compose atomic ones (forms, lists, cards); `page`: top-level page/layout components.
 - **design_tokens**: Optional design token overrides (when user specifies custom style)
 - **modules**: Optional grouping of components into build modules (atomic → business → pages). This helps organize step-level tracking and partial rebuilds.
 
 ## Guidelines
 
 - Every component in the UX `Component Inventory` must appear in the plan
-- Assign priority so leaf/atomic components are built before containers
+- Assign priority so leaf/atomic components are built before containers. Atomic components should have the lowest priority values, page components the highest.
 - Each component must reference at least one PRD Feature ID via `covers_features`
 - Every PRD Feature ID must be covered by at least one component
 - Keep the plan focused — don't invent components not implied by the UX flows
