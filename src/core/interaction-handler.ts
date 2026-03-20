@@ -11,7 +11,8 @@ export interface InteractionHandler {
   onManualGate(stage: StageName, runId: string): Promise<GateResult>;
   onClarification(
     stage: StageName, question: string, runId: string,
-    options?: ClarificationOption[], allowCustom?: boolean
+    options?: ClarificationOption[], allowCustom?: boolean,
+    context?: string, impact?: string,
   ): Promise<string>;
   onEvolutionProposal?(proposal: EvolutionProposal): Promise<EvolutionApprovalResult>;
 }
@@ -54,9 +55,26 @@ export class CLIInteractionHandler implements InteractionHandler {
 
   async onClarification(
     stage: StageName, question: string, _runId: string,
-    options?: ClarificationOption[], allowCustom?: boolean
+    options?: ClarificationOption[], allowCustom?: boolean,
+    context?: string, impact?: string,
   ): Promise<string> {
-    console.log(`\n\x1b[33m❓ [${stage}] Agent needs your input:\x1b[0m`);
+    // Enhanced display with context/impact box
+    if (context || impact) {
+      const AGENT_EMOJI: Record<string, string> = {
+        ui_designer: '\uD83C\uDFA8', ux_designer: '\uD83D\uDCDD', researcher: '\uD83D\uDD0D',
+        product_owner: '\uD83D\uDCCB', api_designer: '\uD83D\uDD17', intent_consultant: '\uD83D\uDCAC',
+      };
+      const emoji = AGENT_EMOJI[stage] ?? '❓';
+      const label = stage.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+      console.log(`\n\x1b[36m┌─ ${emoji} ${label} 需要确认 ${'─'.repeat(Math.max(0, 40 - label.length))}\x1b[0m`);
+      if (context) console.log(`\x1b[36m│\x1b[0m 上下文: ${context}`);
+      if (impact) console.log(`\x1b[36m│\x1b[0m 影响:   ${impact}`);
+      console.log(`\x1b[36m└${'─'.repeat(50)}\x1b[0m\n`);
+    } else {
+      console.log(`\n\x1b[33m❓ [${stage}] Agent needs your input:\x1b[0m\n`);
+    }
+
     console.log(`   ${question}\n`);
 
     if (options && options.length > 0) {
@@ -75,13 +93,18 @@ export class CLIInteractionHandler implements InteractionHandler {
       });
 
       if (answer === '__custom__') {
-        return input({ message: 'Your answer:' });
+        const custom = await input({ message: 'Your answer:' });
+        console.log(`\x1b[32m✓ 已选择: ${custom}\x1b[0m`);
+        return custom;
       }
 
+      console.log(`\x1b[32m✓ 已选择: ${answer}\x1b[0m`);
       return answer;
     }
 
-    return input({ message: 'Your answer:' });
+    const answer = await input({ message: 'Your answer:' });
+    console.log(`\x1b[32m✓ 已选择: ${answer}\x1b[0m`);
+    return answer;
   }
 
   async onEvolutionProposal(proposal: EvolutionProposal): Promise<EvolutionApprovalResult> {
@@ -133,6 +156,8 @@ export interface ClarificationMeta {
   question: string;
   options?: ClarificationOption[];
   allowCustom?: boolean;
+  context?: string;
+  impact?: string;
 }
 
 export class DeferredInteractionHandler implements InteractionHandler {
@@ -149,11 +174,12 @@ export class DeferredInteractionHandler implements InteractionHandler {
 
   async onClarification(
     _stage: StageName, question: string, runId: string,
-    options?: ClarificationOption[], allowCustom?: boolean
+    options?: ClarificationOption[], allowCustom?: boolean,
+    context?: string, impact?: string,
   ): Promise<string> {
     const deferred = createDeferredPromise<string>();
     this.pendingClarifications.set(runId, deferred);
-    this.clarificationMeta.set(runId, { question, options, allowCustom });
+    this.clarificationMeta.set(runId, { question, options, allowCustom, context, impact });
     return deferred.promise;
   }
 

@@ -54,7 +54,8 @@ export class GitHubInteractionHandler implements InteractionHandler {
 
   async onClarification(
     stage: StageName, question: string, runId: string,
-    options?: ClarificationOption[], allowCustom?: boolean
+    options?: ClarificationOption[], allowCustom?: boolean,
+    context?: string, impact?: string,
   ): Promise<string> {
     if (!this.prNumber) {
       // No PR — fall back to Issue-based clarification

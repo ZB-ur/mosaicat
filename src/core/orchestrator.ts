@@ -433,7 +433,8 @@ export class Orchestrator {
       logger.pipeline('info', 'stage:clarification', { stage, question: err.question });
 
       const answer = await this.handler.onClarification(
-        stage, err.question, run.id, err.options, err.allowCustom
+        stage, err.question, run.id, err.options, err.allowCustom,
+        err.context, err.impact,
       );
 
       // Record Q&A for issue report
