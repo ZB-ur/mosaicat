@@ -604,8 +604,8 @@ Agent 发现可复用 pattern → 生成 Skill 提案
 |---|---|
 | 语言 | TypeScript / Node.js |
 | MCP SDK | @modelcontextprotocol/sdk |
-| LLM 调用 (MVP) | Claude CLI (`claude --print`) + PQueue 串行队列 |
-| LLM 调用 (API) | @anthropic-ai/sdk |
+| LLM 调用 (默认) | Claude CLI (`claude -p` + tool use + 结构化输出) + PQueue 串行队列 |
+| LLM 调用 (API) | @anthropic-ai/sdk（Claude）、OpenAI 兼容 Provider（GPT-4o / Gemini / Qwen / Doubao / Kimi） |
 | Git 操作 | @octokit/rest（GitHub 适配器） |
 | GitHub App 认证 | @octokit/auth-app |
 | 后端 | Cloudflare Workers + Hono（GitHub App 认证） |
@@ -795,7 +795,7 @@ backend/
 | Coder | `code/` + manifest（tool use + subagent 自主编码） | auto |
 | Reviewer | `review-report.md` + manifest | manual |
 
-**M4 预留：** QALead / Tester / SecurityAuditor Agent、DAG 执行引擎、Project Initializer
+**M4 预留：** 多 LLM 支持、批量生成优化、DX 改善（已在 M4 实现）
 
 | 阶段 | 范围 | PR | 状态 |
 |---|---|---|---|
@@ -809,6 +809,40 @@ backend/
 | Phase 7 | Coder Agent（tool use + subagent 自主编码） | #177 | ✅ |
 | Phase 8 | Reviewer Agent | #180 | ✅ |
 | Phase 9 | 扩展 Validator + MCP 适配 + 收尾 | — | ✅ |
+
+### Milestone 4: 优化 + 多 LLM + DX 改善（✅ COMPLETE）
+
+**核心改进：**
+
+| 改进 | 说明 | 价值 |
+|---|---|---|
+| UIDesigner 批量生成 | 按 category（atomic/composite/page）分组调用，API-spec 按 feature 裁剪 | LLM 调用减少 86%（实测 49 组件 → 7 次调用） |
+| 动态风格推荐 | LLM 分析 PRD 的行业/用户/产品类型，生成个性化设计方向 | 取代硬编码选项，推荐更贴合场景 |
+| 澄清 UX 增强 | ClarificationNeeded 增加 context/impact 字段 + CLI 上下文框 + 终端优先 GitHub 模式 | 用户清楚为什么被问、选择影响什么 |
+| 多 LLM 支持 | OpenAI 兼容 Provider 覆盖 GPT-4o / Gemini / Qwen / Doubao / Kimi + Anthropic SDK 增强 | 不再绑定 Claude，用户自由选择 |
+| Setup 引导 | `mosaicat setup` 交互式配置 LLM，API Key 安全存储 + 连接测试 | 零门槛切换 LLM 供应商 |
+| Artifact 隔离 | 产出物按 run-id 独立目录（`.mosaic/artifacts/{run-id}/`） | 多次运行不互相覆盖 |
+| Pipeline 默认 full | 去除 STAGE_ORDER 硬编码，不传 `--profile` 默认跑 full（含 IntentConsultant） | 新用户不会意外跳过意图澄清 |
+
+**新增模块：**
+
+| 文件 | 职责 |
+|---|---|
+| `src/agents/ui-api-trimmer.ts` | API spec 按 featureId 裁剪，减少 builder prompt 大小 |
+| `src/providers/openai-compatible.ts` | OpenAI Chat Completions 兼容 Provider（覆盖 5 家厂商） |
+| `src/core/provider-capabilities.ts` | Provider 能力检测（structuredOutput / toolUse / mcpConfig） |
+| `src/core/llm-config-store.ts` | 用户级 LLM 配置读写（~/.mosaicat/llm-config.json） |
+| `src/core/llm-setup.ts` | 交互式 LLM 配置引导 |
+
+| Phase | 范围 | PR | 状态 |
+|---|---|---|---|
+| Phase A | UIDesigner 批量生成 + API-spec 裁剪 | #221 | ✅ |
+| Phase B | 动态风格推荐 | #224 | ✅ |
+| Phase C | 澄清 UX 优化（context/impact + 终端优先 + 回显） | #231 | ✅ |
+| Phase D | 多 LLM 支持（OpenAI 兼容 + Anthropic SDK 增强 + Provider 池） | #239 | ✅ |
+| Phase E | Pipeline 修复 + Artifact 隔离 + Setup 引导 + 文档更新 | #243 | ✅ |
+
+**M5 预留：** QALead / Tester / SecurityAuditor Agent、DAG 执行引擎、Per-agent LLM 路由、存量项目支持
 
 ---
 
