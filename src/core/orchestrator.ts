@@ -432,10 +432,23 @@ export class Orchestrator {
       transitionStage(run, stage, 'awaiting_clarification');
       logger.pipeline('info', 'stage:clarification', { stage, question: err.question });
 
-      const answer = await this.handler.onClarification(
-        stage, err.question, run.id, err.options, err.allowCustom,
-        err.context, err.impact,
-      );
+      let answer: string;
+      if (run.autoApprove) {
+        // Auto-select: last option (convention: default/fallback) or generic default
+        const lastOption = err.options?.[err.options.length - 1];
+        answer = lastOption?.label ?? 'default';
+        logger.pipeline('info', 'stage:clarification-auto', {
+          stage,
+          answer,
+          reason: 'auto-approve mode',
+        });
+        eventBus.emit('clarification:answered', stage, err.question, answer, 'auto-approve');
+      } else {
+        answer = await this.handler.onClarification(
+          stage, err.question, run.id, err.options, err.allowCustom,
+          err.context, err.impact,
+        );
+      }
 
       // Record Q&A for issue report
       if (clMetrics) clMetrics.clarificationQA = { question: err.question, answer };
