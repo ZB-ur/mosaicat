@@ -151,13 +151,23 @@ export class ClarificationNeeded extends Error {
   readonly question: string;
   readonly options?: ClarificationOption[];
   readonly allowCustom?: boolean;
+  readonly context?: string;
+  readonly impact?: string;
 
-  constructor(question: string, options?: ClarificationOption[], allowCustom?: boolean) {
+  constructor(
+    question: string,
+    options?: ClarificationOption[],
+    allowCustom?: boolean,
+    context?: string,
+    impact?: string,
+  ) {
     super(`Clarification needed: ${question}`);
     this.name = 'ClarificationNeeded';
     this.question = question;
     this.options = options;
     this.allowCustom = allowCustom;
+    this.context = context;
+    this.impact = impact;
   }
 }
 
