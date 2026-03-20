@@ -154,6 +154,11 @@ export function attachCLIProgress(): () => void {
     console.log(`  ${YELLOW}? clarification needed:${RESET} ${question}`);
   });
 
+  on('clarification:answered', (_stage, _question, answer, source) => {
+    const sourceLabel = source === 'github' ? 'GitHub PR' : source;
+    console.log(`  ${CYAN}↳ 通过 ${sourceLabel} 回复: "${answer}"${RESET}`);
+  });
+
   // ── Artifacts ──
 
   const presenter = new CLIArtifactPresenter();

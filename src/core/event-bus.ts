@@ -19,6 +19,7 @@ export interface PipelineEvents {
   'agent:thinking': (stage: StageName, promptLength: number) => void;
   'agent:response': (stage: StageName, responseLength: number) => void;
   'agent:clarification': (stage: StageName, question: string) => void;
+  'clarification:answered': (stage: StageName, question: string, answer: string, source: string) => void;
   'artifact:written': (stage: StageName, name: string, size: number) => void;
   'manifest:written': (stage: StageName, name: string) => void;
   'snapshot:created': (stage: StageName, runId: string) => void;

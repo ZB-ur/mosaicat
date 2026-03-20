@@ -5,6 +5,7 @@ import { CLIInteractionHandler } from './interaction-handler.js';
 import type { GitPlatformAdapter, PRReview } from '../adapters/types.js';
 import type { SecurityConfig } from './security.js';
 import { isTrustedActor } from './security.js';
+import { eventBus } from './event-bus.js';
 
 export class GitHubInteractionHandler implements InteractionHandler {
   private adapter: GitPlatformAdapter;
@@ -116,7 +117,9 @@ export class GitHubInteractionHandler implements InteractionHandler {
     await this.adapter.addComment(this.prNumber, lines.join('\n'));
 
     // Poll for a reply comment (not a review)
-    return this.pollForCommentReply(this.prNumber);
+    const answer = await this.pollForCommentReply(this.prNumber);
+    eventBus.emit('clarification:answered', stage, question, answer, 'github');
+    return answer;
   }
 
   private async pollForReview(prNumber: number, stage: StageName): Promise<GateResult> {
