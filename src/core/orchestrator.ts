@@ -81,7 +81,7 @@ export class Orchestrator {
     const provider = createProvider(this.pipelineConfig);
 
     logger.pipeline('info', 'pipeline:start', { runId, instruction, profile: profile ?? 'default' });
-    eventBus.emit('pipeline:start', runId);
+    eventBus.emit('pipeline:start', runId, stageList);
 
     // Initialize GitPublisher for GitHub mode
     if (this.adapter) {
@@ -149,12 +149,18 @@ export class Orchestrator {
   }
 
   private resolveStageList(profile?: PipelineProfile): readonly StageName[] {
-    if (!profile) return STAGE_ORDER;
     const profiles = this.pipelineConfig.profiles;
-    if (!profiles || !profiles[profile]) {
-      throw new Error(`Unknown pipeline profile: ${profile}. Available: ${profiles ? Object.keys(profiles).join(', ') : 'none'}`);
+    if (profile) {
+      if (!profiles || !profiles[profile]) {
+        throw new Error(`Unknown pipeline profile: ${profile}. Available: ${profiles ? Object.keys(profiles).join(', ') : 'none'}`);
+      }
+      return profiles[profile];
     }
-    return profiles[profile];
+    // No profile specified — default to 'design-only' from config, fallback to STAGE_ORDER
+    if (profiles?.['design-only']) {
+      return profiles['design-only'];
+    }
+    return STAGE_ORDER;
   }
 
   private async executeStage(

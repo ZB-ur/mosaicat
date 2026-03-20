@@ -64,6 +64,7 @@ function stageIndex(stage: StageName): number {
 export function attachCLIProgress(): () => void {
   const stageTimers = new Map<StageName, number>();
   const pipelineStart = Date.now();
+  let activeStages: readonly StageName[] = STAGE_ORDER;
 
   const handlers: Array<[string, (...args: any[]) => void]> = [];
 
@@ -77,10 +78,11 @@ export function attachCLIProgress(): () => void {
 
   // ── Pipeline ──
 
-  on('pipeline:start', (runId) => {
+  on('pipeline:start', (runId, stages) => {
+    if (stages) activeStages = stages;
     console.log(`\n${BOLD}${CYAN}━━━ Mosaicat Pipeline ━━━${RESET}`);
     console.log(`${DIM}Run: ${runId}${RESET}`);
-    console.log(`${DIM}Stages: ${STAGE_ORDER.map((s, i) => `${i + 1}.${AGENT_LABELS[s]}`).join(' → ')}${RESET}\n`);
+    console.log(`${DIM}Stages: ${activeStages.map((s, i) => `${i + 1}.${AGENT_LABELS[s]}`).join(' → ')}${RESET}\n`);
   });
 
   on('pipeline:complete', (_runId) => {
@@ -98,10 +100,11 @@ export function attachCLIProgress(): () => void {
 
   on('stage:start', (stage, _runId) => {
     stageTimers.set(stage, Date.now());
-    const idx = stageIndex(stage);
+    const idx = activeStages.indexOf(stage) + 1;
     const label = AGENT_LABELS[stage];
     const desc = AGENT_DESC[stage];
-    console.log(`${BOLD}[${idx}/6] ${label}${RESET} ${DIM}— ${desc}${RESET}`);
+    const total = activeStages.length;
+    console.log(`${BOLD}[${idx}/${total}] ${label}${RESET} ${DIM}— ${desc}${RESET}`);
   });
 
   on('stage:complete', (stage, _runId) => {
