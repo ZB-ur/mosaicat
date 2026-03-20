@@ -23,10 +23,14 @@ function formatBytes(bytes: number): string {
 }
 
 export class CLIArtifactPresenter implements ArtifactPresenter {
-  private baseDir: string;
+  private fixedBaseDir?: string;
 
   constructor(baseDir?: string) {
-    this.baseDir = path.resolve(baseDir ?? getArtifactsDir());
+    this.fixedBaseDir = baseDir;
+  }
+
+  private get baseDir(): string {
+    return path.resolve(this.fixedBaseDir ?? getArtifactsDir());
   }
 
   formatLink(artifactName: string, size: number): string {
