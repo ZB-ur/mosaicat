@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type { StageName, GitHubConfig, ClarificationOption, GateResult, ReviewComment } from './types.js';
 import type { InteractionHandler } from './interaction-handler.js';
+import { CLIInteractionHandler } from './interaction-handler.js';
 import type { GitPlatformAdapter, PRReview } from '../adapters/types.js';
 import type { SecurityConfig } from './security.js';
 import { isTrustedActor } from './security.js';
@@ -11,15 +12,18 @@ export class GitHubInteractionHandler implements InteractionHandler {
   private securityConfig: SecurityConfig;
   private prNumber: number | null = null;
   private lastReviewCount = 0; // track how many reviews we've seen
+  private cliHandler: CLIInteractionHandler;
 
   constructor(
     adapter: GitPlatformAdapter,
     githubConfig: GitHubConfig,
     securityConfig: SecurityConfig,
+    cliHandler?: CLIInteractionHandler,
   ) {
     this.adapter = adapter;
     this.githubConfig = githubConfig;
     this.securityConfig = securityConfig;
+    this.cliHandler = cliHandler ?? new CLIInteractionHandler();
   }
 
   /** Set the PR number for review-based approvals (called by Orchestrator after PR is created) */
@@ -62,12 +66,37 @@ export class GitHubInteractionHandler implements InteractionHandler {
       return this.onClarificationViaIssue(stage, question, runId);
     }
 
-    // Build comment body with options if available
+    // Terminal-first: if TTY available, interact locally then post audit trail
+    if (process.stdin.isTTY) {
+      const answer = await this.cliHandler.onClarification(
+        stage, question, runId, options, allowCustom, context, impact,
+      );
+
+      // Post Q&A as informational audit comment on PR
+      const auditLines = [
+        `## 📋 Clarification resolved: **${stage}**`,
+        '',
+        `**Q:** ${question}`,
+        `**A:** ${answer}`,
+        '',
+        '_Answered via terminal interaction._',
+      ];
+      await this.adapter.addComment(this.prNumber, auditLines.join('\n'));
+
+      return answer;
+    }
+
+    // No TTY (CI mode) — fall back to PR comment + polling
     const lines = [
       `## ❓ Clarification needed: **${stage}**`,
       '',
-      question,
     ];
+
+    if (context) lines.push(`> **Context:** ${context}`);
+    if (impact) lines.push(`> **Impact:** ${impact}`);
+    if (context || impact) lines.push('');
+
+    lines.push(question);
 
     if (options && options.length > 0) {
       lines.push('', '### Options');
