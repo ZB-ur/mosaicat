@@ -21,7 +21,7 @@ export async function resolveGitHubAuth(): Promise<AuthConfig> {
   if (installations.length === 0) {
     throw new Error(
       'GitHub App is not installed on any repository.\n' +
-      'Install at: https://github.com/apps/mosaicat'
+      'Install at: https://github.com/apps/mosaicatie'
     );
   }
 
@@ -30,7 +30,7 @@ export async function resolveGitHubAuth(): Promise<AuthConfig> {
   if (allRepos.length === 0) {
     throw new Error(
       'GitHub App is installed but no accessible repositories found.\n' +
-      'Check App permissions at: https://github.com/apps/mosaicat'
+      'Check App permissions at: https://github.com/apps/mosaicatie'
     );
   }
 
