@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <strong>An AI-agent pipeline that turns a single instruction into validated product deliverables — <br/>research, PRD, UX flows, API spec, React components, code, and code review.</strong>
+  <strong>Spec Coding — a spec-driven AI pipeline that turns a single instruction into<br/>layered specifications and validated code.</strong>
 </p>
 
 <p align="center">
@@ -28,12 +28,12 @@
 
 Traditional software delivery methodologies — Scrum, Kanban, SAFe — were designed to optimize **human execution efficiency**. In the AI era, execution shifts from humans to agents, and the bottleneck moves to **human decision efficiency**: are we building the right thing? Does the design make sense?
 
-Mosaicat restructures the delivery pipeline around this insight:
+Mosaicat introduces **Spec Coding** — a delivery model where humans write and approve specifications, not code. The pipeline generates layered specs (PRD → UX flows → API spec → tech spec), each constraining the next agent. Code is the final derivative. Validation checks cross-spec conformance, not code quality.
 
-- **Humans decide** at four critical checkpoints (PRD approval, design review, architecture sign-off, code review). Everything else is autonomous.
-- **Agents coordinate through contracts**, not conversations. Each agent sees only its contracted inputs — never upstream reasoning. Errors stay local instead of propagating through shared context.
-- **Validation is layered and controlled** — 4 fully deterministic programmatic checks (zero LLM) + 4 LLM checks scoped to structural manifests (~1–2 KB each), replacing 50k-token full-artifact reviews prone to hallucination.
-- **Knowledge accumulates** across runs. Prompt evolution and skill capture turn each delivery into organizational memory — with human approval as the safety gate.
+- **Humans approve specs** at four critical checkpoints (PRD, design, architecture, code review). Everything between runs autonomously.
+- **Spec boundaries isolate errors** — each agent sees only its upstream spec, never the reasoning behind it. Errors stay local instead of propagating through shared context.
+- **Validation is spec conformance** — 4 fully deterministic programmatic checks (zero LLM) + 4 LLM checks scoped to structural manifests (~1–2 KB each), replacing 50k-token full-artifact reviews.
+- **Specs evolve across runs** — prompt evolution and skill capture turn each delivery into organizational specification knowledge — with human approval as the safety gate.
 
 ```
 You:  "Build a personal finance tracker with income/expense logging and monthly reports"
@@ -48,6 +48,7 @@ Out:  Research → PRD → UX Flows → OpenAPI Spec → 25 React Components + S
 
 ### Key Features
 
+- **Spec-driven pipeline** — intent → layered specifications (PRD → UX → API → tech spec) → code; each spec layer is the sole input contract for the next agent
 - **10 autonomous agents** — mirrors a real product team: consultant, researcher, PM, UX/UI designers, architect, tech lead, coder, reviewer, validator
 - **Configurable approval gates** — full autonomy, full manual, or anything in between per stage
 - **8 layered validation checks** — 4 programmatic (zero LLM, fully deterministic) + 4 LLM-assisted (scoped to lightweight manifests)
@@ -159,9 +160,9 @@ graph LR
 | 9 | **Reviewer** | tech spec + code | `review-report.md` + manifest | **manual** |
 | 10 | **Validator** | all manifests | `validation-report.md` (8 checks) | auto |
 
-### Manifests and Validation
+### Manifests and Spec Conformance
 
-Each agent emits a **manifest** (~500 bytes) declaring structural facts: which Feature IDs it covered, which files it produced. The Validator runs **8 deterministic checks** — set intersection, file existence, schema conformance — without calling any LLM. This is how you validate AI output at scale without trusting another AI to do the checking.
+Each agent emits a **manifest** (~1–2 KB) declaring structural facts: which Feature IDs it covered, which files it produced. The Validator runs **8 layered checks** — 4 programmatic (set intersection, file existence — zero LLM) + 4 LLM-assisted (scoped to manifests, not full artifacts). This is spec conformance at scale: you verify that each specification layer is structurally consistent with the others, without trusting another AI to judge quality.
 
 ---
 
@@ -226,27 +227,38 @@ GitHub mode fits naturally into existing team workflows — designers review com
 
 | Capability | Mosaicat | MetaGPT | CrewAI | v0 / bolt.new | Cursor / Windsurf |
 |---|:---:|:---:|:---:|:---:|:---:|
+| Spec-driven pipeline | ✅ Layered specs → code | ❌ | ❌ | ❌ | ❌ |
 | Full pipeline (idea → code) | ✅ 10 agents | ✅ | ✅ | ❌ UI only | ❌ Code only |
-| Deterministic validation | ✅ 8 checks | ❌ | ❌ | ❌ | ❌ |
+| Spec conformance validation | ✅ 8 checks | ❌ | ❌ | ❌ | ❌ |
 | Feature ID traceability | ✅ F-NNN end-to-end | ❌ | ❌ | ❌ | ❌ |
 | Configurable approval gates | ✅ Per-stage | ❌ | ❌ | ❌ | ❌ |
 | GitHub-native workflow | ✅ PR + Issues | ❌ | ❌ | ❌ | ❌ |
 | Visual design output | ✅ React + Playwright | ❌ | ❌ | ✅ | ❌ |
 | Self-evolution | ✅ Human-approved | ❌ | ❌ | ❌ | ❌ |
-| Artifact isolation | ✅ Strict contracts | ❌ Shared memory | ❌ Shared memory | N/A | N/A |
+| Spec isolation | ✅ Strict contracts | ❌ Shared memory | ❌ Shared memory | N/A | N/A |
 | Auth requirement | Claude subscription | API key | API key | Subscription | Subscription |
 
 ---
 
 ## Design Principles
 
+### Spec Coding: Specifications as First-Class Artifacts
+
+> The pipeline doesn't start by generating code. It generates a chain of increasingly detailed specifications — PRD → UX flows → API spec → tech spec — and derives code as the final step. Each specification is the sole input contract for the next agent.
+
+This is the core architectural decision: when AI handles execution, the valuable artifacts are specifications, not implementations. Every other design principle follows from this:
+
+- **Spec isolation** exists because spec boundaries must be strict — an agent reading a spec should not be influenced by how it was produced.
+- **Manifest-based validation** works because specs have verifiable structural properties (feature coverage, endpoint mapping, file existence) that don't require LLM judgment.
+- **Approval gates** are placed at spec transitions — the four points where a human reviews a specification before the next layer derives from it.
+
 ### Contracts, Not Conversations
 
-> Multi-agent failures rarely come from dumb agents. They come from agents sharing too much context — errors correlate and propagate. The fix isn't smarter agents. It's stricter boundaries.
+> Multi-agent failures rarely come from dumb agents. They come from agents sharing too much context — errors correlate and propagate. The fix isn't smarter agents. It's stricter spec boundaries.
 
-**Artifact Isolation** — Each agent sees only its contracted inputs, never upstream reasoning. The UX Designer reads the PRD but doesn't know why the Researcher excluded a competitor. This is not a limitation; it is the architecture. Errors stay local. Each agent brings fresh judgment.
+Each agent sees only its contracted spec inputs, never upstream reasoning. The UXDesigner reads the PRD but doesn't know why the Researcher excluded a competitor. This is not a limitation; it is the architecture. Errors stay local. Each agent brings fresh judgment.
 
-**Manifest-Based Validation** — Full-artifact validation costs 50k+ tokens and hallucinations pass as checks. Instead, each agent emits a ~500-byte manifest declaring structural facts. The Validator runs 8 deterministic checks — zero LLM. This scales to enterprise pipelines where you cannot afford probabilistic quality gates.
+Each agent emits a ~1–2 KB manifest declaring structural facts. The Validator runs 8 layered checks — 4 programmatic (zero LLM) + 4 LLM-assisted (scoped to manifests). This scales to enterprise pipelines where you cannot afford probabilistic quality gates.
 
 ### Autonomy With Guardrails
 
@@ -263,16 +275,16 @@ Full autonomy with production-grade guardrails. No all-or-nothing choice.
 
 ### From Execution Speed to Decision Speed
 
-Traditional delivery methodologies (Scrum, Kanban) optimize human execution speed. When AI handles execution, the bottleneck shifts to human decision speed. Mosaicat's pipeline requires human decisions at exactly the right points:
+Traditional delivery methodologies (Scrum, Kanban) optimize human execution speed. When AI handles execution, the bottleneck shifts to human decision speed. Mosaicat places human decisions at spec transitions — the four points where one specification layer is approved before the next derives from it:
 
-- **PRD approval** — are we building the right thing?
-- **Design review** — does the UX/UI match intent?
-- **Tech spec sign-off** — is the architecture sound?
-- **Code review** — does the implementation match spec?
+- **PRD approval** — is the problem spec correct?
+- **Design review** — does the UX/UI spec match intent?
+- **Tech spec sign-off** — is the architecture spec sound?
+- **Code review** — does the implementation conform to its spec?
 
-Everything between these checkpoints runs autonomously. This mirrors how senior engineering organizations already work — the pipeline just removes the manual execution between decisions.
+Everything between these spec approvals runs autonomously. This mirrors how senior engineering organizations already work — the pipeline just removes the manual execution between spec sign-offs.
 
-### Self-Evolution: Organizational Memory That Grows
+### Self-Evolution: Specification Knowledge That Grows
 
 Each pipeline run can improve the system. The evolution engine proposes:
 
