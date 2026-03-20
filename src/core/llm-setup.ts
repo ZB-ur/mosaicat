@@ -65,6 +65,22 @@ const PROVIDERS: ProviderChoice[] = [
     defaultModel: 'moonshot-v1-128k',
     baseUrl: 'https://api.moonshot.cn/v1',
   },
+  {
+    name: 'DeepSeek',
+    value: 'deepseek',
+    needsKey: true,
+    keyEnvHint: 'https://platform.deepseek.com/api_keys',
+    defaultModel: 'deepseek-chat',
+    baseUrl: 'https://api.deepseek.com/v1',
+  },
+  {
+    name: 'MiniMax',
+    value: 'minimax',
+    needsKey: true,
+    keyEnvHint: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
+    defaultModel: 'MiniMax-Text-01',
+    baseUrl: 'https://api.minimax.chat/v1',
+  },
 ];
 
 export async function runSetup(): Promise<void> {

@@ -65,6 +65,18 @@ const MODEL_OVERRIDES: Record<string, Partial<ProviderCapabilities>> = {
     maxContextTokens: 1_000_000,
     chineseQuality: 'medium',
   },
+  'deepseek-chat': {
+    structuredOutput: true,
+    toolUse: true,
+    maxContextTokens: 64_000,
+    chineseQuality: 'high',
+  },
+  'MiniMax-Text-01': {
+    structuredOutput: true,
+    toolUse: true,
+    maxContextTokens: 1_000_000,
+    chineseQuality: 'high',
+  },
 };
 
 const DEFAULT_OPENAI_COMPATIBLE: ProviderCapabilities = {
