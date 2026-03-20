@@ -256,7 +256,14 @@ export class Orchestrator {
             );
           }
 
-          // Re-run the stage after rejection
+          // Re-run the stage after rejection (with depth guard)
+          const stageStatus = run.stages[stage]!;
+          if (stageStatus.retryCount >= maxRetries) {
+            throw new Error(
+              `Stage ${stage} rejected ${stageStatus.retryCount} times, exceeding max retries (${maxRetries})`
+            );
+          }
+          stageStatus.retryCount++;
           transitionStage(run, stage, 'idle');
           return this.executeStage(run, stage, provider, logger);
         }

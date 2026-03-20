@@ -29,6 +29,7 @@ export class ClaudeCLIProvider implements LLMProvider {
         child.stdout.on('data', (chunk: Buffer) => {
           totalBytes += chunk.length;
           if (totalBytes > MAX_BUFFER) {
+            clearTimeout(timer);
             child.kill('SIGTERM');
             reject(new Error(`Claude CLI output exceeded ${MAX_BUFFER} bytes`));
             return;
