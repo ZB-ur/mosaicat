@@ -97,7 +97,7 @@ export async function runSetup(): Promise<void> {
   const providerValue = await select({
     message: '选择 LLM 提供商:',
     choices: PROVIDERS.map(p => ({
-      name: p.name,
+      name: p.defaultModel ? `${p.name} — ${p.defaultModel}` : p.name,
       value: p.value,
     })),
     default: existing?.provider,
