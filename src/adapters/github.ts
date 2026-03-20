@@ -23,7 +23,7 @@ export type TokenProvider = string | (() => Promise<string>);
 
 export class GitHubAdapter implements GitPlatformAdapter {
   private octokit: Octokit;
-  private tokenProvider: TokenProvider | null;
+  private tokenProvider: (() => Promise<string>) | null;
   private owner: string;
   private repo: string;
 
@@ -52,7 +52,18 @@ export class GitHubAdapter implements GitPlatformAdapter {
     }
   }
 
+  /**
+   * Ensure the token is fresh before every API call.
+   * The tokenProvider internally checks expiry — no-op if still valid.
+   */
+  private async ensureFreshToken(): Promise<void> {
+    if (this.tokenProvider) {
+      await this.refreshToken();
+    }
+  }
+
   async createIssue(params: CreateIssueParams): Promise<IssueRef> {
+    await this.ensureFreshToken();
     const { data } = await this.octokit.issues.create({
       owner: this.owner,
       repo: this.repo,
@@ -64,6 +75,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async addComment(issueNumber: number, body: string): Promise<void> {
+    await this.ensureFreshToken();
     await this.octokit.issues.createComment({
       owner: this.owner,
       repo: this.repo,
@@ -73,6 +85,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async closeIssue(issueNumber: number): Promise<void> {
+    await this.ensureFreshToken();
     await this.octokit.issues.update({
       owner: this.owner,
       repo: this.repo,
@@ -82,6 +95,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async addLabels(issueNumber: number, labels: string[]): Promise<void> {
+    await this.ensureFreshToken();
     await this.octokit.issues.addLabels({
       owner: this.owner,
       repo: this.repo,
@@ -91,6 +105,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async removeLabel(issueNumber: number, label: string): Promise<void> {
+    await this.ensureFreshToken();
     await this.octokit.issues.removeLabel({
       owner: this.owner,
       repo: this.repo,
@@ -100,6 +115,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async getComments(issueNumber: number, since?: string): Promise<IssueComment[]> {
+    await this.ensureFreshToken();
     const { data } = await this.octokit.issues.listComments({
       owner: this.owner,
       repo: this.repo,
@@ -115,6 +131,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async getIssue(issueNumber: number): Promise<IssueDetails> {
+    await this.ensureFreshToken();
     const { data } = await this.octokit.issues.get({
       owner: this.owner,
       repo: this.repo,
@@ -130,7 +147,9 @@ export class GitHubAdapter implements GitPlatformAdapter {
       closedAt: data.closed_at ?? undefined,
     };
   }
+
   async createPR(params: { title: string; body: string; head: string; base?: string; draft?: boolean }): Promise<PRRef> {
+    await this.ensureFreshToken();
     const { data } = await this.octokit.pulls.create({
       owner: this.owner,
       repo: this.repo,
@@ -144,6 +163,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async markPRReady(prNumber: number): Promise<void> {
+    await this.ensureFreshToken();
     // GitHub REST API doesn't support marking as ready — use GraphQL
     const { data: pr } = await this.octokit.pulls.get({
       owner: this.owner,
@@ -164,6 +184,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   // ── Git Data API ──
 
   async getRef(ref: string): Promise<GitRef> {
+    await this.ensureFreshToken();
     const { data } = await this.octokit.git.getRef({
       owner: this.owner, repo: this.repo, ref,
     });
@@ -171,6 +192,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async createRef(ref: string, sha: string): Promise<GitRef> {
+    await this.ensureFreshToken();
     const { data } = await this.octokit.git.createRef({
       owner: this.owner, repo: this.repo, ref, sha,
     });
@@ -178,6 +200,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async updateRef(ref: string, sha: string): Promise<GitRef> {
+    await this.ensureFreshToken();
     // ref for updateRef should NOT include "refs/" prefix
     const shortRef = ref.startsWith('refs/') ? ref.slice(5) : ref;
     const { data } = await this.octokit.git.updateRef({
@@ -187,6 +210,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async createBlob(content: string, encoding: 'utf-8' | 'base64'): Promise<GitBlob> {
+    await this.ensureFreshToken();
     const { data } = await this.octokit.git.createBlob({
       owner: this.owner, repo: this.repo, content, encoding,
     });
@@ -194,6 +218,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async createTree(entries: GitTreeEntry[], baseTreeSha?: string): Promise<GitTree> {
+    await this.ensureFreshToken();
     const { data } = await this.octokit.git.createTree({
       owner: this.owner, repo: this.repo,
       tree: entries.map((e) => ({ path: e.path, mode: e.mode, type: e.type, sha: e.sha })),
@@ -203,6 +228,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async createCommit(message: string, treeSha: string, parentShas: string[]): Promise<GitCommit> {
+    await this.ensureFreshToken();
     const { data } = await this.octokit.git.createCommit({
       owner: this.owner, repo: this.repo, message, tree: treeSha, parents: parentShas,
     });
@@ -210,6 +236,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async getCommit(sha: string): Promise<GitCommit> {
+    await this.ensureFreshToken();
     const { data } = await this.octokit.git.getCommit({
       owner: this.owner, repo: this.repo, commit_sha: sha,
     });
@@ -217,6 +244,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async listReviews(prNumber: number): Promise<PRReview[]> {
+    await this.ensureFreshToken();
     const { data } = await this.octokit.pulls.listReviews({
       owner: this.owner, repo: this.repo, pull_number: prNumber,
     });
@@ -230,6 +258,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async listReviewComments(prNumber: number): Promise<PRReviewComment[]> {
+    await this.ensureFreshToken();
     const { data } = await this.octokit.pulls.listReviewComments({
       owner: this.owner, repo: this.repo, pull_number: prNumber,
     });
@@ -244,6 +273,7 @@ export class GitHubAdapter implements GitPlatformAdapter {
   }
 
   async createFileContent(filePath: string, content: string, message: string): Promise<{ sha: string }> {
+    await this.ensureFreshToken();
     const { data } = await this.octokit.repos.createOrUpdateFileContents({
       owner: this.owner, repo: this.repo,
       path: filePath, message,
