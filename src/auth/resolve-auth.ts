@@ -70,30 +70,25 @@ function collectRepos(installations: InstallationInfo[]): RepoEntry[] {
 }
 
 async function resolveRepo(allRepos: RepoEntry[]): Promise<RepoEntry> {
-  // 1. Try to match via git remote
-  const remoteSlug = detectGitRemoteSlug();
-  if (remoteSlug) {
-    const found = allRepos.find((r) => r.fullName === remoteSlug);
-    if (found) return found;
-  }
-
-  // 2. Single repo → auto-select
+  // Single repo → auto-select, no ambiguity
   if (allRepos.length === 1) {
     return allRepos[0];
   }
 
-  // 3. Multiple repos → interactive selection
-  console.log(`\n\x1b[2mGitHub App 已安装在 ${allRepos.length} 个仓库上\x1b[0m`);
-  if (remoteSlug) {
-    console.log(`\x1b[2m当前 git remote: ${remoteSlug}（不在已安装列表中）\x1b[0m`);
-  }
+  // Multiple repos — try git remote match as default, but always let user confirm/switch
+  const remoteSlug = detectGitRemoteSlug();
+  const remoteMatch = remoteSlug ? allRepos.find((r) => r.fullName === remoteSlug) : null;
+
+  // Build choices with remote match as default
+  const choices = allRepos.map(r => ({
+    name: r.fullName === remoteMatch?.fullName ? `${r.fullName} (当前仓库)` : r.fullName,
+    value: r,
+  }));
 
   const chosen = await select({
     message: '选择目标仓库:',
-    choices: allRepos.map(r => ({
-      name: r.fullName,
-      value: r,
-    })),
+    choices,
+    default: remoteMatch ?? undefined,
   });
 
   console.log(`\x1b[32m✓ 已选择: ${chosen.fullName}\x1b[0m`);
