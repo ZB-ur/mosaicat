@@ -10,6 +10,7 @@ export const UIPlanComponentSchema = z.object({
   children: z.array(z.string()),
   props: z.array(z.string()),
   priority: z.number(),
+  category: z.enum(['atomic', 'composite', 'page']),
 });
 
 export const UIPlanModuleSchema = z.object({
