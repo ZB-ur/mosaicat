@@ -91,6 +91,18 @@ export interface EvolutionConfig {
 
 export type PipelineProfile = 'design-only' | 'full' | 'frontend-only';
 
+export interface LLMProviderConfig {
+  type: string;             // 'claude-cli' | 'anthropic-sdk' | 'openai-compatible'
+  model?: string;
+  base_url?: string;
+  api_key_env?: string;     // environment variable name, not the key itself
+}
+
+export interface LLMConfig {
+  default: string;          // provider name from the pool
+  providers: Record<string, LLMProviderConfig>;
+}
+
 export interface PipelineConfig {
   stages: Partial<Record<StageName, StageConfig>>;
   profiles?: Record<PipelineProfile, StageName[]>;
@@ -104,6 +116,7 @@ export interface PipelineConfig {
   };
   github: GitHubConfig;
   evolution?: EvolutionConfig;
+  llm?: LLMConfig;
 }
 
 export interface AgentAutonomyConfig {

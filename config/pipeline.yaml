@@ -93,3 +93,39 @@ github:
 evolution:
   enabled: false
   cooldown_hours: 24
+
+# LLM provider pool — configure which models are available
+# Default: auto-detect (ANTHROPIC_API_KEY → anthropic-sdk, else → claude-cli)
+llm:
+  default: claude-cli
+  providers:
+    claude-cli:
+      type: claude-cli
+    anthropic-sdk:
+      type: anthropic-sdk
+      model: claude-sonnet-4-20250514
+    gpt-4o:
+      type: openai-compatible
+      base_url: https://api.openai.com/v1
+      model: gpt-4o
+      api_key_env: OPENAI_API_KEY
+    qwen-max:
+      type: openai-compatible
+      base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      model: qwen-max
+      api_key_env: DASHSCOPE_API_KEY
+    doubao:
+      type: openai-compatible
+      base_url: https://ark.cn-beijing.volces.com/api/v3
+      model: doubao-pro-256k
+      api_key_env: ARK_API_KEY
+    kimi:
+      type: openai-compatible
+      base_url: https://api.moonshot.cn/v1
+      model: moonshot-v1-128k
+      api_key_env: MOONSHOT_API_KEY
+    gemini:
+      type: openai-compatible
+      base_url: https://generativelanguage.googleapis.com/v1beta/openai
+      model: gemini-2.5-pro
+      api_key_env: GOOGLE_API_KEY
