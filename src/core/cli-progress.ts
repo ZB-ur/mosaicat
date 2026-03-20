@@ -73,10 +73,11 @@ export function attachCLIProgress(): () => void {
 
   // ── Pipeline ──
 
-  on('pipeline:start', (runId, stages) => {
+  on('pipeline:start', (runId, stages, provider) => {
     if (stages) activeStages = stages;
     console.log(`\n${BOLD}${CYAN}━━━ Mosaicat Pipeline ━━━${RESET}`);
     console.log(`${DIM}Run: ${runId}${RESET}`);
+    if (provider) console.log(`${DIM}LLM: ${provider}${RESET}`);
     console.log(`${DIM}Stages: ${activeStages.map((s, i) => `${i + 1}.${AGENT_LABELS[s]}`).join(' → ')}${RESET}\n`);
   });
 

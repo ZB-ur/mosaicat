@@ -36,6 +36,12 @@ if (command === 'login') {
   // ── Clear cached auth ──
   clearCachedAuth();
   console.log('\x1b[32m✓\x1b[0m Logged out.');
+} else if (command === 'setup') {
+  // ── Interactive LLM provider setup ──
+  import('./core/llm-setup.js').then(({ runSetup }) => runSetup()).catch((err) => {
+    console.error(`\x1b[31m[mosaicat] Setup failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
+    process.exit(1);
+  });
 } else if (command === 'run') {
   const instruction = args[1];
   if (!instruction) {
@@ -102,6 +108,7 @@ if (command === 'login') {
   });
 } else {
   console.log('Usage:');
+  console.log('  mosaicat setup                                     # Configure LLM provider (interactive)');
   console.log('  mosaicat login                                     # One-time GitHub OAuth login');
   console.log('  mosaicat logout                                    # Clear saved credentials');
   console.log('  mosaicat run <instruction> [--auto-approve] [--github] [--evolve]');

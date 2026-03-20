@@ -4,16 +4,33 @@ import type { PipelineConfig, LLMProviderConfig } from './types.js';
 import { ClaudeCLIProvider } from '../providers/claude-cli.js';
 import { AnthropicSDKProvider } from '../providers/anthropic-sdk.js';
 import { OpenAICompatibleProvider } from '../providers/openai-compatible.js';
+import { loadUserLLMConfig } from './llm-config-store.js';
+
+// Provider metadata for resolving user config → provider instance
+const OPENAI_COMPATIBLE_PROVIDERS: Record<string, { baseUrl: string; defaultModel: string }> = {
+  'gpt-4o': { baseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4o' },
+  'gemini': { baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', defaultModel: 'gemini-2.5-pro' },
+  'qwen-max': { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModel: 'qwen-max' },
+  'doubao': { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', defaultModel: 'doubao-pro-256k' },
+  'kimi': { baseUrl: 'https://api.moonshot.cn/v1', defaultModel: 'moonshot-v1-128k' },
+};
 
 /**
  * Create the default LLM provider.
  * Resolution order:
- * 1. pipeline.yaml llm.default (if config provided)
- * 2. MOSAIC_PROVIDER env var
- * 3. Auto-detect: ANTHROPIC_API_KEY → anthropic-sdk, else → claude-cli
+ * 1. ~/.mosaicat/llm-config.json (user setup wizard)
+ * 2. pipeline.yaml llm.default (if config provided)
+ * 3. MOSAIC_PROVIDER env var
+ * 4. Auto-detect: ANTHROPIC_API_KEY → anthropic-sdk, else → claude-cli
  */
 export function createProvider(config?: PipelineConfig): LLMProvider {
-  // 1. Try config-based resolution
+  // 1. User-level config from `mosaicat setup`
+  const userConfig = loadUserLLMConfig();
+  if (userConfig) {
+    return createFromUserConfig(userConfig, config);
+  }
+
+  // 2. Try config-based resolution
   if (config?.llm) {
     const defaultName = config.llm.default;
     const providerConfig = config.llm.providers[defaultName];
@@ -22,10 +39,10 @@ export function createProvider(config?: PipelineConfig): LLMProvider {
     }
   }
 
-  // 2. Env var override
+  // 3. Env var override
   let providerType = process.env.MOSAIC_PROVIDER;
   if (!providerType) {
-    // 3. Auto-detect
+    // 4. Auto-detect
     providerType = process.env.ANTHROPIC_API_KEY ? 'anthropic-sdk' : 'claude-cli';
   }
 
@@ -37,8 +54,49 @@ export function createProvider(config?: PipelineConfig): LLMProvider {
     case 'anthropic-sdk':
       return new AnthropicSDKProvider();
     default:
-      throw new Error(`Unknown provider: ${providerType}. Use "stub", "claude-cli", or "anthropic-sdk".`);
+      throw new Error(`Unknown provider: ${providerType}. Use "stub", "claude-cli", or "anthropic-sdk", or run "mosaicat setup".`);
   }
+}
+
+/**
+ * Create provider from user-level config (from `mosaicat setup`).
+ * Falls back to pipeline.yaml for base_url/model if needed.
+ */
+function createFromUserConfig(
+  userConfig: ReturnType<typeof loadUserLLMConfig> & {},
+  pipelineConfig?: PipelineConfig,
+): LLMProvider {
+  const name = userConfig.provider;
+
+  if (name === 'claude-cli') {
+    return new ClaudeCLIProvider();
+  }
+
+  if (name === 'anthropic-sdk') {
+    return new AnthropicSDKProvider(userConfig.apiKey, userConfig.model);
+  }
+
+  // OpenAI-compatible: resolve from known providers or pipeline.yaml
+  const known = OPENAI_COMPATIBLE_PROVIDERS[name];
+  if (known && userConfig.apiKey) {
+    return new OpenAICompatibleProvider({
+      apiKey: userConfig.apiKey,
+      baseUrl: known.baseUrl,
+      model: userConfig.model ?? known.defaultModel,
+    });
+  }
+
+  // Try pipeline.yaml config pool with user's API key injected
+  const poolConfig = pipelineConfig?.llm?.providers[name];
+  if (poolConfig && poolConfig.type === 'openai-compatible' && userConfig.apiKey) {
+    return new OpenAICompatibleProvider({
+      apiKey: userConfig.apiKey,
+      baseUrl: poolConfig.base_url!,
+      model: userConfig.model ?? poolConfig.model!,
+    });
+  }
+
+  throw new Error(`Cannot resolve provider "${name}". Run "mosaicat setup" to reconfigure.`);
 }
 
 /**
@@ -68,7 +126,7 @@ function instantiateProvider(name: string, providerConfig: LLMProviderConfig): L
       const apiKey = apiKeyEnv ? process.env[apiKeyEnv] : undefined;
       if (!apiKey) {
         throw new Error(
-          `Provider "${name}" requires env var ${apiKeyEnv} to be set`
+          `Provider "${name}" requires env var ${apiKeyEnv} to be set. Or run "mosaicat setup" for guided configuration.`
         );
       }
       if (!providerConfig.base_url) {

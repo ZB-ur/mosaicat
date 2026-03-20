@@ -26,6 +26,7 @@ import { generatePRBody } from './pr-body-generator.js';
 import { extractManifestSummary } from './manifest.js';
 import { IntentConsultantAgent } from '../agents/intent-consultant.js';
 import { artifactExists, initArtifactsDir, getArtifactsDir } from './artifact.js';
+import { loadUserLLMConfig } from './llm-config-store.js';
 const AGENT_DESC: Record<StageName, string> = {
   intent_consultant: '意图深挖',
   researcher: '市场调研 & 竞品分析',
@@ -80,9 +81,11 @@ export class Orchestrator {
     const artifactsDir = initArtifactsDir(runId);
     const logger = new Logger(runId);
     const provider = createProvider(this.pipelineConfig);
+    const userLLMConfig = loadUserLLMConfig();
+    const providerName = userLLMConfig?.provider ?? this.pipelineConfig.llm?.default ?? 'claude-cli';
 
-    logger.pipeline('info', 'pipeline:start', { runId, instruction, profile: profile ?? 'default', artifactsDir });
-    eventBus.emit('pipeline:start', runId, stageList);
+    logger.pipeline('info', 'pipeline:start', { runId, instruction, profile: profile ?? 'default', artifactsDir, provider: providerName });
+    eventBus.emit('pipeline:start', runId, stageList, providerName);
 
     // Initialize GitPublisher for GitHub mode
     if (this.adapter) {
