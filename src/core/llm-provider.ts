@@ -8,10 +8,21 @@ export interface LLMCallOptions {
   mcpConfigPaths?: string[];
   /** Maximum dollar amount to spend on this call */
   maxBudgetUsd?: number;
+  /** Override the model for this specific call */
+  model?: string;
+  /** LLM temperature (0-1). Lower = more deterministic. */
+  temperature?: number;
 }
 
 export interface LLMResponse {
   content: string;
+  /** The model that actually processed the request */
+  model?: string;
+  /** Token usage for cost tracking */
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+  };
 }
 
 export interface LLMProvider {
