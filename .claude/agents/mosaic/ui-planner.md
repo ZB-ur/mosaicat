@@ -82,7 +82,7 @@ If the PRD does **not** specify design direction, you **must** analyze the PRD c
 
 ### Field Definitions
 - **name**: PascalCase component name
-- **file**: Output path for the React tsx file (always `components/{Name}.tsx`)
+- **file**: Output path for the component file (e.g., `components/{Name}.tsx` for React/TypeScript — determine extension from tech-spec's frontend framework)
 - **preview**: Output path for the HTML preview (always `previews/{Name}.html`)
 - **purpose**: One-line description of what this component does
 - **covers_features**: Array of PRD Feature IDs (F-NNN) this component covers
