@@ -8,3 +8,6 @@ export { TechLeadAgent } from './tech-lead.js';
 export { CoderAgent } from './coder.js';
 export { ReviewerAgent } from './reviewer.js';
 export { ValidatorAgent } from './validator.js';
+export { QALeadAgent } from './qa-lead.js';
+export { TesterAgent } from './tester.js';
+export { SecurityAuditorAgent } from './security-auditor.js';

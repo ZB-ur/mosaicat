@@ -15,6 +15,7 @@ const AGENT_LABELS: Record<StageName, string> = {
   validator: 'Validator',
   qa_lead: 'QALead',
   tester: 'Tester',
+  security_auditor: 'SecurityAuditor',
 };
 
 const AGENT_DESC: Record<StageName, string> = {
@@ -30,6 +31,7 @@ const AGENT_DESC: Record<StageName, string> = {
   validator: '交叉验证报告',
   qa_lead: 'QA 计划',
   tester: '自动化测试',
+  security_auditor: '安全审计',
 };
 
 const DIM = '\x1b[2m';
