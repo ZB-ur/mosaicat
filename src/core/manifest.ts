@@ -124,6 +124,23 @@ export const TestReportManifestSchema = z.object({
   verdict: z.enum(['pass', 'fail']),
 });
 
+export const SecurityReportManifestSchema = z.object({
+  scan_results: z.object({
+    dependency_vulnerabilities: z.number(),
+    code_issues: z.number(),
+    secrets_found: z.number(),
+  }),
+  llm_findings: z.array(
+    z.object({
+      severity: z.enum(['critical', 'high', 'medium', 'low']),
+      category: z.string(),
+      file: z.string(),
+      description: z.string(),
+    })
+  ),
+  verdict: z.enum(['pass', 'fail', 'warn']),
+});
+
 export const ReviewManifestSchema = z.object({
   issues: z.array(
     z.object({
@@ -151,6 +168,7 @@ const MANIFEST_SCHEMAS: Record<string, z.ZodType> = {
   'code.manifest.json': CodeManifestSchema,
   'test-plan.manifest.json': TestPlanManifestSchema,
   'test-report.manifest.json': TestReportManifestSchema,
+  'security-report.manifest.json': SecurityReportManifestSchema,
   'review.manifest.json': ReviewManifestSchema,
 };
 
@@ -163,6 +181,7 @@ export type TechSpecManifest = z.infer<typeof TechSpecManifestSchema>;
 export type CodeManifest = z.infer<typeof CodeManifestSchema>;
 export type TestPlanManifest = z.infer<typeof TestPlanManifestSchema>;
 export type TestReportManifest = z.infer<typeof TestReportManifestSchema>;
+export type SecurityReportManifest = z.infer<typeof SecurityReportManifestSchema>;
 export type ReviewManifest = z.infer<typeof ReviewManifestSchema>;
 
 export function writeManifest(name: string, data: unknown): void {
@@ -268,6 +287,18 @@ const SUMMARY_EXTRACTORS: Record<string, (data: Record<string, unknown>) => stri
         const breakdown = [unitCount && `${unitCount} unit`, intCount && `${intCount} integration`, e2eCount && `${e2eCount} e2e`].filter(Boolean).join(', ');
         lines.push(`**${suite.module}** (\`${suite.test_file}\`) — ${breakdown}`);
       }
+    }
+    return lines;
+  },
+  'security-report.manifest.json': (data) => {
+    const m = data as unknown as SecurityReportManifest;
+    const lines: string[] = [];
+    lines.push(`**Verdict:** ${m.verdict}`);
+    lines.push(`**Scan:** ${m.scan_results.dependency_vulnerabilities} dep vulns, ${m.scan_results.secrets_found} secrets`);
+    if (m.llm_findings.length > 0) {
+      const critical = m.llm_findings.filter(f => f.severity === 'critical').length;
+      const high = m.llm_findings.filter(f => f.severity === 'high').length;
+      lines.push(`**LLM Findings:** ${m.llm_findings.length} total (${critical} critical, ${high} high)`);
     }
     return lines;
   },

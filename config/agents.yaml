@@ -81,6 +81,9 @@ agents:
       - components.manifest.json
       - tech-spec.manifest.json
       - code.manifest.json
+      - test-plan.manifest.json
+      - test-report.manifest.json
+      - security-report.manifest.json
       - review.manifest.json
     outputs:
       - validation-report.md
@@ -169,6 +172,22 @@ agents:
         - .mosaic/artifacts/tests/
       max_turns: 10
       max_budget_usd: 3
+
+  security_auditor:
+    name: SecurityAuditor
+    prompt_file: .claude/agents/mosaic/security-auditor.md
+    inputs:
+      - code/
+      - code.manifest.json
+    outputs:
+      - security-report.md
+      - security-report.manifest.json
+    autonomy:
+      allowed_tools:
+        - Read
+        - Bash
+      max_turns: 5
+      max_budget_usd: 2
 
   reviewer:
     name: Reviewer

@@ -49,6 +49,10 @@ stages:
     clarification: false
     gate: manual
     retry_max: 3
+  security_auditor:
+    clarification: false
+    gate: auto
+    retry_max: 1
 
 profiles:
   design-only:
