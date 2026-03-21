@@ -842,7 +842,24 @@ backend/
 | Phase D | 多 LLM 支持（OpenAI 兼容 + Anthropic SDK 增强 + Provider 池） | #239 | ✅ |
 | Phase E | Pipeline 修复 + Artifact 隔离 + Setup 引导 + 文档更新 | #243 | ✅ |
 
-**M5 预留：** QALead / Tester / SecurityAuditor Agent、DAG 执行引擎、Per-agent LLM 路由、存量项目支持
+### M5: 代码质量 + QA 团队 + 技术栈约束
+
+详细设计文档：[plan/m5-plan.md](m5-plan.md)
+
+| Phase | 范围 | PR | 状态 |
+|---|---|---|---|
+| Phase G | Coder 质量改造（planner/builder + 编译反馈 + 磁盘复用） | #268 | ✅ |
+| Phase H | QA 团队（QALead + Tester + SecurityAuditor + 修复循环） | #275 | ✅ |
+| Phase I | 约束 + 文档（技术栈声明 + prompt 去硬编码 + 文档更新） | TBD | ✅ |
+
+Pipeline 顺序（full profile）:
+```
+IntentConsultant → Researcher → ProductOwner → UXDesigner → APIDesigner →
+UIDesigner → TechLead → Coder → QALead → Tester → SecurityAuditor →
+Reviewer → Validator
+```
+
+**M6 预留：** DAG 执行引擎、Per-agent LLM 路由、存量项目支持
 
 ---
 
