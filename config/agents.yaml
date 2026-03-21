@@ -124,14 +124,13 @@ agents:
       - api-spec.yaml
     outputs:
       - code/
+      - code-plan.json
       - code.manifest.json
     autonomy:
       allowed_tools:
         - Read
         - Write
         - Bash
-        - Agent
-        - WebSearch
       writable_paths:
         - .mosaic/artifacts/code/
       max_turns: 10
