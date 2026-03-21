@@ -77,8 +77,10 @@ export class CoderAgent extends BaseAgent {
       // Step 3: Build scaffold first if needed
       const scaffoldModule = modulesToBuild.find(m => m.priority === 0);
       if (scaffoldModule) {
+        eventBus.emit('agent:progress', this.stage, `[scaffold] building ${scaffoldModule.files.length} files...`);
         await this.buildModule(context, plan, scaffoldModule, builtModules, perModuleBudget);
         builtModules.add(scaffoldModule.name);
+        eventBus.emit('agent:progress', this.stage, `[scaffold] running: ${plan.commands.setupCommand}`);
         this.runSetupCommand(plan);
       }
 
@@ -87,13 +89,19 @@ export class CoderAgent extends BaseAgent {
         .filter(m => m.priority !== 0)
         .sort((a, b) => a.priority - b.priority);
 
-      for (const mod of nonScaffold) {
+      for (let mi = 0; mi < nonScaffold.length; mi++) {
+        const mod = nonScaffold[mi];
+        eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] module "${mod.name}" — ${mod.files.length} files`);
         await this.buildModule(context, plan, mod, builtModules, perModuleBudget);
         builtModules.add(mod.name);
 
         // Verify after each module
+        eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] verifying: ${plan.commands.verifyCommand}`);
         const verifyResult = this.runVerifyCommand(plan);
-        if (!verifyResult.success) {
+        if (verifyResult.success) {
+          eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ✓ verify passed`);
+        } else {
+          eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ✗ verify failed — attempting fix...`);
           // Try to fix compilation errors
           let fixed = false;
           for (let retry = 0; retry < MAX_MODULE_FIX_RETRIES; retry++) {
@@ -109,24 +117,29 @@ export class CoderAgent extends BaseAgent {
 
             const retryResult = this.runVerifyCommand(plan);
             if (retryResult.success) {
+              eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ✓ fix succeeded (retry ${retry + 1})`);
               fixed = true;
               break;
             }
           }
 
           if (!fixed) {
+            eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ⚠ verify still failing — continuing`);
             this.logger.agent(this.stage, 'warn', 'builder:verify-gave-up', {
               module: mod.name,
             });
-            // Continue to next module — don't block the pipeline
           }
         }
       }
     }
 
     // Step 5: Final build check
+    eventBus.emit('agent:progress', this.stage, `running final build: ${plan.commands.buildCommand}`);
     const buildResult = this.runBuildCommand(plan);
-    if (!buildResult.success) {
+    if (buildResult.success) {
+      eventBus.emit('agent:progress', this.stage, '✓ build passed');
+    } else {
+      eventBus.emit('agent:progress', this.stage, '✗ build failed — attempting fix...');
       this.logger.agent(this.stage, 'warn', 'builder:build-failed', {
         errors: buildResult.errors.slice(0, 1000),
       });
