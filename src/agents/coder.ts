@@ -17,7 +17,7 @@ const BUILD_FIX_TIMEOUT_MS = 600_000;
 /** Planner budget */
 const PLANNER_BUDGET_USD = 0.50;
 /** Max compile-fix retries per module */
-const MAX_MODULE_FIX_RETRIES = 2;
+const MAX_MODULE_FIX_RETRIES = 3;
 
 /**
  * High-autonomy Coder Agent with planner/builder split.
@@ -104,23 +104,26 @@ export class CoderAgent extends BaseAgent {
           eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ✗ verify failed — attempting fix...`);
           // Try to fix compilation errors
           let fixed = false;
-          for (let retry = 0; retry < MAX_MODULE_FIX_RETRIES; retry++) {
+          let lastErrors = verifyResult.errors;
+          for (let retry = 1; retry <= MAX_MODULE_FIX_RETRIES; retry++) {
+            eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] fix attempt ${retry}/${MAX_MODULE_FIX_RETRIES}...`);
             this.logger.agent(this.stage, 'warn', 'builder:verify-failed', {
               module: mod.name,
-              retry: retry + 1,
-              errors: verifyResult.errors.slice(0, 500),
+              retry,
+              errors: lastErrors.slice(0, 500),
             });
 
             await this.buildModuleWithErrors(
-              context, plan, mod, builtModules, perModuleBudget, verifyResult.errors
+              context, plan, mod, builtModules, perModuleBudget, lastErrors, retry
             );
 
             const retryResult = this.runVerifyCommand(plan);
             if (retryResult.success) {
-              eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ✓ fix succeeded (retry ${retry + 1})`);
+              eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ✓ fix succeeded (attempt ${retry})`);
               fixed = true;
               break;
             }
+            lastErrors = retryResult.errors;
           }
 
           if (!fixed) {
@@ -239,25 +242,84 @@ export class CoderAgent extends BaseAgent {
     builtModules: Set<string>,
     budgetUsd: number,
     errors: string,
+    retryNumber: number,
   ): Promise<void> {
     const builderPrompt = fs.readFileSync(BUILDER_PROMPT_PATH, 'utf-8');
-    const basePrompt = this.buildModulePrompt(context, plan, mod, builtModules);
-    const errorPrompt = `${basePrompt}\n\n## Compilation Errors (fix these)\n\`\`\`\n${errors}\n\`\`\`\n\nFix the errors above. Only modify files that have errors. Do not rewrite files that compile correctly.`;
+    const codeDir = `${getArtifactsDir()}/code`;
+
+    // Extract file paths from error messages for targeted fix
+    const errorFiles = this.extractErrorFiles(errors, codeDir);
+
+    const parts: string[] = [];
+    parts.push(`## Fix Compilation Errors (attempt ${retryNumber}/${MAX_MODULE_FIX_RETRIES})`);
+    parts.push(`Module: ${mod.name}`);
+    parts.push(`Working directory: ${codeDir}`);
+    parts.push('');
+    parts.push('## Errors');
+    parts.push('```');
+    parts.push(errors.slice(0, 3000));
+    parts.push('```');
+    parts.push('');
+
+    // Guide the LLM to read files first
+    if (errorFiles.length > 0) {
+      parts.push('## Files with errors (read these first, then fix)');
+      for (const f of errorFiles.slice(0, 10)) {
+        parts.push(`- ${f}`);
+      }
+      parts.push('');
+    }
+
+    parts.push('## Instructions');
+    parts.push('1. Use the Read tool to read each file that has errors');
+    parts.push('2. Understand the root cause of each error');
+    parts.push('3. Use the Write tool to fix ONLY the files that have errors');
+    parts.push('4. Do not rewrite files that compile correctly');
+
+    const errorPrompt = parts.join('\n');
 
     this.logger.agent(this.stage, 'info', 'builder:fix-start', {
       module: mod.name,
+      retry: retryNumber,
+      errorFiles: errorFiles.length,
     });
+    eventBus.emit('agent:thinking', this.stage, errorPrompt.length);
 
-    await this.provider.call(errorPrompt, {
+    const response = await this.provider.call(errorPrompt, {
       systemPrompt: builderPrompt,
       allowedTools: ['Read', 'Write', 'Bash'],
-      maxBudgetUsd: budgetUsd * 0.5,
+      maxBudgetUsd: budgetUsd,
       timeoutMs: MODULE_TIMEOUT_MS,
     });
 
+    eventBus.emit('agent:response', this.stage, response.content.length);
+
     this.logger.agent(this.stage, 'info', 'builder:fix-complete', {
       module: mod.name,
+      retry: retryNumber,
     });
+  }
+
+  /**
+   * Extract file paths from compilation error output.
+   * Handles common patterns: "src/foo.ts(10,5): error TS..." or "ERROR in ./src/foo.ts"
+   */
+  private extractErrorFiles(errors: string, codeDir: string): string[] {
+    const files = new Set<string>();
+    // TypeScript pattern: src/foo.ts(line,col): error
+    const tsPattern = /^([^\s(]+\.tsx?)\(\d+,\d+\)/gm;
+    // Webpack/Vite pattern: ERROR in ./src/foo.ts
+    const bundlerPattern = /(?:ERROR|error)\s+(?:in\s+)?\.?\/?([^\s:]+\.(?:ts|tsx|js|jsx))/gm;
+
+    let match;
+    while ((match = tsPattern.exec(errors)) !== null) {
+      files.add(`${codeDir}/${match[1]}`);
+    }
+    while ((match = bundlerPattern.exec(errors)) !== null) {
+      files.add(`${codeDir}/${match[1]}`);
+    }
+
+    return [...files];
   }
 
   private buildModulePrompt(
