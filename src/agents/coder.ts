@@ -10,8 +10,10 @@ import { CodePlanSchema, type CodePlan, type CodePlanModule } from './code-plan-
 const PLANNER_PROMPT_PATH = '.claude/agents/mosaic/code-planner.md';
 const BUILDER_PROMPT_PATH = '.claude/agents/mosaic/code-builder.md';
 
-/** Per-module timeout: 5 minutes */
+/** Per-module build timeout: 5 minutes */
 const MODULE_TIMEOUT_MS = 300_000;
+/** Build fix timeout: 10 minutes (needs time to diagnose + fix across files) */
+const BUILD_FIX_TIMEOUT_MS = 600_000;
 /** Planner budget */
 const PLANNER_BUDGET_USD = 0.50;
 /** Max compile-fix retries per module */
@@ -129,7 +131,7 @@ export class CoderAgent extends BaseAgent {
         errors: buildResult.errors.slice(0, 1000),
       });
       // One fix attempt for build errors
-      await this.runBuildFix(context, plan, builtModules, buildResult.errors, totalBudget * 0.1);
+      await this.runBuildFix(context, plan, builtModules, buildResult.errors, totalBudget * 0.2);
     }
 
     // Step 6: Generate manifest programmatically
@@ -328,7 +330,7 @@ export class CoderAgent extends BaseAgent {
       systemPrompt: builderPrompt,
       allowedTools: ['Read', 'Write', 'Bash'],
       maxBudgetUsd: budgetUsd,
-      timeoutMs: MODULE_TIMEOUT_MS,
+      timeoutMs: BUILD_FIX_TIMEOUT_MS,
     });
 
     this.logger.agent(this.stage, 'info', 'builder:build-fix-complete', {});
