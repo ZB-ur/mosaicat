@@ -12,6 +12,8 @@ export interface LLMCallOptions {
   model?: string;
   /** LLM temperature (0-1). Lower = more deterministic. */
   temperature?: number;
+  /** Timeout in milliseconds for this specific call. Overrides provider default. */
+  timeoutMs?: number;
 }
 
 export interface LLMResponse {
