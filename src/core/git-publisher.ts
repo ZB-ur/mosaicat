@@ -143,12 +143,19 @@ export class GitPublisher {
     return result;
   }
 
+  /** Directories to skip when collecting files for git commits */
+  private static readonly SKIP_DIRS = new Set([
+    'node_modules', '.git', 'dist', 'build', '.turbo', '.cache',
+    '.next', '.nuxt', '.output', '__pycache__', '.venv', 'venv',
+  ]);
+
   /** Recursively collect all files under a directory */
   private walkDir(absDir: string, relativeBase: string, out: string[]): void {
     for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
       const absPath = path.join(absDir, entry.name);
       const relPath = path.join(relativeBase, entry.name);
       if (entry.isDirectory()) {
+        if (GitPublisher.SKIP_DIRS.has(entry.name)) continue;
         this.walkDir(absPath, relPath, out);
       } else {
         out.push(relPath);

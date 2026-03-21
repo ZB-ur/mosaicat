@@ -25,7 +25,7 @@ import { GitPublisher } from './git-publisher.js';
 import { generatePRBody } from './pr-body-generator.js';
 import { extractManifestSummary } from './manifest.js';
 import { IntentConsultantAgent } from '../agents/intent-consultant.js';
-import { artifactExists, initArtifactsDir, getArtifactsDir } from './artifact.js';
+import { artifactExists, readArtifact, writeArtifact, initArtifactsDir, getArtifactsDir } from './artifact.js';
 import { loadUserLLMConfig } from './llm-config-store.js';
 const AGENT_DESC: Record<StageName, string> = {
   intent_consultant: '意图深挖',
@@ -40,6 +40,7 @@ const AGENT_DESC: Record<StageName, string> = {
   validator: '交叉验证报告',
   qa_lead: 'QA 计划',
   tester: '自动化测试',
+  security_auditor: '安全审计',
 };
 
 interface StageMetrics {
@@ -107,8 +108,40 @@ export class Orchestrator {
 
       // Filter stage list: skip intent_consultant (handled above)
       const pipelineStages = stageList.filter((s) => s !== 'intent_consultant');
-      for (const stage of pipelineStages) {
+      let testerCoderFixCount = 0;
+      const MAX_TESTER_CODER_LOOPS = 1;
+
+      for (let i = 0; i < pipelineStages.length; i++) {
+        const stage = pipelineStages[i];
         await this.executeStage(pipelineRun, stage, provider, logger);
+
+        // Tester → Coder fix loop: if tester fails, rollback to coder with test failures
+        if (stage === 'tester' && testerCoderFixCount < MAX_TESTER_CODER_LOOPS) {
+          const shouldRetry = this.checkTesterVerdict(logger);
+          if (shouldRetry) {
+            testerCoderFixCount++;
+            logger.pipeline('info', 'tester-coder-loop:start', {
+              attempt: testerCoderFixCount,
+            });
+
+            // Rollback: re-run coder with test_failures injected
+            const coderIdx = pipelineStages.indexOf('coder');
+            if (coderIdx !== -1) {
+              // Inject test report into coder context
+              this.injectTestFailuresForCoder();
+              // Reset coder and tester stages for re-run
+              pipelineRun.stages['coder'] = { state: 'idle', retryCount: 0 };
+              pipelineRun.stages['tester'] = { state: 'idle', retryCount: 0 };
+              // Also reset qa_lead if it exists (it will be skipped if artifacts exist)
+              if (pipelineRun.stages['qa_lead']) {
+                pipelineRun.stages['qa_lead'] = { state: 'idle', retryCount: 0 };
+              }
+              // Jump back to coder
+              i = coderIdx - 1; // will be incremented by for loop
+              continue;
+            }
+          }
+        }
       }
 
       // Post-run evolution analysis
@@ -422,7 +455,10 @@ export class Orchestrator {
     context: AgentContext
   ): Promise<void> {
     const agentConfig = this.agentsConfig.agents[stage];
-    const agent = createAgent(stage, provider, logger, agentConfig?.autonomy);
+    // Pass handler to agents that support interactive retry (Coder).
+    // In auto-approve mode, pass undefined so they auto-skip after retries.
+    const agentHandler = run.autoApprove ? undefined : this.handler;
+    const agent = createAgent(stage, provider, logger, agentConfig?.autonomy, agentHandler);
 
     try {
       await agent.execute(context);
@@ -474,7 +510,7 @@ export class Orchestrator {
       transitionStage(run, stage, 'running');
 
       // Re-run agent with augmented context
-      const retryAgent = createAgent(stage, provider, logger, agentConfig?.autonomy);
+      const retryAgent = createAgent(stage, provider, logger, agentConfig?.autonomy, agentHandler);
       await retryAgent.execute(context);
     }
   }
@@ -672,6 +708,46 @@ export class Orchestrator {
         error: err instanceof Error ? err.message : String(err),
       });
       // Evolution errors don't fail the pipeline
+    }
+  }
+
+  /**
+   * Check if tester verdict is 'fail' — triggers Coder fix loop.
+   */
+  private checkTesterVerdict(logger: Logger): boolean {
+    try {
+      if (!artifactExists('test-report.manifest.json')) return false;
+      const manifest = JSON.parse(readArtifact('test-report.manifest.json'));
+      if (manifest.verdict === 'fail') {
+        logger.pipeline('info', 'tester-coder-loop:verdict-fail', {
+          failed: manifest.failed,
+          total: manifest.total,
+        });
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Write test failures to a well-known artifact location so Coder can read them.
+   * The Coder agent checks for 'test_failures' in inputArtifacts.
+   */
+  private injectTestFailuresForCoder(): void {
+    try {
+      if (!artifactExists('test-report.manifest.json')) return;
+      const manifest = readArtifact('test-report.manifest.json');
+      // Add test_failures to coder's inputs so context-manager loads it
+      const agentConfig = this.agentsConfig.agents['coder'];
+      if (agentConfig && !agentConfig.inputs.includes('test_failures')) {
+        agentConfig.inputs.push('test_failures');
+      }
+      // Write test failures as an artifact the coder can read
+      writeArtifact('test_failures', manifest);
+    } catch {
+      // Non-fatal
     }
   }
 

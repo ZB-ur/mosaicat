@@ -38,6 +38,16 @@ When ready to converge, produce a JSON object with this structure:
 }
 ```
 
+## Supported Tech Stacks (Current Version)
+
+Code generation (full / frontend-only profiles) currently supports:
+- **Frontend:** React + TypeScript + Tailwind CSS
+- **Backend:** Node.js / pure browser-side
+
+If the user's idea implies other stacks (e.g., Python/Django, Swift, Flutter), inform them during clarification and suggest either:
+1. Using **design-only** profile (design + API spec without code generation)
+2. Adjusting to the supported stack (React + TypeScript)
+
 ## Profile Recommendation Rules
 
 - **design-only**: User wants design mockups + API spec only, no code generation

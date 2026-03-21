@@ -41,11 +41,11 @@ When no custom design tokens are provided, use these defaults:
 
 ## Component File (`components/{Name}.tsx`)
 
-Real React component for developers:
+Real component for developers (follow the tech stack from the design context):
 - Proper imports, props interfaces, TypeScript types
 - API endpoint consumption from `api-spec.yaml` context
 - Event handlers, state management hooks
-- Tailwind CSS classes for styling
+- Styling via the project's CSS framework (Tailwind CSS by default)
 - Must be consistent with sibling components (same design tokens, spacing, naming patterns)
 
 ## Preview File (`previews/{Name}.html`)

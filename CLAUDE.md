@@ -5,11 +5,11 @@
 
 ---
 
-## Pipeline（M3 目标：design-only / full profile）
+## Pipeline（M5：design-only / full / frontend-only profile）
 
 ```
 design-only: IntentConsultant → Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → Validator
-full:        IntentConsultant → Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → TechLead → Coder → Reviewer → Validator
+full:        IntentConsultant → Researcher → ProductOwner → UXDesigner → APIDesigner → UIDesigner → TechLead → Coder → QALead → Tester → SecurityAuditor → Reviewer → Validator
 ```
 
 | Agent | 输入 | 输出 | 澄清 | 门控 |
@@ -21,7 +21,10 @@ full:        IntentConsultant → Researcher → ProductOwner → UXDesigner →
 | APIDesigner | `prd.md` + `ux-flows.md` | `api-spec.yaml` + `api-spec.manifest.json` | 开启 | auto |
 | UIDesigner | `prd.md` + `ux-flows.md` + `api-spec.yaml` | `components/` + `previews/` + `screenshots/` + `gallery.html` + `components.manifest.json` | 关闭 | manual |
 | TechLead | `prd.md` + `ux-flows.md` + `api-spec.yaml` | `tech-spec.md` + `tech-spec.manifest.json` | 开启 | manual |
-| Coder | `tech-spec.md` + `api-spec.yaml` | `code/` + `code.manifest.json` | 关闭 | auto |
+| Coder | `tech-spec.md` + `api-spec.yaml` | `code-plan.json` + `code/` + `code.manifest.json` | 关闭 | auto |
+| QALead | `tech-spec.md` + `code.manifest.json` | `test-plan.md` + `test-plan.manifest.json` | 关闭 | auto |
+| Tester | `test-plan.md` + `code/` | `tests/` + `test-report.md` + `test-report.manifest.json` | 关闭 | manual |
+| SecurityAuditor | `code/` + `code.manifest.json` | `security-report.md` + `security-report.manifest.json` | 关闭 | auto |
 | Reviewer | `tech-spec.md` + `code/` | `review-report.md` + `review.manifest.json` | 关闭 | manual |
 | Validator | 所有 `*.manifest.json` | `validation-report.md` | 关闭 | auto |
 
@@ -84,15 +87,19 @@ full:        IntentConsultant → Researcher → ProductOwner → UXDesigner →
 | `core/prompt-assembler.ts` | Prompt 拼装 | ✅ 任务 + 上下文拼装 |
 | `agents/llm-agent.ts` | Agent 模板基类 | ✅ 结构化输出 + getOutputSpec() |
 | `core/event-bus.ts` | 事件总线 | ✅ 精简完成 |
-| `core/cli-progress.ts` | 终端进度 | ✅ 12 stage 支持 |
-| `core/orchestrator.ts` | 全局编排 | ✅ Profile + Intent Consultant + stage 级进化 |
+| `core/cli-progress.ts` | 终端进度 | ✅ 15 stage 支持 |
+| `core/orchestrator.ts` | 全局编排 | ✅ Profile + Intent Consultant + Tester→Coder 修复循环 + stage 级进化 |
 | `index.ts` | CLI 入口 | ✅ --profile flag |
-| `core/types.ts` | 全局类型 | ✅ 12 StageName + skipped + PipelineProfile + IntentBrief |
-| `core/manifest.ts` | manifest 读写 | ✅ Feature ID + TechSpec/Code/Review schemas |
-| `core/agent-factory.ts` | Agent 实例工厂 | ✅ 10 agents registered |
+| `core/types.ts` | 全局类型 | ✅ 15 StageName + skipped + PipelineProfile + IntentBrief |
+| `core/manifest.ts` | manifest 读写 | ✅ Feature ID + 全 Agent manifest schemas |
+| `core/agent-factory.ts` | Agent 实例工厂 | ✅ 13 agents registered |
 | `agents/intent-consultant.ts` | Intent Consultant | ✅ 多轮对话 |
 | `agents/tech-lead.ts` | TechLead Agent | ✅ tech-spec 输出 |
-| `agents/coder.ts` | Coder Agent | ✅ 高自主 tool use |
+| `agents/coder.ts` | Coder Agent | ✅ Planner/Builder 分离 + 编译反馈 + 磁盘复用 |
+| `agents/code-plan-schema.ts` | CodePlan Zod schema | ✅ module 级构建计划 |
+| `agents/qa-lead.ts` | QALead Agent | ✅ 测试计划生成 |
+| `agents/tester.ts` | Tester Agent | ✅ 测试代码生成 + 执行 |
+| `agents/security-auditor.ts` | SecurityAuditor Agent | ✅ 程序化扫描 + LLM 审查 |
 | `agents/reviewer.ts` | Reviewer Agent | ✅ code vs spec 审查 |
 | `evolution/engine.ts` | 进化引擎 | ✅ stage 级分析 |
 | `evolution/skill-manager.ts` | Skill 管理 | ✅ SKILL.md 标准格式 |
