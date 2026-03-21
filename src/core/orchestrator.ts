@@ -455,7 +455,10 @@ export class Orchestrator {
     context: AgentContext
   ): Promise<void> {
     const agentConfig = this.agentsConfig.agents[stage];
-    const agent = createAgent(stage, provider, logger, agentConfig?.autonomy);
+    // Pass handler to agents that support interactive retry (Coder).
+    // In auto-approve mode, pass undefined so they auto-skip after retries.
+    const agentHandler = run.autoApprove ? undefined : this.handler;
+    const agent = createAgent(stage, provider, logger, agentConfig?.autonomy, agentHandler);
 
     try {
       await agent.execute(context);
@@ -507,7 +510,7 @@ export class Orchestrator {
       transitionStage(run, stage, 'running');
 
       // Re-run agent with augmented context
-      const retryAgent = createAgent(stage, provider, logger, agentConfig?.autonomy);
+      const retryAgent = createAgent(stage, provider, logger, agentConfig?.autonomy, agentHandler);
       await retryAgent.execute(context);
     }
   }

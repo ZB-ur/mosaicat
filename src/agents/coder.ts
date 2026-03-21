@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import { execSync } from 'node:child_process';
-import type { AgentContext } from '../core/types.js';
+import type { AgentContext, StageName } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
+import type { LLMProvider } from '../core/llm-provider.js';
+import type { Logger } from '../core/logger.js';
+import type { InteractionHandler } from '../core/interaction-handler.js';
 import type { OutputSpec } from '../core/prompt-assembler.js';
 import { eventBus } from '../core/event-bus.js';
 import { readArtifact, artifactExists, getArtifactsDir } from '../core/artifact.js';
@@ -16,8 +19,8 @@ const MODULE_TIMEOUT_MS = 300_000;
 const BUILD_FIX_TIMEOUT_MS = 600_000;
 /** Planner budget */
 const PLANNER_BUDGET_USD = 0.50;
-/** Max compile-fix retries per module */
-const MAX_MODULE_FIX_RETRIES = 3;
+/** Number of automatic fix retries before asking user confirmation */
+const AUTO_FIX_RETRIES = 3;
 
 /**
  * High-autonomy Coder Agent with planner/builder split.
@@ -34,6 +37,18 @@ const MAX_MODULE_FIX_RETRIES = 3;
  * 9. Generate code.manifest.json programmatically
  */
 export class CoderAgent extends BaseAgent {
+  private interactionHandler?: InteractionHandler;
+
+  constructor(
+    stage: StageName,
+    provider: LLMProvider,
+    logger: Logger,
+    interactionHandler?: InteractionHandler,
+  ) {
+    super(stage, provider, logger);
+    this.interactionHandler = interactionHandler;
+  }
+
   getOutputSpec(): OutputSpec {
     return {
       artifacts: ['code/'],
@@ -102,11 +117,20 @@ export class CoderAgent extends BaseAgent {
           eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ✓ verify passed`);
         } else {
           eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ✗ verify failed — attempting fix...`);
-          // Try to fix compilation errors
+          // Try to fix compilation errors — no hard limit, ask user after AUTO_FIX_RETRIES
           let fixed = false;
           let lastErrors = verifyResult.errors;
-          for (let retry = 1; retry <= MAX_MODULE_FIX_RETRIES; retry++) {
-            eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] fix attempt ${retry}/${MAX_MODULE_FIX_RETRIES}...`);
+          for (let retry = 1; ; retry++) {
+            // After AUTO_FIX_RETRIES automatic attempts, ask user
+            if (retry > AUTO_FIX_RETRIES) {
+              const shouldContinue = await this.askUserToRetry(mod.name, retry - 1, lastErrors);
+              if (!shouldContinue) {
+                eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ⚠ user chose to skip — continuing`);
+                break;
+              }
+            }
+
+            eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] fix attempt ${retry}...`);
             this.logger.agent(this.stage, 'warn', 'builder:verify-failed', {
               module: mod.name,
               retry,
@@ -127,7 +151,6 @@ export class CoderAgent extends BaseAgent {
           }
 
           if (!fixed) {
-            eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ⚠ verify still failing — continuing`);
             this.logger.agent(this.stage, 'warn', 'builder:verify-gave-up', {
               module: mod.name,
             });
@@ -251,7 +274,7 @@ export class CoderAgent extends BaseAgent {
     const errorFiles = this.extractErrorFiles(errors, codeDir);
 
     const parts: string[] = [];
-    parts.push(`## Fix Compilation Errors (attempt ${retryNumber}/${MAX_MODULE_FIX_RETRIES})`);
+    parts.push(`## Fix Compilation Errors (attempt ${retryNumber})`);
     parts.push(`Module: ${mod.name}`);
     parts.push(`Working directory: ${codeDir}`);
     parts.push('');
@@ -371,6 +394,33 @@ export class CoderAgent extends BaseAgent {
     }
 
     return parts.join('\n');
+  }
+
+  // ─── User Confirmation ──────────────────────────────────────
+
+  /**
+   * Ask user whether to continue retrying a failed module.
+   * If no InteractionHandler (e.g. auto-approve mode), defaults to skip.
+   */
+  private async askUserToRetry(moduleName: string, attempts: number, errors: string): Promise<boolean> {
+    if (!this.interactionHandler) {
+      // No interaction handler (auto-approve or MCP mode) — skip after AUTO_FIX_RETRIES
+      return false;
+    }
+
+    const errorPreview = errors.slice(0, 500);
+    const answer = await this.interactionHandler.onClarification(
+      this.stage,
+      `Module "${moduleName}" still has compilation errors after ${attempts} fix attempts.\n\nErrors:\n${errorPreview}\n\nContinue retrying?`,
+      '',
+      [
+        { label: 'Retry', description: 'Try fixing again' },
+        { label: 'Skip', description: 'Skip this module and continue' },
+      ],
+      false,
+    );
+
+    return answer.toLowerCase().includes('retry');
   }
 
   // ─── Build Fix (final build failure) ────────────────────────
