@@ -149,6 +149,27 @@ agents:
       allowed_tools: []
       max_turns: 1
 
+  tester:
+    name: Tester
+    prompt_file: .claude/agents/mosaic/tester.md
+    inputs:
+      - test-plan.md
+      - test-plan.manifest.json
+      - code/
+    outputs:
+      - tests/
+      - test-report.md
+      - test-report.manifest.json
+    autonomy:
+      allowed_tools:
+        - Read
+        - Write
+        - Bash
+      writable_paths:
+        - .mosaic/artifacts/tests/
+      max_turns: 10
+      max_budget_usd: 3
+
   reviewer:
     name: Reviewer
     prompt_file: .claude/agents/mosaic/reviewer.md

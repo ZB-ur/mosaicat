@@ -45,6 +45,10 @@ stages:
     clarification: false
     gate: auto
     retry_max: 3
+  tester:
+    clarification: false
+    gate: manual
+    retry_max: 3
 
 profiles:
   design-only:

@@ -108,6 +108,22 @@ export const TestPlanManifestSchema = z.object({
   ),
 });
 
+export const TestReportManifestSchema = z.object({
+  total: z.number(),
+  passed: z.number(),
+  failed: z.number(),
+  skipped: z.number(),
+  failures: z.array(
+    z.object({
+      test_name: z.string(),
+      test_file: z.string(),
+      error: z.string(),
+      module: z.string(),
+    })
+  ),
+  verdict: z.enum(['pass', 'fail']),
+});
+
 export const ReviewManifestSchema = z.object({
   issues: z.array(
     z.object({
@@ -134,6 +150,7 @@ const MANIFEST_SCHEMAS: Record<string, z.ZodType> = {
   'tech-spec.manifest.json': TechSpecManifestSchema,
   'code.manifest.json': CodeManifestSchema,
   'test-plan.manifest.json': TestPlanManifestSchema,
+  'test-report.manifest.json': TestReportManifestSchema,
   'review.manifest.json': ReviewManifestSchema,
 };
 
@@ -145,6 +162,7 @@ export type ComponentsManifest = z.infer<typeof ComponentsManifestSchema>;
 export type TechSpecManifest = z.infer<typeof TechSpecManifestSchema>;
 export type CodeManifest = z.infer<typeof CodeManifestSchema>;
 export type TestPlanManifest = z.infer<typeof TestPlanManifestSchema>;
+export type TestReportManifest = z.infer<typeof TestReportManifestSchema>;
 export type ReviewManifest = z.infer<typeof ReviewManifestSchema>;
 
 export function writeManifest(name: string, data: unknown): void {
@@ -249,6 +267,18 @@ const SUMMARY_EXTRACTORS: Record<string, (data: Record<string, unknown>) => stri
         const e2eCount = types.filter(t => t === 'e2e').length;
         const breakdown = [unitCount && `${unitCount} unit`, intCount && `${intCount} integration`, e2eCount && `${e2eCount} e2e`].filter(Boolean).join(', ');
         lines.push(`**${suite.module}** (\`${suite.test_file}\`) — ${breakdown}`);
+      }
+    }
+    return lines;
+  },
+  'test-report.manifest.json': (data) => {
+    const m = data as unknown as TestReportManifest;
+    const lines: string[] = [];
+    lines.push(`**Verdict:** ${m.verdict}`);
+    lines.push(`**Results:** ${m.passed} passed, ${m.failed} failed, ${m.skipped} skipped (${m.total} total)`);
+    if (m.failures.length > 0) {
+      for (const f of m.failures.slice(0, 5)) {
+        lines.push(`**FAIL** \`${f.test_file}\` — ${f.test_name}: ${f.error.slice(0, 100)}`);
       }
     }
     return lines;
