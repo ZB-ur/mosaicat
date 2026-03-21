@@ -31,10 +31,11 @@ export class ClaudeCLIProvider implements LLMProvider {
         let stderr = '';
         let totalBytes = 0;
 
+        const timeoutMs = options?.timeoutMs ?? TIMEOUT_MS;
         const timer = setTimeout(() => {
           child.kill('SIGTERM');
-          reject(new Error(`Claude CLI timed out after ${TIMEOUT_MS}ms`));
-        }, TIMEOUT_MS);
+          reject(new Error(`Claude CLI timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
 
         child.stdout.on('data', (chunk: Buffer) => {
           totalBytes += chunk.length;
