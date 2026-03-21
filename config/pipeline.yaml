@@ -72,6 +72,9 @@ profiles:
     - ui_designer
     - tech_lead
     - coder
+    - qa_lead
+    - tester
+    - security_auditor
     - reviewer
     - validator
   frontend-only:
@@ -82,6 +85,9 @@ profiles:
     - ui_designer
     - tech_lead
     - coder
+    - qa_lead
+    - tester
+    - security_auditor
     - reviewer
     - validator
 
