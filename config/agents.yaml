@@ -136,6 +136,19 @@ agents:
       max_turns: 10
       max_budget_usd: 5
 
+  qa_lead:
+    name: QALead
+    prompt_file: .claude/agents/mosaic/qa-lead.md
+    inputs:
+      - tech-spec.md
+      - code.manifest.json
+    outputs:
+      - test-plan.md
+      - test-plan.manifest.json
+    autonomy:
+      allowed_tools: []
+      max_turns: 1
+
   reviewer:
     name: Reviewer
     prompt_file: .claude/agents/mosaic/reviewer.md

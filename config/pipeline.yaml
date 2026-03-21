@@ -41,6 +41,10 @@ stages:
     clarification: false
     gate: manual
     retry_max: 3
+  qa_lead:
+    clarification: false
+    gate: auto
+    retry_max: 3
 
 profiles:
   design-only:

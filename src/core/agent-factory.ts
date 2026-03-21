@@ -13,6 +13,7 @@ import {
   CoderAgent,
   ReviewerAgent,
   ValidatorAgent,
+  QALeadAgent,
 } from '../agents/index.js';
 
 type AgentConstructor = new (stage: StageName, provider: LLMProvider, logger: Logger) => BaseAgent;
@@ -27,8 +28,9 @@ const AGENT_MAP: Partial<Record<StageName, AgentConstructor>> = {
   coder: CoderAgent,
   reviewer: ReviewerAgent,
   validator: ValidatorAgent,
+  qa_lead: QALeadAgent,
   // intent_consultant — handled separately in orchestrator
-  // qa_lead, tester — M4
+  // tester, security_auditor — M5
 };
 
 export function createAgent(

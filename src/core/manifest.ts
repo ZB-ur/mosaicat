@@ -87,6 +87,27 @@ export const CodeManifestSchema = z.object({
   covers_features: z.array(z.string()),
 });
 
+export const TestPlanManifestSchema = z.object({
+  test_framework: z.string(),
+  commands: z.object({
+    setupCommand: z.string(),
+    runCommand: z.string(),
+  }),
+  test_suites: z.array(
+    z.object({
+      module: z.string(),
+      test_file: z.string(),
+      test_cases: z.array(
+        z.object({
+          name: z.string(),
+          covers_tasks: z.array(z.string()),
+          type: z.enum(['unit', 'integration', 'e2e']),
+        })
+      ),
+    })
+  ),
+});
+
 export const ReviewManifestSchema = z.object({
   issues: z.array(
     z.object({
@@ -112,6 +133,7 @@ const MANIFEST_SCHEMAS: Record<string, z.ZodType> = {
   'components.manifest.json': ComponentsManifestSchema,
   'tech-spec.manifest.json': TechSpecManifestSchema,
   'code.manifest.json': CodeManifestSchema,
+  'test-plan.manifest.json': TestPlanManifestSchema,
   'review.manifest.json': ReviewManifestSchema,
 };
 
@@ -122,6 +144,7 @@ export type ApiSpecManifest = z.infer<typeof ApiSpecManifestSchema>;
 export type ComponentsManifest = z.infer<typeof ComponentsManifestSchema>;
 export type TechSpecManifest = z.infer<typeof TechSpecManifestSchema>;
 export type CodeManifest = z.infer<typeof CodeManifestSchema>;
+export type TestPlanManifest = z.infer<typeof TestPlanManifestSchema>;
 export type ReviewManifest = z.infer<typeof ReviewManifestSchema>;
 
 export function writeManifest(name: string, data: unknown): void {
@@ -210,6 +233,24 @@ const SUMMARY_EXTRACTORS: Record<string, (data: Record<string, unknown>) => stri
     if (m.modules.length > 0) lines.push(`**Modules:** ${m.modules.join(', ')}`);
     if (m.covers_tasks.length > 0) lines.push(`**Covers tasks:** ${m.covers_tasks.join(', ')}`);
     if (m.covers_features.length > 0) lines.push(`**Covers features:** ${m.covers_features.join(', ')}`);
+    return lines;
+  },
+  'test-plan.manifest.json': (data) => {
+    const m = data as unknown as TestPlanManifest;
+    const lines: string[] = [];
+    lines.push(`**Test Framework:** ${m.test_framework}`);
+    const totalCases = m.test_suites.reduce((sum, s) => sum + s.test_cases.length, 0);
+    lines.push(`**Test Suites:** ${m.test_suites.length} suites, ${totalCases} test cases`);
+    if (m.test_suites.length > 0) {
+      for (const suite of m.test_suites) {
+        const types = suite.test_cases.map(tc => tc.type);
+        const unitCount = types.filter(t => t === 'unit').length;
+        const intCount = types.filter(t => t === 'integration').length;
+        const e2eCount = types.filter(t => t === 'e2e').length;
+        const breakdown = [unitCount && `${unitCount} unit`, intCount && `${intCount} integration`, e2eCount && `${e2eCount} e2e`].filter(Boolean).join(', ');
+        lines.push(`**${suite.module}** (\`${suite.test_file}\`) — ${breakdown}`);
+      }
+    }
     return lines;
   },
   'review.manifest.json': (data) => {
