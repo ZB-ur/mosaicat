@@ -13,10 +13,6 @@ import { trimApiSpec } from './ui-api-trimmer.js';
 const PLANNER_PROMPT_PATH = '.claude/agents/mosaic/ui-planner.md';
 const BUILDER_PROMPT_PATH = '.claude/agents/mosaic/ui-builder.md';
 
-/** Max sibling components to include as full tsx source for consistency */
-const FULL_SIBLING_COUNT = 2;
-/** Max lines of summary for siblings beyond the first two */
-const SIBLING_SUMMARY_LINES = 15;
 /** Max atomic components per batch */
 const ATOMIC_BATCH_SIZE = 6;
 
@@ -42,9 +38,28 @@ export class UIDesignerAgent extends BaseAgent {
       // Partial retry: skip planner, only rebuild specified components
       await this.runPartialRetry(context, retryComponents, reviewComments);
     } else {
-      // Full run (or full retry with feedback injected into planner)
-      const plan = await this.runPlanner(context);
-      const builtComponents = await this.runBatchBuilders(context, plan);
+      // Full run — but check if a previous attempt left artifacts on disk
+      let plan: UIPlan;
+      let builtComponents: Map<string, string>;
+
+      if (artifactExists('ui-plan.json')) {
+        // Plan exists from prior attempt — reuse it, only rebuild missing components
+        plan = UIPlanSchema.parse(JSON.parse(readArtifact('ui-plan.json')));
+        builtComponents = this.loadExistingComponents(plan);
+        const missing = plan.components.filter(c => !builtComponents.has(c.name));
+        this.logger.agent(this.stage, 'info', 'retry:reuse-plan', {
+          totalComponents: plan.components.length,
+          alreadyBuilt: builtComponents.size,
+          missing: missing.length,
+        });
+        if (missing.length > 0) {
+          await this.runBatchBuildersForComponents(context, plan, missing, builtComponents);
+        }
+      } else {
+        plan = await this.runPlanner(context);
+        builtComponents = await this.runBatchBuilders(context, plan);
+      }
+
       await this.postProcess(plan, builtComponents);
     }
 
@@ -67,13 +82,7 @@ export class UIDesignerAgent extends BaseAgent {
       totalComponents: plan.components.length,
     });
 
-    // Load existing built components from disk (preserve unchanged ones)
-    const builtComponents = new Map<string, string>();
-    for (const comp of plan.components) {
-      if (artifactExists(comp.file)) {
-        builtComponents.set(comp.name, readArtifact(comp.file));
-      }
-    }
+    const builtComponents = this.loadExistingComponents(plan);
 
     // Resolve retry component specs
     const retrySpecs: UIPlanComponent[] = [];
@@ -112,7 +121,7 @@ export class UIDesignerAgent extends BaseAgent {
       if (batch.length === 1) {
         // Single component retry with feedback
         const comp = batch[0];
-        const userPrompt = this.buildBuilderUserPrompt(context, plan, comp, builtComponents)
+        const userPrompt = this.buildBuilderUserPrompt(context, plan, comp)
           + (feedbackMap.has(comp.name) ? `\n\n${feedbackMap.get(comp.name)}` : '');
 
         this.logger.agent(this.stage, 'info', 'builder:call', {
@@ -132,7 +141,7 @@ export class UIDesignerAgent extends BaseAgent {
         }
       } else {
         // Batch retry with per-component feedback appended
-        const userPrompt = this.buildBatchBuilderUserPrompt(context, plan, batch, builtComponents)
+        const userPrompt = this.buildBatchBuilderUserPrompt(context, plan, batch)
           + this.buildBatchFeedbackSection(feedbackMap);
 
         const componentNames = batch.map(c => c.name);
@@ -151,7 +160,7 @@ export class UIDesignerAgent extends BaseAgent {
           // Retry missing individually
           const missing = batch.filter(c => !written.has(c.name));
           for (const comp of missing) {
-            const singlePrompt = this.buildBuilderUserPrompt(context, plan, comp, builtComponents)
+            const singlePrompt = this.buildBuilderUserPrompt(context, plan, comp)
               + (feedbackMap.has(comp.name) ? `\n\n${feedbackMap.get(comp.name)}` : '');
             try {
               const resp = await this.provider.call(singlePrompt, { systemPrompt: builderPrompt });
@@ -168,7 +177,7 @@ export class UIDesignerAgent extends BaseAgent {
           const message = err instanceof Error ? err.message : String(err);
           this.logger.agent(this.stage, 'warn', 'batch:fallback', { components: componentNames, error: message, isRetry: true });
           for (const comp of batch) {
-            const singlePrompt = this.buildBuilderUserPrompt(context, plan, comp, builtComponents)
+            const singlePrompt = this.buildBuilderUserPrompt(context, plan, comp)
               + (feedbackMap.has(comp.name) ? `\n\n${feedbackMap.get(comp.name)}` : '');
             try {
               const resp = await this.provider.call(singlePrompt, { systemPrompt: builderPrompt });
@@ -184,6 +193,66 @@ export class UIDesignerAgent extends BaseAgent {
 
     (this as { _previewFiles?: string[] })._previewFiles = previewFiles;
     await this.postProcess(plan, builtComponents);
+  }
+
+  /**
+   * Load already-built component TSX from disk for a given plan.
+   */
+  private loadExistingComponents(plan: UIPlan): Map<string, string> {
+    const builtComponents = new Map<string, string>();
+    for (const comp of plan.components) {
+      if (artifactExists(comp.file)) {
+        builtComponents.set(comp.name, readArtifact(comp.file));
+      }
+    }
+    return builtComponents;
+  }
+
+  /**
+   * Build only the specified components (subset of a plan), reusing existing batch logic.
+   * Mutates builtComponents in place as new components are written.
+   */
+  private async runBatchBuildersForComponents(
+    context: AgentContext,
+    plan: UIPlan,
+    components: UIPlanComponent[],
+    builtComponents: Map<string, string>,
+  ): Promise<void> {
+    const builderPrompt = fs.readFileSync(BUILDER_PROMPT_PATH, 'utf-8');
+    const sorted = [...components].sort((a, b) => a.priority - b.priority);
+    const previewFiles: string[] = [];
+
+    const batches = this.createBatches(sorted, plan);
+
+    this.logger.agent(this.stage, 'info', 'batch:plan', {
+      totalComponents: sorted.length,
+      totalBatches: batches.length,
+      breakdown: batches.map(b => ({ category: b[0]?.category ?? 'unknown', size: b.length })),
+    });
+
+    for (const batch of batches) {
+      if (batch.length === 1) {
+        await this.buildSingleComponent(context, plan, batch[0], builtComponents, previewFiles, builderPrompt);
+      } else {
+        try {
+          await this.buildBatch(context, plan, batch, builtComponents, previewFiles, builderPrompt);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.agent(this.stage, 'warn', 'batch:fallback', {
+            components: batch.map(c => c.name),
+            error: message,
+          });
+          for (const comp of batch) {
+            await this.buildSingleComponent(context, plan, comp, builtComponents, previewFiles, builderPrompt);
+          }
+        }
+      }
+    }
+
+    (this as { _previewFiles?: string[] })._previewFiles = [
+      ...((this as { _previewFiles?: string[] })._previewFiles ?? []),
+      ...previewFiles,
+    ];
   }
 
   /**
@@ -426,7 +495,7 @@ export class UIDesignerAgent extends BaseAgent {
     builderPrompt: string,
   ): Promise<void> {
     try {
-      const userPrompt = this.buildBuilderUserPrompt(context, plan, comp, builtComponents);
+      const userPrompt = this.buildBuilderUserPrompt(context, plan, comp);
 
       this.logger.agent(this.stage, 'info', 'builder:call', {
         component: comp.name,
@@ -455,7 +524,7 @@ export class UIDesignerAgent extends BaseAgent {
     previewFiles: string[],
     builderPrompt: string,
   ): Promise<void> {
-    const userPrompt = this.buildBatchBuilderUserPrompt(context, plan, batch, builtComponents);
+    const userPrompt = this.buildBatchBuilderUserPrompt(context, plan, batch);
     const componentNames = batch.map(c => c.name);
 
     this.logger.agent(this.stage, 'info', 'builder:call', {
@@ -600,7 +669,6 @@ If you need clarification about design direction, use a CLARIFICATION block inst
     context: AgentContext,
     plan: UIPlan,
     comp: UIPlanComponent,
-    builtComponents: Map<string, string>,
   ): string {
     const sections: string[] = [];
 
@@ -616,27 +684,6 @@ If you need clarification about design direction, use a CLARIFICATION block inst
     const apiSpec = context.inputArtifacts.get('api-spec.yaml');
     if (apiSpec) {
       sections.push(`## API Specification\n${apiSpec}`);
-    }
-
-    // Sibling context for consistency
-    if (builtComponents.size > 0) {
-      const siblingEntries = Array.from(builtComponents.entries());
-      const siblingSections: string[] = [];
-
-      for (let i = 0; i < siblingEntries.length; i++) {
-        const [name, tsx] = siblingEntries[i];
-        if (i < FULL_SIBLING_COUNT) {
-          // Full source for first N siblings
-          siblingSections.push(`### ${name} (full)\n\`\`\`tsx\n${tsx}\n\`\`\``);
-        } else {
-          // Summary only: component name + first N lines
-          const lines = tsx.split('\n');
-          const summary = lines.slice(0, SIBLING_SUMMARY_LINES).join('\n');
-          siblingSections.push(`### ${name} (summary)\n\`\`\`tsx\n${summary}\n// ... (${lines.length - SIBLING_SUMMARY_LINES} more lines)\n\`\`\``);
-        }
-      }
-
-      sections.push(`## Already Built Components (for consistency)\n${siblingSections.join('\n\n')}`);
     }
 
     // Output requirements
@@ -662,7 +709,6 @@ Produce exactly 2 ARTIFACT blocks:
     context: AgentContext,
     plan: UIPlan,
     batch: UIPlanComponent[],
-    builtComponents: Map<string, string>,
   ): string {
     const sections: string[] = [];
 
@@ -681,31 +727,6 @@ Produce exactly 2 ARTIFACT blocks:
       const prd = context.inputArtifacts.get('prd.md') ?? '';
       const trimmed = trimApiSpec(apiSpec, batchFeatureIds, prd);
       sections.push(`## API Specification\n${trimmed}`);
-    }
-
-    // Sibling context — only components from OTHER batches that are already built
-    const batchNames = new Set(batch.map(c => c.name));
-    const externalSiblings = new Map<string, string>();
-    for (const [name, tsx] of builtComponents) {
-      if (!batchNames.has(name)) externalSiblings.set(name, tsx);
-    }
-
-    if (externalSiblings.size > 0) {
-      const siblingEntries = Array.from(externalSiblings.entries());
-      const siblingSections: string[] = [];
-
-      for (let i = 0; i < siblingEntries.length; i++) {
-        const [name, tsx] = siblingEntries[i];
-        if (i < FULL_SIBLING_COUNT) {
-          siblingSections.push(`### ${name} (full)\n\`\`\`tsx\n${tsx}\n\`\`\``);
-        } else {
-          const lines = tsx.split('\n');
-          const summary = lines.slice(0, SIBLING_SUMMARY_LINES).join('\n');
-          siblingSections.push(`### ${name} (summary)\n\`\`\`tsx\n${summary}\n// ... (${lines.length - SIBLING_SUMMARY_LINES} more lines)\n\`\`\``);
-        }
-      }
-
-      sections.push(`## Already Built Components (for consistency)\n${siblingSections.join('\n\n')}`);
     }
 
     // Batch output requirements — 2 ARTIFACT blocks per component
