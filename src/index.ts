@@ -54,6 +54,21 @@ if (command === 'login') {
     console.error(`\x1b[31m[mosaicat] Setup failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
     process.exit(1);
   });
+} else if (command === 'refine') {
+  const feedback = args[1];
+  if (!feedback) {
+    console.error('Usage: mosaicat refine <feedback> [--run <runId>]');
+    console.error('  Example: mosaicat refine "clicking start game does nothing"');
+    process.exit(1);
+  }
+
+  const runIdx = args.indexOf('--run');
+  const runId = runIdx >= 0 ? args[runIdx + 1] : undefined;
+
+  import('./core/refine-runner.js').then(({ runRefine }) => runRefine(feedback, runId)).catch((err) => {
+    console.error(`\x1b[31m[mosaicat] Refine failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
+    process.exit(1);
+  });
 } else if (command === 'run') {
   const instruction = args[1];
   if (!instruction) {
@@ -124,4 +139,5 @@ if (command === 'login') {
   console.log('  mosaicat login                                     # One-time GitHub OAuth login');
   console.log('  mosaicat logout                                    # Clear saved credentials');
   console.log('  mosaicat run <instruction> [--auto-approve] [--github] [--evolve]');
+  console.log('  mosaicat refine <feedback> [--run <runId>]          # Fix issues in generated code');
 }
