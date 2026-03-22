@@ -13,9 +13,10 @@ export const STAGE_NAMES = [
   'coder',
   'reviewer',
   'validator',
-  // M4 预留
+  // M4/M5
   'qa_lead',
   'tester',
+  'security_auditor',
 ] as const;
 
 export type StageName = (typeof STAGE_NAMES)[number];

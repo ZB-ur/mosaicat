@@ -41,6 +41,18 @@ stages:
     clarification: false
     gate: manual
     retry_max: 3
+  qa_lead:
+    clarification: false
+    gate: auto
+    retry_max: 3
+  tester:
+    clarification: false
+    gate: manual
+    retry_max: 3
+  security_auditor:
+    clarification: false
+    gate: auto
+    retry_max: 1
 
 profiles:
   design-only:
@@ -60,6 +72,9 @@ profiles:
     - ui_designer
     - tech_lead
     - coder
+    - qa_lead
+    - tester
+    - security_auditor
     - reviewer
     - validator
   frontend-only:
@@ -70,6 +85,9 @@ profiles:
     - ui_designer
     - tech_lead
     - coder
+    - qa_lead
+    - tester
+    - security_auditor
     - reviewer
     - validator
 
