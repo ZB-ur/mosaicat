@@ -33,7 +33,7 @@ export function generatePRBody(options: PRBodyOptions): string {
       const rows: string[] = ['### Component Screenshots\n'];
       for (const file of screenshots) {
         const name = path.basename(file, '.png');
-        const imgUrl = rawUrl(owner, repo, branch, `${getArtifactsDir()}/screenshots/${file}`);
+        const imgUrl = rawUrl(owner, repo, branch, `docs/mosaicat/screenshots/${file}`);
         rows.push(`<details><summary>${name}</summary>\n\n![${name}](${imgUrl})\n\n</details>`);
       }
       sections.push(rows.join('\n'));
@@ -47,7 +47,7 @@ export function generatePRBody(options: PRBodyOptions): string {
     if (previews.length > 0) {
       const links = previews.map((f) => {
         const name = path.basename(f, '.html');
-        const url = previewUrl(owner, repo, branch, `${getArtifactsDir()}/previews/${f}`);
+        const url = previewUrl(owner, repo, branch, `docs/mosaicat/previews/${f}`);
         return `- [${name}](${url})`;
       });
       sections.push(`### Interactive Previews\n\n${links.join('\n')}`);
@@ -56,7 +56,7 @@ export function generatePRBody(options: PRBodyOptions): string {
 
   // Gallery link
   if (fs.existsSync(path.join(getArtifactsDir(), 'gallery.html'))) {
-    const galleryUrl = previewUrl(owner, repo, branch, `${getArtifactsDir()}/gallery.html`);
+    const galleryUrl = previewUrl(owner, repo, branch, `docs/mosaicat/gallery.html`);
     sections.push(`### Gallery\n\n[View all components](${galleryUrl})`);
   }
 

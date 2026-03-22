@@ -300,13 +300,27 @@ export class Orchestrator {
         }
       }
 
-      // Snapshot (include issue numbers in metadata)
-      const issueNumbers = Object.fromEntries(this.stageIssues);
-      createSnapshot(stage, run.id, issueNumbers);
-      eventBus.emit('snapshot:created', stage, run.id);
+      // Snapshot (non-blocking — must not fail the pipeline)
+      try {
+        const issueNumbers = Object.fromEntries(this.stageIssues);
+        createSnapshot(stage, run.id, issueNumbers);
+        eventBus.emit('snapshot:created', stage, run.id);
+      } catch (snapErr) {
+        logger.pipeline('warn', 'snapshot:failed', {
+          stage,
+          error: snapErr instanceof Error ? snapErr.message : String(snapErr),
+        });
+      }
 
-      // Create informational Issue on stage complete
-      await this.createStageIssue(stage, run);
+      // Create informational Issue on stage complete (non-blocking)
+      try {
+        await this.createStageIssue(stage, run);
+      } catch (issueErr) {
+        logger.pipeline('warn', 'stage-issue:failed', {
+          stage,
+          error: issueErr instanceof Error ? issueErr.message : String(issueErr),
+        });
+      }
 
       logger.pipeline('info', 'stage:complete', { stage });
       eventBus.emit('stage:complete', stage, run.id);
@@ -320,6 +334,7 @@ export class Orchestrator {
       const message = err instanceof Error ? err.message : String(err);
       const stageStatus = run.stages[stage]!;
 
+      // Automatic retry (within retry_max)
       if (stageStatus.retryCount < maxRetries) {
         stageStatus.retryCount++;
         transitionStage(run, stage, 'failed');
@@ -329,16 +344,36 @@ export class Orchestrator {
         return this.executeStage(run, stage, provider, logger);
       }
 
+      // Mark stage as failed
+      transitionStage(run, stage, 'failed');
+      eventBus.emit('stage:failed', stage, run.id, message);
+
+      // Automatic retries exhausted — ask user what to do (if not auto-approve)
+      if (!run.autoApprove) {
+        const decision = await this.askUserOnStageFail(stage, stageStatus.retryCount, message);
+        if (decision === 'retry') {
+          stageStatus.retryCount = 0; // reset counter for a fresh round
+          transitionStage(run, stage, 'idle');
+          logger.pipeline('info', 'stage:manual-retry', { stage });
+          eventBus.emit('stage:retry', stage, run.id, 0);
+          return this.executeStage(run, stage, provider, logger);
+        }
+        if (decision === 'skip') {
+          logger.pipeline('warn', 'stage:skipped', { stage, reason: 'user chose to skip after failure' });
+          transitionStage(run, stage, 'skipped');
+          return;
+        }
+        // decision === 'abort' → fall through to rollback + throw
+      }
+
       // Rollback to previous stage
       const prev = getPreviousStage(run, stage);
       if (prev) {
-        transitionStage(run, stage, 'failed');
         logger.pipeline('warn', 'stage:rollback', { from: stage, to: prev });
         eventBus.emit('stage:rollback', stage, prev, run.id);
         await this.closeRolledBackIssues(stage, run.id);
       }
 
-      eventBus.emit('stage:failed', stage, run.id, message);
       throw err;
     }
   }
@@ -349,7 +384,7 @@ export class Orchestrator {
       const agentConfig = this.agentsConfig.agents[stage]!;
       const files = (agentConfig.outputs ?? []).map((o: string) => `${getArtifactsDir()}/${o}`);
       const issueNumber = this.stageIssues.get(`${runId}:${stage}`);
-      await this.publisher.commitStage(stage, files, issueNumber);
+      await this.publisher.commitStage(stage, files, issueNumber, getArtifactsDir());
 
       // Notify handler about PR (created lazily after first commit)
       const pr = this.publisher.getPR();
@@ -383,7 +418,7 @@ export class Orchestrator {
     try {
       const lines: string[] = ['## 🎨 UIDesigner — Component Preview', ''];
 
-      // Screenshots
+      // Screenshots (mapped to docs/mosaicat/screenshots/ in repo)
       const screenshotsDir = `${getArtifactsDir()}/screenshots`;
       const screenshots = this.safeReadDir(screenshotsDir).filter(f => f.endsWith('.png'));
       if (screenshots.length > 0) {
@@ -391,7 +426,7 @@ export class Orchestrator {
         lines.push('');
         for (const file of screenshots) {
           const name = file.replace('.png', '');
-          const imgUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${getArtifactsDir()}/screenshots/${file}`;
+          const imgUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/docs/mosaicat/screenshots/${file}`;
           lines.push(`<details><summary>${name}</summary>`);
           lines.push('');
           lines.push(`![${name}](${imgUrl})`);
@@ -401,7 +436,7 @@ export class Orchestrator {
         }
       }
 
-      // Interactive preview links
+      // Interactive preview links (mapped to docs/mosaicat/previews/ in repo)
       const previewsDir = `${getArtifactsDir()}/previews`;
       const previews = this.safeReadDir(previewsDir).filter(f => f.endsWith('.html'));
       if (previews.length > 0) {
@@ -409,16 +444,16 @@ export class Orchestrator {
         lines.push('');
         for (const file of previews) {
           const name = file.replace('.html', '');
-          const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${getArtifactsDir()}/previews/${file}`;
+          const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/docs/mosaicat/previews/${file}`;
           const previewUrl = `https://htmlpreview.github.io/?${rawUrl}`;
           lines.push(`- [${name}](${previewUrl})`);
         }
         lines.push('');
       }
 
-      // Gallery link
+      // Gallery link (mapped to docs/mosaicat/gallery.html in repo)
       if (fs.existsSync(`${getArtifactsDir()}/gallery.html`)) {
-        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${getArtifactsDir()}/gallery.html`;
+        const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/docs/mosaicat/gallery.html`;
         const galleryUrl = `https://htmlpreview.github.io/?${rawUrl}`;
         lines.push(`### [View Gallery](${galleryUrl})`);
         lines.push('');
@@ -445,6 +480,36 @@ export class Orchestrator {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Ask user what to do when a stage has exhausted automatic retries.
+   * Returns 'retry' | 'skip' | 'abort'.
+   */
+  private async askUserOnStageFail(
+    stage: StageName,
+    attempts: number,
+    error: string,
+  ): Promise<'retry' | 'skip' | 'abort'> {
+    const agentName = AGENT_DESC[stage];
+    const errorPreview = error.slice(0, 500);
+
+    const answer = await this.handler.onClarification(
+      stage,
+      `${agentName}（${stage}）在自动重试 ${attempts} 次后仍然失败。\n\n错误信息:\n${errorPreview}\n\n请选择操作:`,
+      '',
+      [
+        { label: 'Retry', description: '重置重试计数，重新执行该阶段' },
+        { label: 'Skip', description: '跳过该阶段，继续后续流程' },
+        { label: 'Abort', description: '终止 Pipeline' },
+      ],
+      false,
+    );
+
+    const lower = answer.toLowerCase();
+    if (lower.includes('retry') || lower.includes('重试')) return 'retry';
+    if (lower.includes('skip') || lower.includes('跳过')) return 'skip';
+    return 'abort';
   }
 
   private async executeAgent(

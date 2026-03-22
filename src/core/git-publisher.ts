@@ -31,15 +31,27 @@ export class GitPublisher {
   }
 
   /** Commit stage artifacts via API: read files → create blobs → tree → commit → update ref */
-  async commitStage(stage: string, files: string[], issueNumber?: number): Promise<void> {
+  async commitStage(stage: string, files: string[], issueNumber?: number, basePath?: string): Promise<void> {
     if (!this.branch || !this.headSha) return;
 
     // Expand directory paths into individual files
     const resolvedFiles = this.resolveFiles(files);
 
+    // Compute prefix to strip from disk paths → artifact-relative paths
+    const stripPrefix = basePath ? (basePath.endsWith('/') ? basePath : basePath + '/') : '';
+
     // Read files from disk and create blobs
     const treeEntries: GitTreeEntry[] = [];
     for (const filePath of resolvedFiles) {
+      // Strip artifact dir prefix: ".mosaic/artifacts/run-123/code/src/App.tsx" → "code/src/App.tsx"
+      const artifactRelative = stripPrefix && filePath.startsWith(stripPrefix)
+        ? filePath.slice(stripPrefix.length)
+        : filePath;
+
+      // Map to target repo path
+      const repoPath = GitPublisher.mapToRepoPath(artifactRelative);
+      if (repoPath === null) continue; // skip files that shouldn't be pushed
+
       const content = this.readFileAsBase64(filePath);
       if (content === null) {
         console.warn(`[git-publisher] Skipping missing file: ${filePath}`);
@@ -48,7 +60,7 @@ export class GitPublisher {
 
       const blob = await this.adapter.createBlob(content, 'base64');
       treeEntries.push({
-        path: filePath,
+        path: repoPath,
         mode: '100644',
         type: 'blob',
         sha: blob.sha,
@@ -141,6 +153,51 @@ export class GitPublisher {
       }
     }
     return result;
+  }
+
+  /**
+   * Map an artifact-relative path to its target repo path.
+   * Returns null if the file should not be pushed to the repo.
+   *
+   * Rules:
+   *   code/X         → X              (code files go to repo root)
+   *   *.manifest.json → null          (internal manifests, skip)
+   *   code-plan.json  → null          (internal plan, skip)
+   *   intent-brief.json → null        (internal, skip)
+   *   tests/X        → null           (tester writes to code/tests/, handled by code/ rule)
+   *   components/X   → docs/mosaicat/components/X  (UI designer preview components)
+   *   previews/X     → docs/mosaicat/previews/X
+   *   screenshots/X  → docs/mosaicat/screenshots/X
+   *   gallery.html   → docs/mosaicat/gallery.html
+   *   *.md / *.yaml  → docs/mosaicat/X  (pipeline docs)
+   */
+  static mapToRepoPath(artifactRelative: string): string | null {
+    // 1. code/ → strip prefix, push to repo root
+    if (artifactRelative.startsWith('code/')) {
+      return artifactRelative.slice('code/'.length);
+    }
+
+    // 2. Skip manifests and internal files
+    if (artifactRelative.endsWith('.manifest.json')) return null;
+    if (artifactRelative === 'code-plan.json') return null;
+    if (artifactRelative === 'intent-brief.json') return null;
+    if (artifactRelative === 'validation-report.md') return null; // internal cross-check
+
+    // 3. UI designer assets → docs/mosaicat/
+    if (artifactRelative.startsWith('components/') ||
+        artifactRelative.startsWith('previews/') ||
+        artifactRelative.startsWith('screenshots/') ||
+        artifactRelative === 'gallery.html') {
+      return `docs/mosaicat/${artifactRelative}`;
+    }
+
+    // 4. Pipeline docs → docs/mosaicat/
+    if (artifactRelative.endsWith('.md') || artifactRelative.endsWith('.yaml')) {
+      return `docs/mosaicat/${artifactRelative}`;
+    }
+
+    // 5. Everything else → skip (tests/ dir output, unknown files)
+    return null;
   }
 
   /** Directories to skip when collecting files for git commits */

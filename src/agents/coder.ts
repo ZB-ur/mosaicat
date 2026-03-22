@@ -361,6 +361,19 @@ export class CoderAgent extends BaseAgent {
     parts.push(`Write all files under: ${codeDir}/`);
     parts.push('');
 
+    // Warn about files that already exist (from previous modules)
+    const existingFiles = mod.files.filter(f => {
+      try { return fs.statSync(`${codeDir}/${f}`).isFile(); } catch { return false; }
+    });
+    if (existingFiles.length > 0) {
+      parts.push(`## ⚠ Files already on disk (from previous modules)`);
+      parts.push('These files exist from an earlier module. Read them first, then update/replace with your complete version.');
+      for (const f of existingFiles) {
+        parts.push(`- ${codeDir}/${f}`);
+      }
+      parts.push('');
+    }
+
     // Tech stack context
     parts.push(`## Tech Stack`);
     parts.push(`Language: ${plan.tech_stack.language}`);
