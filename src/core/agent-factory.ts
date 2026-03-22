@@ -1,6 +1,7 @@
 import type { StageName, AgentAutonomyConfig } from './types.js';
 import type { LLMProvider } from './llm-provider.js';
 import type { Logger } from './logger.js';
+import type { InteractionHandler } from './interaction-handler.js';
 import { BaseAgent, StubAgent } from './agent.js';
 import { StubProvider } from './llm-provider.js';
 import {
@@ -27,7 +28,7 @@ const AGENT_MAP: Partial<Record<StageName, AgentConstructor>> = {
   api_designer: APIDesignerAgent,
   ui_designer: UIDesignerAgent,
   tech_lead: TechLeadAgent,
-  coder: CoderAgent,
+  // coder — created specially to receive interactionHandler
   reviewer: ReviewerAgent,
   validator: ValidatorAgent,
   qa_lead: QALeadAgent,
@@ -41,10 +42,16 @@ export function createAgent(
   provider: LLMProvider,
   logger: Logger,
   _autonomy?: AgentAutonomyConfig,
+  interactionHandler?: InteractionHandler,
 ): BaseAgent {
   // Use StubAgent when provider is StubProvider (Phase 1 compatibility)
   if (provider instanceof StubProvider) {
     return new StubAgent(stage, provider, logger);
+  }
+
+  // Coder needs InteractionHandler for retry confirmation
+  if (stage === 'coder') {
+    return new CoderAgent(stage, provider, logger, interactionHandler);
   }
 
   const AgentClass = AGENT_MAP[stage];

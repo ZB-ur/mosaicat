@@ -67,7 +67,7 @@ const VALID_TRANSITIONS: Record<StageState, StageState[]> = {
   awaiting_human: ['approved', 'rejected', 'failed'],
   approved: ['done'],
   rejected: ['idle'],  // rollback resets to idle
-  failed: ['idle'],    // retry resets to idle
+  failed: ['idle', 'skipped'],  // retry resets to idle, or user skips
   done: [],
   skipped: [],         // terminal state — skipped stages don't transition
 };

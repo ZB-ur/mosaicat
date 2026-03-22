@@ -151,6 +151,10 @@ export function attachCLIProgress(): () => void {
     console.log(`  ${BLUE}◇ response received${RESET} ${DIM}(${formatBytes(responseLength)})${RESET}`);
   });
 
+  on('agent:progress', (_stage, message) => {
+    console.log(`  ${DIM}${message}${RESET}`);
+  });
+
   on('agent:clarification', (stage, question) => {
     console.log(`  ${YELLOW}? clarification needed:${RESET} ${question}`);
   });

@@ -35,6 +35,12 @@ export function createSnapshot(stage: StageName, runId: string, issueNumbers?: R
   return snapshotDir;
 }
 
+/** Directories to skip when creating snapshots (same as git-publisher) */
+const SKIP_DIRS = new Set([
+  'node_modules', '.git', 'dist', 'build', '.turbo', '.cache',
+  '.next', '.nuxt', '.output', '__pycache__', '.venv', 'venv',
+]);
+
 function copyDirSync(src: string, dest: string): void {
   const entries = fs.readdirSync(src, { withFileTypes: true });
   for (const entry of entries) {
@@ -42,6 +48,7 @@ function copyDirSync(src: string, dest: string): void {
     const destPath = path.join(dest, entry.name);
     try {
       if (entry.isDirectory()) {
+        if (SKIP_DIRS.has(entry.name)) continue;
         fs.mkdirSync(destPath, { recursive: true });
         copyDirSync(srcPath, destPath);
       } else {

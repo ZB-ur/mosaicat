@@ -345,12 +345,29 @@ export class UIDesignerAgent extends BaseAgent {
     let planData: unknown;
     try {
       planData = JSON.parse(jsonStr);
-    } catch (parseErr) {
-      this.logger.agent(this.stage, 'error', 'planner:json-parse-failed', {
-        rawContent: jsonStr.slice(0, 500),
-        error: parseErr instanceof Error ? parseErr.message : String(parseErr),
-      });
-      throw new Error('Failed to parse ui-plan.json JSON from planner response');
+    } catch (firstErr) {
+      // Fallback: fix common LLM JSON issues (trailing commas, single-line comments)
+      try {
+        const cleaned = jsonStr
+          .replace(/,\s*([\]}])/g, '$1')           // trailing commas
+          .replace(/\/\/[^\n]*/g, '')               // single-line comments
+          .replace(/\/\*[\s\S]*?\*\//g, '')         // multi-line comments
+          .replace(/[\x00-\x1f\x7f]/g, (ch) =>     // control chars except \n \r \t
+            ch === '\n' || ch === '\r' || ch === '\t' ? ch : ''
+          );
+        planData = JSON.parse(cleaned);
+        this.logger.agent(this.stage, 'warn', 'planner:json-fixed', {
+          originalError: firstErr instanceof Error ? firstErr.message : String(firstErr),
+        });
+      } catch (secondErr) {
+        this.logger.agent(this.stage, 'error', 'planner:json-parse-failed', {
+          rawLength: jsonStr.length,
+          rawHead: jsonStr.slice(0, 300),
+          rawTail: jsonStr.slice(-300),
+          error: firstErr instanceof Error ? firstErr.message : String(firstErr),
+        });
+        throw new Error('Failed to parse ui-plan.json JSON from planner response');
+      }
     }
 
     const plan = UIPlanSchema.parse(planData);

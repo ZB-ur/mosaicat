@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import { execSync } from 'node:child_process';
-import type { AgentContext } from '../core/types.js';
+import type { AgentContext, StageName } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
+import type { LLMProvider } from '../core/llm-provider.js';
+import type { Logger } from '../core/logger.js';
+import type { InteractionHandler } from '../core/interaction-handler.js';
 import type { OutputSpec } from '../core/prompt-assembler.js';
 import { eventBus } from '../core/event-bus.js';
 import { readArtifact, artifactExists, getArtifactsDir } from '../core/artifact.js';
@@ -10,12 +13,14 @@ import { CodePlanSchema, type CodePlan, type CodePlanModule } from './code-plan-
 const PLANNER_PROMPT_PATH = '.claude/agents/mosaic/code-planner.md';
 const BUILDER_PROMPT_PATH = '.claude/agents/mosaic/code-builder.md';
 
-/** Per-module timeout: 5 minutes */
+/** Per-module build timeout: 5 minutes */
 const MODULE_TIMEOUT_MS = 300_000;
+/** Build fix timeout: 10 minutes (needs time to diagnose + fix across files) */
+const BUILD_FIX_TIMEOUT_MS = 600_000;
 /** Planner budget */
 const PLANNER_BUDGET_USD = 0.50;
-/** Max compile-fix retries per module */
-const MAX_MODULE_FIX_RETRIES = 2;
+/** Number of automatic fix retries before asking user confirmation */
+const AUTO_FIX_RETRIES = 3;
 
 /**
  * High-autonomy Coder Agent with planner/builder split.
@@ -32,6 +37,18 @@ const MAX_MODULE_FIX_RETRIES = 2;
  * 9. Generate code.manifest.json programmatically
  */
 export class CoderAgent extends BaseAgent {
+  private interactionHandler?: InteractionHandler;
+
+  constructor(
+    stage: StageName,
+    provider: LLMProvider,
+    logger: Logger,
+    interactionHandler?: InteractionHandler,
+  ) {
+    super(stage, provider, logger);
+    this.interactionHandler = interactionHandler;
+  }
+
   getOutputSpec(): OutputSpec {
     return {
       artifacts: ['code/'],
@@ -75,8 +92,10 @@ export class CoderAgent extends BaseAgent {
       // Step 3: Build scaffold first if needed
       const scaffoldModule = modulesToBuild.find(m => m.priority === 0);
       if (scaffoldModule) {
+        eventBus.emit('agent:progress', this.stage, `[scaffold] building ${scaffoldModule.files.length} files...`);
         await this.buildModule(context, plan, scaffoldModule, builtModules, perModuleBudget);
         builtModules.add(scaffoldModule.name);
+        eventBus.emit('agent:progress', this.stage, `[scaffold] running: ${plan.commands.setupCommand}`);
         this.runSetupCommand(plan);
       }
 
@@ -85,55 +104,80 @@ export class CoderAgent extends BaseAgent {
         .filter(m => m.priority !== 0)
         .sort((a, b) => a.priority - b.priority);
 
-      for (const mod of nonScaffold) {
+      for (let mi = 0; mi < nonScaffold.length; mi++) {
+        const mod = nonScaffold[mi];
+        eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] module "${mod.name}" — ${mod.files.length} files`);
         await this.buildModule(context, plan, mod, builtModules, perModuleBudget);
         builtModules.add(mod.name);
 
         // Verify after each module
+        eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] verifying: ${plan.commands.verifyCommand}`);
         const verifyResult = this.runVerifyCommand(plan);
-        if (!verifyResult.success) {
-          // Try to fix compilation errors
+        if (verifyResult.success) {
+          eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ✓ verify passed`);
+        } else {
+          eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ✗ verify failed — attempting fix...`);
+          // Try to fix compilation errors — no hard limit, ask user after AUTO_FIX_RETRIES
           let fixed = false;
-          for (let retry = 0; retry < MAX_MODULE_FIX_RETRIES; retry++) {
+          let lastErrors = verifyResult.errors;
+          for (let retry = 1; ; retry++) {
+            // After AUTO_FIX_RETRIES automatic attempts, ask user
+            if (retry > AUTO_FIX_RETRIES) {
+              const shouldContinue = await this.askUserToRetry(mod.name, retry - 1, lastErrors);
+              if (!shouldContinue) {
+                eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ⚠ user chose to skip — continuing`);
+                break;
+              }
+            }
+
+            eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] fix attempt ${retry}...`);
             this.logger.agent(this.stage, 'warn', 'builder:verify-failed', {
               module: mod.name,
-              retry: retry + 1,
-              errors: verifyResult.errors.slice(0, 500),
+              retry,
+              errors: lastErrors.slice(0, 500),
             });
 
             await this.buildModuleWithErrors(
-              context, plan, mod, builtModules, perModuleBudget, verifyResult.errors
+              context, plan, mod, builtModules, perModuleBudget, lastErrors, retry
             );
 
             const retryResult = this.runVerifyCommand(plan);
             if (retryResult.success) {
+              eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ✓ fix succeeded (attempt ${retry})`);
               fixed = true;
               break;
             }
+            lastErrors = retryResult.errors;
           }
 
           if (!fixed) {
             this.logger.agent(this.stage, 'warn', 'builder:verify-gave-up', {
               module: mod.name,
             });
-            // Continue to next module — don't block the pipeline
           }
         }
       }
     }
 
     // Step 5: Final build check
+    eventBus.emit('agent:progress', this.stage, `running final build: ${plan.commands.buildCommand}`);
     const buildResult = this.runBuildCommand(plan);
-    if (!buildResult.success) {
+    if (buildResult.success) {
+      eventBus.emit('agent:progress', this.stage, '✓ build passed');
+    } else {
+      eventBus.emit('agent:progress', this.stage, '✗ build failed — attempting fix...');
       this.logger.agent(this.stage, 'warn', 'builder:build-failed', {
         errors: buildResult.errors.slice(0, 1000),
       });
       // One fix attempt for build errors
-      await this.runBuildFix(context, plan, builtModules, buildResult.errors, totalBudget * 0.1);
+      await this.runBuildFix(context, plan, builtModules, buildResult.errors, totalBudget * 0.2);
     }
 
     // Step 6: Generate manifest programmatically
     this.generateManifest(plan);
+
+    // Step 7: Generate README.md (pure programmatic, no LLM)
+    this.generateReadme(plan);
   }
 
   // ─── Planner ─────────────────────────────────────────────────
@@ -221,25 +265,84 @@ export class CoderAgent extends BaseAgent {
     builtModules: Set<string>,
     budgetUsd: number,
     errors: string,
+    retryNumber: number,
   ): Promise<void> {
     const builderPrompt = fs.readFileSync(BUILDER_PROMPT_PATH, 'utf-8');
-    const basePrompt = this.buildModulePrompt(context, plan, mod, builtModules);
-    const errorPrompt = `${basePrompt}\n\n## Compilation Errors (fix these)\n\`\`\`\n${errors}\n\`\`\`\n\nFix the errors above. Only modify files that have errors. Do not rewrite files that compile correctly.`;
+    const codeDir = `${getArtifactsDir()}/code`;
+
+    // Extract file paths from error messages for targeted fix
+    const errorFiles = this.extractErrorFiles(errors, codeDir);
+
+    const parts: string[] = [];
+    parts.push(`## Fix Compilation Errors (attempt ${retryNumber})`);
+    parts.push(`Module: ${mod.name}`);
+    parts.push(`Working directory: ${codeDir}`);
+    parts.push('');
+    parts.push('## Errors');
+    parts.push('```');
+    parts.push(errors.slice(0, 3000));
+    parts.push('```');
+    parts.push('');
+
+    // Guide the LLM to read files first
+    if (errorFiles.length > 0) {
+      parts.push('## Files with errors (read these first, then fix)');
+      for (const f of errorFiles.slice(0, 10)) {
+        parts.push(`- ${f}`);
+      }
+      parts.push('');
+    }
+
+    parts.push('## Instructions');
+    parts.push('1. Use the Read tool to read each file that has errors');
+    parts.push('2. Understand the root cause of each error');
+    parts.push('3. Use the Write tool to fix ONLY the files that have errors');
+    parts.push('4. Do not rewrite files that compile correctly');
+
+    const errorPrompt = parts.join('\n');
 
     this.logger.agent(this.stage, 'info', 'builder:fix-start', {
       module: mod.name,
+      retry: retryNumber,
+      errorFiles: errorFiles.length,
     });
+    eventBus.emit('agent:thinking', this.stage, errorPrompt.length);
 
-    await this.provider.call(errorPrompt, {
+    const response = await this.provider.call(errorPrompt, {
       systemPrompt: builderPrompt,
       allowedTools: ['Read', 'Write', 'Bash'],
-      maxBudgetUsd: budgetUsd * 0.5,
+      maxBudgetUsd: budgetUsd,
       timeoutMs: MODULE_TIMEOUT_MS,
     });
 
+    eventBus.emit('agent:response', this.stage, response.content.length);
+
     this.logger.agent(this.stage, 'info', 'builder:fix-complete', {
       module: mod.name,
+      retry: retryNumber,
     });
+  }
+
+  /**
+   * Extract file paths from compilation error output.
+   * Handles common patterns: "src/foo.ts(10,5): error TS..." or "ERROR in ./src/foo.ts"
+   */
+  private extractErrorFiles(errors: string, codeDir: string): string[] {
+    const files = new Set<string>();
+    // TypeScript pattern: src/foo.ts(line,col): error
+    const tsPattern = /^([^\s(]+\.tsx?)\(\d+,\d+\)/gm;
+    // Webpack/Vite pattern: ERROR in ./src/foo.ts
+    const bundlerPattern = /(?:ERROR|error)\s+(?:in\s+)?\.?\/?([^\s:]+\.(?:ts|tsx|js|jsx))/gm;
+
+    let match;
+    while ((match = tsPattern.exec(errors)) !== null) {
+      files.add(`${codeDir}/${match[1]}`);
+    }
+    while ((match = bundlerPattern.exec(errors)) !== null) {
+      files.add(`${codeDir}/${match[1]}`);
+    }
+
+    return [...files];
   }
 
   private buildModulePrompt(
@@ -257,6 +360,19 @@ export class CoderAgent extends BaseAgent {
     parts.push(`Dependencies: ${mod.dependencies.join(', ') || 'none'}`);
     parts.push(`Write all files under: ${codeDir}/`);
     parts.push('');
+
+    // Warn about files that already exist (from previous modules)
+    const existingFiles = mod.files.filter(f => {
+      try { return fs.statSync(`${codeDir}/${f}`).isFile(); } catch { return false; }
+    });
+    if (existingFiles.length > 0) {
+      parts.push(`## ⚠ Files already on disk (from previous modules)`);
+      parts.push('These files exist from an earlier module. Read them first, then update/replace with your complete version.');
+      for (const f of existingFiles) {
+        parts.push(`- ${codeDir}/${f}`);
+      }
+      parts.push('');
+    }
 
     // Tech stack context
     parts.push(`## Tech Stack`);
@@ -291,6 +407,33 @@ export class CoderAgent extends BaseAgent {
     }
 
     return parts.join('\n');
+  }
+
+  // ─── User Confirmation ──────────────────────────────────────
+
+  /**
+   * Ask user whether to continue retrying a failed module.
+   * If no InteractionHandler (e.g. auto-approve mode), defaults to skip.
+   */
+  private async askUserToRetry(moduleName: string, attempts: number, errors: string): Promise<boolean> {
+    if (!this.interactionHandler) {
+      // No interaction handler (auto-approve or MCP mode) — skip after AUTO_FIX_RETRIES
+      return false;
+    }
+
+    const errorPreview = errors.slice(0, 500);
+    const answer = await this.interactionHandler.onClarification(
+      this.stage,
+      `Module "${moduleName}" still has compilation errors after ${attempts} fix attempts.\n\nErrors:\n${errorPreview}\n\nContinue retrying?`,
+      '',
+      [
+        { label: 'Retry', description: 'Try fixing again' },
+        { label: 'Skip', description: 'Skip this module and continue' },
+      ],
+      false,
+    );
+
+    return answer.toLowerCase().includes('retry');
   }
 
   // ─── Build Fix (final build failure) ────────────────────────
@@ -328,7 +471,7 @@ export class CoderAgent extends BaseAgent {
       systemPrompt: builderPrompt,
       allowedTools: ['Read', 'Write', 'Bash'],
       maxBudgetUsd: budgetUsd,
-      timeoutMs: MODULE_TIMEOUT_MS,
+      timeoutMs: BUILD_FIX_TIMEOUT_MS,
     });
 
     this.logger.agent(this.stage, 'info', 'builder:build-fix-complete', {});
@@ -504,5 +647,183 @@ export class CoderAgent extends BaseAgent {
       files: fileEntries.length,
       modules: manifest.modules.length,
     });
+  }
+
+  // ─── README Generation ────────────────────────────────────
+
+  private generateReadme(plan: CodePlan): void {
+    const codeDir = `${getArtifactsDir()}/code`;
+    const lines: string[] = [];
+
+    // --- Project Summary (from intent-brief.json if available) ---
+    lines.push(`# ${plan.project_name}`);
+    lines.push('');
+
+    try {
+      const briefRaw = readArtifact('intent-brief.json');
+      const brief = JSON.parse(briefRaw);
+      if (brief.problem) lines.push(brief.problem);
+      lines.push('');
+      if (brief.target_users) lines.push(`**Target Users:** ${brief.target_users}`);
+      if (brief.core_scenarios?.length > 0) {
+        lines.push('');
+        lines.push('**Core Scenarios:**');
+        for (const s of brief.core_scenarios) {
+          lines.push(`- ${s}`);
+        }
+      }
+      lines.push('');
+    } catch {
+      lines.push(`A ${plan.tech_stack.framework} project.`);
+      lines.push('');
+    }
+
+    // --- Features (from prd.manifest.json if available) ---
+    try {
+      const prdRaw = readArtifact('prd.manifest.json');
+      const prd = JSON.parse(prdRaw);
+      if (prd.features?.length > 0) {
+        lines.push('## Features');
+        lines.push('');
+        for (const f of prd.features) {
+          lines.push(`- **${f.id}**: ${f.name}`);
+        }
+        lines.push('');
+      }
+    } catch {
+      // No PRD manifest — skip
+    }
+
+    // --- Tech Stack ---
+    lines.push('## Tech Stack');
+    lines.push('');
+    lines.push(`| Layer | Technology |`);
+    lines.push(`|---|---|`);
+    lines.push(`| Language | ${plan.tech_stack.language} |`);
+    lines.push(`| Framework | ${plan.tech_stack.framework} |`);
+    lines.push(`| Build Tool | ${plan.tech_stack.build_tool} |`);
+    lines.push('');
+
+    // --- Quick Start ---
+    lines.push('## Quick Start');
+    lines.push('');
+    lines.push('```bash');
+    lines.push(plan.commands.setupCommand);
+    lines.push(plan.commands.buildCommand);
+    lines.push('```');
+    lines.push('');
+
+    // --- Module Architecture (Mermaid dependency graph) ---
+    const nonScaffoldModules = plan.modules.filter(m => m.priority > 0);
+    if (nonScaffoldModules.length > 1) {
+      lines.push('## Architecture');
+      lines.push('');
+      lines.push('```mermaid');
+      lines.push('graph TD');
+
+      // Nodes with descriptions
+      for (const mod of nonScaffoldModules) {
+        const label = `${mod.name}["${mod.name}<br/><small>${this.escapeForMermaid(mod.description)}</small>"]`;
+        lines.push(`  ${label}`);
+      }
+
+      // Edges from dependencies
+      for (const mod of nonScaffoldModules) {
+        for (const dep of mod.dependencies) {
+          if (dep === 'scaffold') continue; // skip scaffold edges for clarity
+          lines.push(`  ${dep} --> ${mod.name}`);
+        }
+      }
+
+      lines.push('```');
+      lines.push('');
+    }
+
+    // --- Modules Table ---
+    lines.push('## Modules');
+    lines.push('');
+    lines.push('| Module | Description | Files | Features |');
+    lines.push('|---|---|---|---|');
+    for (const mod of plan.modules) {
+      const features = mod.covers_features.join(', ') || '—';
+      lines.push(`| ${mod.name} | ${mod.description} | ${mod.files.length} | ${features} |`);
+    }
+    lines.push('');
+
+    // --- Project Directory Tree ---
+    lines.push('## Project Structure');
+    lines.push('');
+    lines.push('```');
+    const tree = this.buildDirectoryTree(codeDir, 3);
+    lines.push(tree);
+    lines.push('```');
+    lines.push('');
+
+    // --- Footer ---
+    lines.push('---');
+    lines.push('');
+    lines.push('_Generated by [Mosaicat](https://github.com/ZB-ur/mosaicat) pipeline_');
+
+    // Write to code directory
+    const readmeContent = lines.join('\n');
+    fs.writeFileSync(`${codeDir}/README.md`, readmeContent, 'utf-8');
+
+    // Also write as an artifact for the pipeline
+    this.writeOutput('code/README.md', readmeContent);
+
+    this.logger.agent(this.stage, 'info', 'readme:generated', {
+      size: readmeContent.length,
+    });
+  }
+
+  private escapeForMermaid(text: string): string {
+    return text
+      .replace(/"/g, "'")
+      .replace(/[<>]/g, '')
+      .slice(0, 60);
+  }
+
+  /**
+   * Build a visual directory tree string, limited to maxDepth.
+   * Skips node_modules, dist, .turbo, etc.
+   */
+  private buildDirectoryTree(dir: string, maxDepth: number): string {
+    const skipDirs = new Set(['node_modules', 'dist', 'build', '.turbo', '.cache', '.git']);
+    const lines: string[] = [];
+    const baseName = dir.split('/').pop() ?? dir;
+    lines.push(`${baseName}/`);
+
+    const walk = (currentDir: string, prefix: string, depth: number) => {
+      if (depth >= maxDepth) return;
+
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(currentDir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+
+      // Sort: directories first, then files
+      const dirs = entries.filter(e => e.isDirectory() && !skipDirs.has(e.name)).sort((a, b) => a.name.localeCompare(b.name));
+      const files = entries.filter(e => !e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
+      const all = [...dirs, ...files];
+
+      for (let i = 0; i < all.length; i++) {
+        const entry = all[i];
+        const isLast = i === all.length - 1;
+        const connector = isLast ? '└── ' : '├── ';
+        const childPrefix = isLast ? '    ' : '│   ';
+
+        if (entry.isDirectory()) {
+          lines.push(`${prefix}${connector}${entry.name}/`);
+          walk(`${currentDir}/${entry.name}`, `${prefix}${childPrefix}`, depth + 1);
+        } else {
+          lines.push(`${prefix}${connector}${entry.name}`);
+        }
+      }
+    };
+
+    walk(dir, '', 0);
+    return lines.join('\n');
   }
 }

@@ -39,6 +39,11 @@ export function buildContext(
   for (const input of config.inputs) {
     if (input === 'user_instruction') {
       inputArtifacts.set('user_instruction', task.instruction);
+    } else if (input.endsWith('/')) {
+      // Directory inputs are markers — agents access them via getArtifactsDir()
+      if (artifactExists(input)) {
+        inputArtifacts.set(input, `[directory: ${input}]`);
+      }
     } else if (artifactExists(input)) {
       inputArtifacts.set(input, readArtifact(input));
     }
