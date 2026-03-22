@@ -10,6 +10,13 @@ export const CodePlanModuleSchema = z.object({
   priority: z.number(),
 });
 
+export const SmokeTestSchema = z.object({
+  type: z.enum(['web', 'api', 'cli', 'library']),
+  startCommand: z.string(),
+  port: z.number().optional(),
+  readyPattern: z.string().optional(),
+});
+
 export const CodePlanSchema = z.object({
   project_name: z.string(),
   tech_stack: z.object({
@@ -23,7 +30,9 @@ export const CodePlanSchema = z.object({
     buildCommand: z.string(),
   }),
   modules: z.array(CodePlanModuleSchema),
+  smokeTest: SmokeTestSchema.optional(),
 });
 
 export type CodePlan = z.infer<typeof CodePlanSchema>;
 export type CodePlanModule = z.infer<typeof CodePlanModuleSchema>;
+export type SmokeTest = z.infer<typeof SmokeTestSchema>;
