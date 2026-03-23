@@ -1,5 +1,6 @@
 import fs from 'node:fs';
-import { execSync } from 'node:child_process';
+import net from 'node:net';
+import { execSync, spawn, type ChildProcess } from 'node:child_process';
 import type { AgentContext, StageName } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
 import type { LLMProvider } from '../core/llm-provider.js';
@@ -12,29 +13,44 @@ import { CodePlanSchema, type CodePlan, type CodePlanModule } from './code-plan-
 
 const PLANNER_PROMPT_PATH = '.claude/agents/mosaic/code-planner.md';
 const BUILDER_PROMPT_PATH = '.claude/agents/mosaic/code-builder.md';
+const SKELETON_PROMPT_PATH = '.claude/agents/mosaic/code-skeleton.md';
 
-/** Per-module build timeout: 5 minutes */
-const MODULE_TIMEOUT_MS = 300_000;
-/** Build fix timeout: 10 minutes (needs time to diagnose + fix across files) */
-const BUILD_FIX_TIMEOUT_MS = 600_000;
 /** Planner budget */
 const PLANNER_BUDGET_USD = 0.50;
+/** Skeleton phase: 10 min — writes all files */
+const SKELETON_TIMEOUT_MS = 600_000;
+/** Skeleton budget */
+const SKELETON_BUDGET_USD = 2.00;
+/** Per-module implement timeout: 5 minutes */
+const MODULE_TIMEOUT_MS = 300_000;
+/** Build fix timeout: 10 minutes */
+const BUILD_FIX_TIMEOUT_MS = 600_000;
 /** Number of automatic fix retries before asking user confirmation */
 const AUTO_FIX_RETRIES = 3;
+/** Smoke test timeout: 15 seconds for server startup + request */
+const SMOKE_TEST_TIMEOUT_MS = 15_000;
+/** Placeholder keywords to scan for in build output */
+const PLACEHOLDER_KEYWORDS = ['Coming Soon', 'Placeholder', 'TODO:', 'Lorem ipsum'];
+/** Minimum JS bundle size to consider valid */
+const MIN_BUNDLE_SIZE_BYTES = 10_000;
+/** Minimum HTML length to consider non-empty */
+const MIN_HTML_LENGTH = 500;
 
 /**
- * High-autonomy Coder Agent with planner/builder split.
+ * High-autonomy Coder Agent with skeleton-implement architecture.
  *
  * Flow:
- * 1. Check disk for existing code-plan.json (retry reuse)
- * 2. If not found → run Planner (no tool use, ARTIFACT block output)
- * 3. Load existing modules from disk (resume support)
- * 4. Build scaffold module first → run setupCommand
- * 5. Build remaining modules sequentially by priority
- * 6. After each module → run verifyCommand (programmatic)
- * 7. If verify fails → inject errors and retry module (max 2 times)
- * 8. Final buildCommand check
- * 9. Generate code.manifest.json programmatically
+ * 1. Get or create code-plan.json (planner, no tool use)
+ * 2. Skeleton phase (1 LLM call + tool use) — writes all files with real
+ *    imports/exports/routes but stub implementations
+ * 3. npm install
+ * 4. tsc verify skeleton → one fix attempt if needed
+ * 5. Implement phase — per-module LLM calls replace stubs with real code
+ * 6. After each module → tsc verify → fix loop
+ * 7. Final npm run build
+ * 8. Build artifact analysis (zero LLM cost)
+ * 9. HTTP smoke test (zero LLM cost, only for web projects)
+ * 10. Generate manifest + README
  */
 export class CoderAgent extends BaseAgent {
   private interactionHandler?: InteractionHandler;
@@ -74,76 +90,98 @@ export class CoderAgent extends BaseAgent {
       plan = await this.runPlanner(context);
     }
 
-    // Step 2: Determine which modules need building
-    const builtModules = this.loadExistingModules(plan);
-    const modulesToBuild = this.getModulesToBuild(plan, builtModules, testFailures);
+    // Step 2: Skeleton phase
+    if (this.isSkeletonComplete(plan)) {
+      this.logger.agent(this.stage, 'info', 'skeleton:reuse', {
+        message: 'All skeleton files exist on disk — skipping skeleton phase',
+      });
+      eventBus.emit('agent:progress', this.stage, 'skeleton: reusing existing files (retry scenario)');
+    } else {
+      await this.runSkeleton(context, plan);
+    }
 
-    if (modulesToBuild.length === 0) {
-      this.logger.agent(this.stage, 'info', 'builder:all-modules-complete', {
+    // Step 3: npm install
+    eventBus.emit('agent:progress', this.stage, `running: ${plan.commands.setupCommand}`);
+    this.runSetupCommand(plan);
+
+    // Step 4: Verify skeleton with tsc
+    eventBus.emit('agent:progress', this.stage, `verifying skeleton: ${plan.commands.verifyCommand}`);
+    const skeletonVerify = this.runVerifyCommand(plan);
+    if (skeletonVerify.success) {
+      eventBus.emit('agent:progress', this.stage, 'skeleton: tsc passed');
+    } else {
+      eventBus.emit('agent:progress', this.stage, 'skeleton: tsc failed — attempting fix...');
+      this.logger.agent(this.stage, 'warn', 'skeleton:verify-failed', {
+        errors: skeletonVerify.errors.slice(0, 1000),
+      });
+      // One fix attempt for skeleton errors
+      await this.runSkeletonFix(context, plan, skeletonVerify.errors, totalBudget * 0.15);
+    }
+
+    // Step 5: Implement phase — per-module
+    const modulesToImplement = this.getModulesToImplement(plan, testFailures);
+
+    if (modulesToImplement.length === 0) {
+      this.logger.agent(this.stage, 'info', 'implement:all-modules-complete', {
         totalModules: plan.modules.length,
       });
     } else {
-      // Budget allocation: remaining budget / number of modules to build
-      const builderBudget = totalBudget - PLANNER_BUDGET_USD;
-      const perModuleBudget = modulesToBuild.length > 0
-        ? builderBudget / modulesToBuild.length
+      const builderBudget = totalBudget - PLANNER_BUDGET_USD - SKELETON_BUDGET_USD;
+      const perModuleBudget = modulesToImplement.length > 0
+        ? builderBudget / modulesToImplement.length
         : builderBudget;
 
-      // Step 3: Build scaffold first if needed
-      const scaffoldModule = modulesToBuild.find(m => m.priority === 0);
+      // Build scaffold first if in the implement list
+      const scaffoldModule = modulesToImplement.find(m => m.priority === 0);
       if (scaffoldModule) {
-        eventBus.emit('agent:progress', this.stage, `[scaffold] building ${scaffoldModule.files.length} files...`);
-        await this.buildModule(context, plan, scaffoldModule, builtModules, perModuleBudget);
-        builtModules.add(scaffoldModule.name);
+        eventBus.emit('agent:progress', this.stage, `[scaffold] implementing ${scaffoldModule.files.length} files...`);
+        await this.implementModule(context, plan, scaffoldModule, perModuleBudget);
         eventBus.emit('agent:progress', this.stage, `[scaffold] running: ${plan.commands.setupCommand}`);
         this.runSetupCommand(plan);
       }
 
-      // Step 4: Build remaining modules by priority
-      const nonScaffold = modulesToBuild
+      // Implement remaining modules by priority
+      const nonScaffold = modulesToImplement
         .filter(m => m.priority !== 0)
         .sort((a, b) => a.priority - b.priority);
 
       for (let mi = 0; mi < nonScaffold.length; mi++) {
         const mod = nonScaffold[mi];
-        eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] module "${mod.name}" — ${mod.files.length} files`);
-        await this.buildModule(context, plan, mod, builtModules, perModuleBudget);
-        builtModules.add(mod.name);
+        eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] implementing "${mod.name}" — ${mod.files.length} files`);
+        await this.implementModule(context, plan, mod, perModuleBudget);
 
         // Verify after each module
         eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] verifying: ${plan.commands.verifyCommand}`);
         const verifyResult = this.runVerifyCommand(plan);
         if (verifyResult.success) {
-          eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ✓ verify passed`);
+          eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] verify passed`);
         } else {
-          eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ✗ verify failed — attempting fix...`);
-          // Try to fix compilation errors — no hard limit, ask user after AUTO_FIX_RETRIES
+          eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] verify failed — attempting fix...`);
           let fixed = false;
           let lastErrors = verifyResult.errors;
           for (let retry = 1; ; retry++) {
-            // After AUTO_FIX_RETRIES automatic attempts, ask user
             if (retry > AUTO_FIX_RETRIES) {
               const shouldContinue = await this.askUserToRetry(mod.name, retry - 1, lastErrors);
               if (!shouldContinue) {
-                eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ⚠ user chose to skip — continuing`);
+                eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] user chose to skip — continuing`);
                 break;
               }
             }
 
             eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] fix attempt ${retry}...`);
-            this.logger.agent(this.stage, 'warn', 'builder:verify-failed', {
+            this.logger.agent(this.stage, 'warn', 'implement:verify-failed', {
               module: mod.name,
               retry,
               errors: lastErrors.slice(0, 500),
             });
 
-            await this.buildModuleWithErrors(
-              context, plan, mod, builtModules, perModuleBudget, lastErrors, retry
+            await this.implementModuleWithErrors(
+              context, plan, mod, perModuleBudget, lastErrors, retry
             );
 
             const retryResult = this.runVerifyCommand(plan);
             if (retryResult.success) {
-              eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] ✓ fix succeeded (attempt ${retry})`);
+              eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] fix succeeded (attempt ${retry})`);
               fixed = true;
               break;
             }
@@ -151,7 +189,7 @@ export class CoderAgent extends BaseAgent {
           }
 
           if (!fixed) {
-            this.logger.agent(this.stage, 'warn', 'builder:verify-gave-up', {
+            this.logger.agent(this.stage, 'warn', 'implement:verify-gave-up', {
               module: mod.name,
             });
           }
@@ -159,24 +197,27 @@ export class CoderAgent extends BaseAgent {
       }
     }
 
-    // Step 5: Final build check
+    // Step 6: Final build check
     eventBus.emit('agent:progress', this.stage, `running final build: ${plan.commands.buildCommand}`);
     const buildResult = this.runBuildCommand(plan);
     if (buildResult.success) {
-      eventBus.emit('agent:progress', this.stage, '✓ build passed');
+      eventBus.emit('agent:progress', this.stage, 'build passed');
     } else {
-      eventBus.emit('agent:progress', this.stage, '✗ build failed — attempting fix...');
-      this.logger.agent(this.stage, 'warn', 'builder:build-failed', {
+      eventBus.emit('agent:progress', this.stage, 'build failed — attempting fix...');
+      this.logger.agent(this.stage, 'warn', 'build:failed', {
         errors: buildResult.errors.slice(0, 1000),
       });
-      // One fix attempt for build errors
-      await this.runBuildFix(context, plan, builtModules, buildResult.errors, totalBudget * 0.2);
+      await this.runBuildFix(context, plan, buildResult.errors, totalBudget * 0.2);
     }
 
-    // Step 6: Generate manifest programmatically
-    this.generateManifest(plan);
+    // Step 7: Build artifact analysis (zero LLM cost)
+    this.analyzeBuildArtifacts(plan);
 
-    // Step 7: Generate README.md (pure programmatic, no LLM)
+    // Step 8: HTTP smoke test (zero LLM cost)
+    await this.runSmokeTest(plan);
+
+    // Step 9: Generate manifest + README
+    this.generateManifest(plan);
     this.generateReadme(plan);
   }
 
@@ -185,7 +226,6 @@ export class CoderAgent extends BaseAgent {
   private async runPlanner(context: AgentContext): Promise<CodePlan> {
     const plannerPrompt = fs.readFileSync(PLANNER_PROMPT_PATH, 'utf-8');
 
-    // Build user prompt with input artifacts
     const parts: string[] = ['## Task\nAnalyze the technical specification and produce a code-plan.json.\n'];
     const techSpec = context.inputArtifacts.get('tech-spec.md');
     if (techSpec) parts.push(`## tech-spec.md\n${techSpec}\n`);
@@ -206,15 +246,12 @@ export class CoderAgent extends BaseAgent {
 
     eventBus.emit('agent:response', this.stage, response.content.length);
 
-    // Extract code-plan.json from ARTIFACT block
     const planJson = this.extractArtifact(response.content, 'code-plan.json');
     if (!planJson) {
       throw new Error('Planner did not produce a code-plan.json ARTIFACT block');
     }
 
     const plan = CodePlanSchema.parse(JSON.parse(planJson));
-
-    // Write plan to disk for reuse
     this.writeOutput('code-plan.json', JSON.stringify(plan, null, 2));
 
     this.logger.agent(this.stage, 'info', 'planner:complete', {
@@ -225,19 +262,136 @@ export class CoderAgent extends BaseAgent {
     return plan;
   }
 
-  // ─── Builder ─────────────────────────────────────────────────
+  // ─── Skeleton ───────────────────────────────────────────────
 
-  private async buildModule(
+  private async runSkeleton(context: AgentContext, plan: CodePlan): Promise<void> {
+    const skeletonPrompt = fs.readFileSync(SKELETON_PROMPT_PATH, 'utf-8');
+    const codeDir = `${getArtifactsDir()}/code`;
+
+    // Build the complete file list across all modules
+    const allFiles = plan.modules.flatMap(m => m.files);
+
+    const parts: string[] = [];
+    parts.push('## Task');
+    parts.push('Create the complete project skeleton — all files with real imports, exports, and routes but stub implementations.');
+    parts.push('');
+    parts.push(`## Output Directory\n${codeDir}`);
+    parts.push('');
+    parts.push(`## Verify Command\n\`${plan.commands.verifyCommand}\``);
+    parts.push('');
+    parts.push('## code-plan.json');
+    parts.push('```json');
+    parts.push(JSON.stringify(plan, null, 2));
+    parts.push('```');
+    parts.push('');
+    parts.push(`## All Files to Create (${allFiles.length} total)`);
+    for (const f of allFiles) {
+      parts.push(`- ${codeDir}/${f}`);
+    }
+    parts.push('');
+
+    // Add tech-spec and api-spec for context
+    const techSpec = context.inputArtifacts.get('tech-spec.md');
+    if (techSpec) parts.push(`## tech-spec.md\n${techSpec}\n`);
+    const apiSpec = context.inputArtifacts.get('api-spec.yaml');
+    if (apiSpec) parts.push(`## api-spec.yaml\n${apiSpec}\n`);
+
+    const userPrompt = parts.join('\n');
+
+    this.logger.agent(this.stage, 'info', 'skeleton:start', {
+      promptLength: userPrompt.length,
+      totalFiles: allFiles.length,
+    });
+    eventBus.emit('agent:thinking', this.stage, userPrompt.length);
+    eventBus.emit('agent:progress', this.stage, `skeleton: writing ${allFiles.length} files...`);
+
+    const response = await this.provider.call(userPrompt, {
+      systemPrompt: skeletonPrompt,
+      allowedTools: ['Read', 'Write', 'Bash'],
+      maxBudgetUsd: SKELETON_BUDGET_USD,
+      timeoutMs: SKELETON_TIMEOUT_MS,
+    });
+
+    eventBus.emit('agent:response', this.stage, response.content.length);
+    this.logger.agent(this.stage, 'info', 'skeleton:complete', {
+      totalFiles: allFiles.length,
+    });
+  }
+
+  /**
+   * Check if all skeleton files already exist on disk (retry/resume scenario).
+   */
+  private isSkeletonComplete(plan: CodePlan): boolean {
+    const codeDir = `${getArtifactsDir()}/code`;
+    return plan.modules.every(mod =>
+      mod.files.every(f => fs.existsSync(`${codeDir}/${f}`))
+    );
+  }
+
+  /**
+   * Fix skeleton compilation errors — single attempt.
+   */
+  private async runSkeletonFix(
+    context: AgentContext,
+    plan: CodePlan,
+    errors: string,
+    budgetUsd: number,
+  ): Promise<void> {
+    const skeletonPrompt = fs.readFileSync(SKELETON_PROMPT_PATH, 'utf-8');
+    const codeDir = `${getArtifactsDir()}/code`;
+    const errorFiles = this.extractErrorFiles(errors, codeDir);
+
+    const parts: string[] = [];
+    parts.push('## Fix Skeleton Compilation Errors');
+    parts.push(`Working directory: ${codeDir}`);
+    parts.push('');
+    parts.push('## Errors');
+    parts.push('```');
+    parts.push(errors.slice(0, 3000));
+    parts.push('```');
+    parts.push('');
+
+    if (errorFiles.length > 0) {
+      parts.push('## Files with errors (read these first, then fix)');
+      for (const f of errorFiles.slice(0, 15)) {
+        parts.push(`- ${f}`);
+      }
+      parts.push('');
+    }
+
+    parts.push('## Instructions');
+    parts.push('1. Read each file that has errors');
+    parts.push('2. Fix the compilation errors — keep all existing imports and exports intact');
+    parts.push('3. Write only the files that need fixing');
+
+    const fixPrompt = parts.join('\n');
+
+    this.logger.agent(this.stage, 'info', 'skeleton:fix-start', {
+      errorFiles: errorFiles.length,
+    });
+
+    await this.provider.call(fixPrompt, {
+      systemPrompt: skeletonPrompt,
+      allowedTools: ['Read', 'Write', 'Bash'],
+      maxBudgetUsd: budgetUsd,
+      timeoutMs: BUILD_FIX_TIMEOUT_MS,
+    });
+
+    this.logger.agent(this.stage, 'info', 'skeleton:fix-complete', {});
+  }
+
+  // ─── Implement (per-module) ─────────────────────────────────
+
+  private async implementModule(
     context: AgentContext,
     plan: CodePlan,
     mod: CodePlanModule,
-    builtModules: Set<string>,
     budgetUsd: number,
   ): Promise<void> {
     const builderPrompt = fs.readFileSync(BUILDER_PROMPT_PATH, 'utf-8');
-    const userPrompt = this.buildModulePrompt(context, plan, mod, builtModules);
+    const userPrompt = this.buildImplementPrompt(context, plan, mod);
 
-    this.logger.agent(this.stage, 'info', 'builder:module-start', {
+    this.logger.agent(this.stage, 'info', 'implement:module-start', {
       module: mod.name,
       files: mod.files.length,
       priority: mod.priority,
@@ -253,24 +407,21 @@ export class CoderAgent extends BaseAgent {
 
     eventBus.emit('agent:response', this.stage, response.content.length);
 
-    this.logger.agent(this.stage, 'info', 'builder:module-complete', {
+    this.logger.agent(this.stage, 'info', 'implement:module-complete', {
       module: mod.name,
     });
   }
 
-  private async buildModuleWithErrors(
+  private async implementModuleWithErrors(
     context: AgentContext,
     plan: CodePlan,
     mod: CodePlanModule,
-    builtModules: Set<string>,
     budgetUsd: number,
     errors: string,
     retryNumber: number,
   ): Promise<void> {
     const builderPrompt = fs.readFileSync(BUILDER_PROMPT_PATH, 'utf-8');
     const codeDir = `${getArtifactsDir()}/code`;
-
-    // Extract file paths from error messages for targeted fix
     const errorFiles = this.extractErrorFiles(errors, codeDir);
 
     const parts: string[] = [];
@@ -284,7 +435,6 @@ export class CoderAgent extends BaseAgent {
     parts.push('```');
     parts.push('');
 
-    // Guide the LLM to read files first
     if (errorFiles.length > 0) {
       parts.push('## Files with errors (read these first, then fix)');
       for (const f of errorFiles.slice(0, 10)) {
@@ -298,10 +448,11 @@ export class CoderAgent extends BaseAgent {
     parts.push('2. Understand the root cause of each error');
     parts.push('3. Use the Write tool to fix ONLY the files that have errors');
     parts.push('4. Do not rewrite files that compile correctly');
+    parts.push('5. Preserve all import paths and export signatures from the skeleton');
 
     const errorPrompt = parts.join('\n');
 
-    this.logger.agent(this.stage, 'info', 'builder:fix-start', {
+    this.logger.agent(this.stage, 'info', 'implement:fix-start', {
       module: mod.name,
       retry: retryNumber,
       errorFiles: errorFiles.length,
@@ -317,80 +468,48 @@ export class CoderAgent extends BaseAgent {
 
     eventBus.emit('agent:response', this.stage, response.content.length);
 
-    this.logger.agent(this.stage, 'info', 'builder:fix-complete', {
+    this.logger.agent(this.stage, 'info', 'implement:fix-complete', {
       module: mod.name,
       retry: retryNumber,
     });
   }
 
-  /**
-   * Extract file paths from compilation error output.
-   * Handles common patterns: "src/foo.ts(10,5): error TS..." or "ERROR in ./src/foo.ts"
-   */
-  private extractErrorFiles(errors: string, codeDir: string): string[] {
-    const files = new Set<string>();
-    // TypeScript pattern: src/foo.ts(line,col): error
-    const tsPattern = /^([^\s(]+\.tsx?)\(\d+,\d+\)/gm;
-    // Webpack/Vite pattern: ERROR in ./src/foo.ts
-    const bundlerPattern = /(?:ERROR|error)\s+(?:in\s+)?\.?\/?([^\s:]+\.(?:ts|tsx|js|jsx))/gm;
-
-    let match;
-    while ((match = tsPattern.exec(errors)) !== null) {
-      files.add(`${codeDir}/${match[1]}`);
-    }
-    while ((match = bundlerPattern.exec(errors)) !== null) {
-      files.add(`${codeDir}/${match[1]}`);
-    }
-
-    return [...files];
-  }
-
-  private buildModulePrompt(
+  private buildImplementPrompt(
     context: AgentContext,
     plan: CodePlan,
     mod: CodePlanModule,
-    builtModules: Set<string>,
   ): string {
     const codeDir = `${getArtifactsDir()}/code`;
     const parts: string[] = [];
 
     parts.push(`## Module: ${mod.name}`);
     parts.push(`Description: ${mod.description}`);
-    parts.push(`Files to write: ${mod.files.join(', ')}`);
-    parts.push(`Dependencies: ${mod.dependencies.join(', ') || 'none'}`);
-    parts.push(`Write all files under: ${codeDir}/`);
+    parts.push(`Working directory: ${codeDir}`);
     parts.push('');
 
-    // Warn about files that already exist (from previous modules)
-    const existingFiles = mod.files.filter(f => {
-      try { return fs.statSync(`${codeDir}/${f}`).isFile(); } catch { return false; }
-    });
-    if (existingFiles.length > 0) {
-      parts.push(`## ⚠ Files already on disk (from previous modules)`);
-      parts.push('These files exist from an earlier module. Read them first, then update/replace with your complete version.');
-      for (const f of existingFiles) {
-        parts.push(`- ${codeDir}/${f}`);
-      }
-      parts.push('');
+    // List files to implement — these already exist as skeletons
+    parts.push('## Files to Implement (skeleton stubs → real code)');
+    parts.push('These files already exist from the skeleton phase. Read each one first, then replace stub implementations with real code.');
+    for (const f of mod.files) {
+      parts.push(`- ${codeDir}/${f}`);
     }
+    parts.push('');
 
     // Tech stack context
-    parts.push(`## Tech Stack`);
+    parts.push('## Tech Stack');
     parts.push(`Language: ${plan.tech_stack.language}`);
     parts.push(`Framework: ${plan.tech_stack.framework}`);
     parts.push(`Build tool: ${plan.tech_stack.build_tool}`);
     parts.push('');
 
-    // Already built files for import reference
-    if (builtModules.size > 0) {
-      const builtFiles = this.listBuiltFiles(codeDir);
-      if (builtFiles.length > 0) {
-        parts.push(`## Already Built Files (available for import)`);
-        for (const f of builtFiles) {
-          parts.push(`- ${f}`);
-        }
-        parts.push('');
+    // All project files for import reference
+    const builtFiles = this.listBuiltFiles(codeDir);
+    if (builtFiles.length > 0) {
+      parts.push('## All Project Files (for import reference)');
+      for (const f of builtFiles) {
+        parts.push(`- ${f}`);
       }
+      parts.push('');
     }
 
     // Trimmed API spec (only features this module covers)
@@ -409,15 +528,43 @@ export class CoderAgent extends BaseAgent {
     return parts.join('\n');
   }
 
+  /**
+   * Determine which modules need implementation.
+   * On test-failure retarget: only rebuild modules with failing tests.
+   * Otherwise: all modules (skeleton wrote stubs, implement replaces them).
+   * If all files have substantial content (retry scenario), skip.
+   */
+  private getModulesToImplement(
+    plan: CodePlan,
+    testFailures?: string,
+  ): CodePlanModule[] {
+    if (testFailures) {
+      // Targeted rebuild: only modules with failing tests
+      try {
+        const report = JSON.parse(testFailures);
+        const failedModules = new Set<string>();
+        for (const failure of report.failures ?? []) {
+          if (failure.module) failedModules.add(failure.module);
+        }
+        if (failedModules.size > 0) {
+          this.logger.agent(this.stage, 'info', 'implement:targeted-rebuild', {
+            failedModules: Array.from(failedModules),
+          });
+          return plan.modules.filter(m => failedModules.has(m.name));
+        }
+      } catch {
+        // If test_failures isn't valid JSON, fall through to full implementation
+      }
+    }
+
+    // All modules need implementation (skeleton wrote stubs)
+    return plan.modules;
+  }
+
   // ─── User Confirmation ──────────────────────────────────────
 
-  /**
-   * Ask user whether to continue retrying a failed module.
-   * If no InteractionHandler (e.g. auto-approve mode), defaults to skip.
-   */
   private async askUserToRetry(moduleName: string, attempts: number, errors: string): Promise<boolean> {
     if (!this.interactionHandler) {
-      // No interaction handler (auto-approve or MCP mode) — skip after AUTO_FIX_RETRIES
       return false;
     }
 
@@ -441,7 +588,6 @@ export class CoderAgent extends BaseAgent {
   private async runBuildFix(
     context: AgentContext,
     plan: CodePlan,
-    builtModules: Set<string>,
     errors: string,
     budgetUsd: number,
   ): Promise<void> {
@@ -465,7 +611,7 @@ export class CoderAgent extends BaseAgent {
       'Fix the build errors. Only modify files that need fixing.',
     ].join('\n');
 
-    this.logger.agent(this.stage, 'info', 'builder:build-fix-start', {});
+    this.logger.agent(this.stage, 'info', 'build:fix-start', {});
 
     await this.provider.call(prompt, {
       systemPrompt: builderPrompt,
@@ -474,7 +620,227 @@ export class CoderAgent extends BaseAgent {
       timeoutMs: BUILD_FIX_TIMEOUT_MS,
     });
 
-    this.logger.agent(this.stage, 'info', 'builder:build-fix-complete', {});
+    this.logger.agent(this.stage, 'info', 'build:fix-complete', {});
+  }
+
+  // ─── Build Artifact Analysis ────────────────────────────────
+
+  /**
+   * Analyze build output for quality signals (zero LLM cost).
+   * Checks: dist/ exists, bundle size, placeholder keywords, HTML references.
+   */
+  private analyzeBuildArtifacts(plan: CodePlan): void {
+    const codeDir = `${getArtifactsDir()}/code`;
+    const distDir = `${codeDir}/dist`;
+    const warnings: string[] = [];
+
+    // Check 1: dist/ exists and is non-empty
+    if (!fs.existsSync(distDir)) {
+      warnings.push('dist/ directory does not exist after build');
+      this.logAnalysisResult(warnings);
+      return;
+    }
+
+    const distFiles = this.listBuiltFiles(distDir);
+    if (distFiles.length === 0) {
+      warnings.push('dist/ directory is empty');
+      this.logAnalysisResult(warnings);
+      return;
+    }
+
+    // Check 2: JS bundle total size
+    const jsFiles = distFiles.filter(f => f.endsWith('.js'));
+    let totalJsSize = 0;
+    for (const f of jsFiles) {
+      try {
+        totalJsSize += fs.statSync(`${distDir}/${f}`).size;
+      } catch { /* skip */ }
+    }
+    if (totalJsSize < MIN_BUNDLE_SIZE_BYTES) {
+      warnings.push(`JS bundle total size is ${totalJsSize} bytes (< ${MIN_BUNDLE_SIZE_BYTES} minimum)`);
+    }
+
+    // Check 3: Scan bundles for placeholder keywords
+    for (const f of jsFiles) {
+      try {
+        const content = fs.readFileSync(`${distDir}/${f}`, 'utf-8');
+        for (const keyword of PLACEHOLDER_KEYWORDS) {
+          if (content.includes(keyword)) {
+            warnings.push(`Placeholder keyword "${keyword}" found in ${f}`);
+          }
+        }
+      } catch { /* skip */ }
+    }
+
+    // Check 4: index.html references JS/CSS bundles
+    const indexHtmlPath = `${distDir}/index.html`;
+    if (fs.existsSync(indexHtmlPath)) {
+      const html = fs.readFileSync(indexHtmlPath, 'utf-8');
+      if (!html.includes('.js')) {
+        warnings.push('index.html does not reference any JS bundle');
+      }
+      if (!html.includes('.css') && !html.includes('style')) {
+        warnings.push('index.html does not reference any CSS');
+      }
+    } else {
+      warnings.push('dist/index.html not found');
+    }
+
+    this.logAnalysisResult(warnings);
+  }
+
+  private logAnalysisResult(warnings: string[]): void {
+    if (warnings.length === 0) {
+      this.logger.agent(this.stage, 'info', 'analysis:passed', {
+        message: 'Build artifact analysis passed — no warnings',
+      });
+      eventBus.emit('agent:progress', this.stage, 'build analysis: passed');
+    } else {
+      this.logger.agent(this.stage, 'warn', 'analysis:warnings', { warnings });
+      eventBus.emit('agent:progress', this.stage, `build analysis: ${warnings.length} warning(s) — ${warnings[0]}`);
+    }
+  }
+
+  // ─── HTTP Smoke Test ────────────────────────────────────────
+
+  /**
+   * Run HTTP smoke test for web projects.
+   * Starts the preview server, fetches the page, checks for non-empty content.
+   */
+  async runSmokeTest(plan: CodePlan): Promise<void> {
+    if (!plan.smokeTest || plan.smokeTest.type !== 'web') {
+      this.logger.agent(this.stage, 'info', 'smoke:skipped', {
+        reason: plan.smokeTest ? `type is ${plan.smokeTest.type}` : 'no smokeTest config',
+      });
+      return;
+    }
+
+    const { startCommand, port, readyPattern } = plan.smokeTest;
+    if (!port) {
+      this.logger.agent(this.stage, 'info', 'smoke:skipped', { reason: 'no port configured' });
+      return;
+    }
+
+    const codeDir = `${getArtifactsDir()}/code`;
+    eventBus.emit('agent:progress', this.stage, `smoke test: starting ${startCommand}...`);
+
+    let proc: ChildProcess | undefined;
+    try {
+      // Start the preview server
+      const [cmd, ...cmdArgs] = startCommand.split(' ');
+      proc = spawn(cmd, cmdArgs, {
+        cwd: codeDir,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+      });
+
+      // Wait for port to be ready
+      const ready = await this.waitForPort(port, SMOKE_TEST_TIMEOUT_MS, readyPattern, proc);
+      if (!ready) {
+        this.logger.agent(this.stage, 'warn', 'smoke:timeout', {
+          message: `Server did not start within ${SMOKE_TEST_TIMEOUT_MS}ms`,
+        });
+        eventBus.emit('agent:progress', this.stage, 'smoke test: server timeout');
+        return;
+      }
+
+      // Fetch the page
+      const response = await fetch(`http://localhost:${port}`);
+      const html = await response.text();
+
+      const issues: string[] = [];
+
+      // Check HTML length
+      if (html.length < MIN_HTML_LENGTH) {
+        issues.push(`HTML too short (${html.length} chars < ${MIN_HTML_LENGTH})`);
+      }
+
+      // Check for placeholder keywords
+      for (const keyword of PLACEHOLDER_KEYWORDS) {
+        if (html.includes(keyword)) {
+          issues.push(`Placeholder keyword "${keyword}" in response`);
+        }
+      }
+
+      if (issues.length === 0) {
+        this.logger.agent(this.stage, 'info', 'smoke:passed', {
+          htmlLength: html.length,
+        });
+        eventBus.emit('agent:progress', this.stage, `smoke test: passed (${html.length} chars)`);
+      } else {
+        this.logger.agent(this.stage, 'warn', 'smoke:issues', { issues });
+        eventBus.emit('agent:progress', this.stage, `smoke test: ${issues.length} issue(s) — ${issues[0]}`);
+      }
+    } catch (err) {
+      this.logger.agent(this.stage, 'warn', 'smoke:error', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      eventBus.emit('agent:progress', this.stage, 'smoke test: error — ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      // Kill the server process group
+      if (proc?.pid) {
+        try {
+          process.kill(-proc.pid, 'SIGTERM');
+        } catch { /* already dead */ }
+      }
+    }
+  }
+
+  /**
+   * Wait for a TCP port to become available.
+   * Optionally also checks stdout for a readyPattern.
+   */
+  private waitForPort(
+    port: number,
+    timeoutMs: number,
+    readyPattern?: string,
+    proc?: ChildProcess,
+  ): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const startTime = Date.now();
+      let resolved = false;
+
+      const done = (result: boolean) => {
+        if (!resolved) {
+          resolved = true;
+          clearInterval(timer);
+          resolve(result);
+        }
+      };
+
+      // Watch stdout for readyPattern
+      if (readyPattern && proc?.stdout) {
+        const regex = new RegExp(readyPattern);
+        proc.stdout.on('data', (data: Buffer) => {
+          if (regex.test(data.toString())) {
+            done(true);
+          }
+        });
+      }
+
+      // Also handle process exit
+      if (proc) {
+        proc.on('exit', () => done(false));
+      }
+
+      // TCP poll
+      const timer = setInterval(() => {
+        if (Date.now() - startTime > timeoutMs) {
+          done(false);
+          return;
+        }
+
+        const socket = new net.Socket();
+        socket.setTimeout(500);
+        socket.once('connect', () => {
+          socket.destroy();
+          done(true);
+        });
+        socket.once('error', () => socket.destroy());
+        socket.once('timeout', () => socket.destroy());
+        socket.connect(port, '127.0.0.1');
+      }, 500);
+    });
   }
 
   // ─── Programmatic Commands ──────────────────────────────────
@@ -529,57 +895,28 @@ export class CoderAgent extends BaseAgent {
     }
   }
 
-  // ─── Disk Reuse Helpers ─────────────────────────────────────
+  // ─── Error Extraction ─────────────────────────────────────
 
-  private loadExistingModules(plan: CodePlan): Set<string> {
-    const codeDir = `${getArtifactsDir()}/code`;
-    const built = new Set<string>();
+  /**
+   * Extract file paths from compilation error output.
+   */
+  private extractErrorFiles(errors: string, codeDir: string): string[] {
+    const files = new Set<string>();
+    const tsPattern = /^([^\s(]+\.tsx?)\(\d+,\d+\)/gm;
+    const bundlerPattern = /(?:ERROR|error)\s+(?:in\s+)?\.?\/?([^\s:]+\.(?:ts|tsx|js|jsx))/gm;
 
-    for (const mod of plan.modules) {
-      const allFilesExist = mod.files.every(f =>
-        fs.existsSync(`${codeDir}/${f}`)
-      );
-      if (allFilesExist) {
-        built.add(mod.name);
-      }
+    let match;
+    while ((match = tsPattern.exec(errors)) !== null) {
+      files.add(`${codeDir}/${match[1]}`);
+    }
+    while ((match = bundlerPattern.exec(errors)) !== null) {
+      files.add(`${codeDir}/${match[1]}`);
     }
 
-    if (built.size > 0) {
-      this.logger.agent(this.stage, 'info', 'disk:existing-modules', {
-        built: Array.from(built),
-        total: plan.modules.length,
-      });
-    }
-
-    return built;
+    return [...files];
   }
 
-  private getModulesToBuild(
-    plan: CodePlan,
-    builtModules: Set<string>,
-    testFailures?: string,
-  ): CodePlanModule[] {
-    if (testFailures) {
-      // Targeted rebuild: only modules with failing tests
-      try {
-        const report = JSON.parse(testFailures);
-        const failedModules = new Set<string>();
-        for (const failure of report.failures ?? []) {
-          if (failure.module) failedModules.add(failure.module);
-        }
-        if (failedModules.size > 0) {
-          this.logger.agent(this.stage, 'info', 'builder:targeted-rebuild', {
-            failedModules: Array.from(failedModules),
-          });
-          return plan.modules.filter(m => failedModules.has(m.name));
-        }
-      } catch {
-        // If test_failures isn't valid JSON, fall through to normal rebuild
-      }
-    }
-
-    return plan.modules.filter(m => !builtModules.has(m.name));
-  }
+  // ─── File Helpers ─────────────────────────────────────────
 
   private listBuiltFiles(codeDir: string): string[] {
     const files: string[] = [];
@@ -611,7 +948,6 @@ export class CoderAgent extends BaseAgent {
     const startIdx = content.indexOf(startTag);
     const endIdx = content.indexOf(endTag);
     if (startIdx === -1 || endIdx === -1) {
-      // Fallback: try to find raw JSON
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       return jsonMatch ? jsonMatch[0] : null;
     }
@@ -624,7 +960,6 @@ export class CoderAgent extends BaseAgent {
     const codeDir = `${getArtifactsDir()}/code`;
     const allFiles = this.listBuiltFiles(codeDir);
 
-    // Map files to modules
     const fileEntries = allFiles.map(filePath => {
       const mod = plan.modules.find(m => m.files.some(f => filePath.endsWith(f) || f.endsWith(filePath)));
       return {
@@ -655,7 +990,6 @@ export class CoderAgent extends BaseAgent {
     const codeDir = `${getArtifactsDir()}/code`;
     const lines: string[] = [];
 
-    // --- Project Summary (from intent-brief.json if available) ---
     lines.push(`# ${plan.project_name}`);
     lines.push('');
 
@@ -678,7 +1012,6 @@ export class CoderAgent extends BaseAgent {
       lines.push('');
     }
 
-    // --- Features (from prd.manifest.json if available) ---
     try {
       const prdRaw = readArtifact('prd.manifest.json');
       const prd = JSON.parse(prdRaw);
@@ -694,7 +1027,6 @@ export class CoderAgent extends BaseAgent {
       // No PRD manifest — skip
     }
 
-    // --- Tech Stack ---
     lines.push('## Tech Stack');
     lines.push('');
     lines.push(`| Layer | Technology |`);
@@ -704,7 +1036,6 @@ export class CoderAgent extends BaseAgent {
     lines.push(`| Build Tool | ${plan.tech_stack.build_tool} |`);
     lines.push('');
 
-    // --- Quick Start ---
     lines.push('## Quick Start');
     lines.push('');
     lines.push('```bash');
@@ -713,7 +1044,6 @@ export class CoderAgent extends BaseAgent {
     lines.push('```');
     lines.push('');
 
-    // --- Module Architecture (Mermaid dependency graph) ---
     const nonScaffoldModules = plan.modules.filter(m => m.priority > 0);
     if (nonScaffoldModules.length > 1) {
       lines.push('## Architecture');
@@ -721,16 +1051,14 @@ export class CoderAgent extends BaseAgent {
       lines.push('```mermaid');
       lines.push('graph TD');
 
-      // Nodes with descriptions
       for (const mod of nonScaffoldModules) {
         const label = `${mod.name}["${mod.name}<br/><small>${this.escapeForMermaid(mod.description)}</small>"]`;
         lines.push(`  ${label}`);
       }
 
-      // Edges from dependencies
       for (const mod of nonScaffoldModules) {
         for (const dep of mod.dependencies) {
-          if (dep === 'scaffold') continue; // skip scaffold edges for clarity
+          if (dep === 'scaffold') continue;
           lines.push(`  ${dep} --> ${mod.name}`);
         }
       }
@@ -739,7 +1067,6 @@ export class CoderAgent extends BaseAgent {
       lines.push('');
     }
 
-    // --- Modules Table ---
     lines.push('## Modules');
     lines.push('');
     lines.push('| Module | Description | Files | Features |');
@@ -750,7 +1077,6 @@ export class CoderAgent extends BaseAgent {
     }
     lines.push('');
 
-    // --- Project Directory Tree ---
     lines.push('## Project Structure');
     lines.push('');
     lines.push('```');
@@ -759,16 +1085,12 @@ export class CoderAgent extends BaseAgent {
     lines.push('```');
     lines.push('');
 
-    // --- Footer ---
     lines.push('---');
     lines.push('');
     lines.push('_Generated by [Mosaicat](https://github.com/ZB-ur/mosaicat) pipeline_');
 
-    // Write to code directory
     const readmeContent = lines.join('\n');
     fs.writeFileSync(`${codeDir}/README.md`, readmeContent, 'utf-8');
-
-    // Also write as an artifact for the pipeline
     this.writeOutput('code/README.md', readmeContent);
 
     this.logger.agent(this.stage, 'info', 'readme:generated', {
@@ -783,10 +1105,6 @@ export class CoderAgent extends BaseAgent {
       .slice(0, 60);
   }
 
-  /**
-   * Build a visual directory tree string, limited to maxDepth.
-   * Skips node_modules, dist, .turbo, etc.
-   */
   private buildDirectoryTree(dir: string, maxDepth: number): string {
     const skipDirs = new Set(['node_modules', 'dist', 'build', '.turbo', '.cache', '.git']);
     const lines: string[] = [];
@@ -803,7 +1121,6 @@ export class CoderAgent extends BaseAgent {
         return;
       }
 
-      // Sort: directories first, then files
       const dirs = entries.filter(e => e.isDirectory() && !skipDirs.has(e.name)).sort((a, b) => a.name.localeCompare(b.name));
       const files = entries.filter(e => !e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
       const all = [...dirs, ...files];
