@@ -1,7 +1,10 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import type { StageName, AgentContext, AgentsConfig, Task } from './types.js';
 import { readArtifact, artifactExists } from './artifact.js';
 import { loadSkillsForAgent } from '../evolution/skill-manager.js';
+
+const STATIC_CONSTITUTION_PATH = path.join('.claude', 'agents', 'mosaic', 'constitution.md');
 
 export function buildContext(
   agentConfig: AgentsConfig,
@@ -18,6 +21,14 @@ export function buildContext(
     systemPrompt = fs.readFileSync(config.prompt_file, 'utf-8');
   } catch {
     systemPrompt = `You are the ${config.name} agent.`;
+  }
+
+  // Inject static constitution into system prompt (applies to all agents)
+  try {
+    const constitutionContent = fs.readFileSync(STATIC_CONSTITUTION_PATH, 'utf-8');
+    systemPrompt += `\n\n---\n\n${constitutionContent}`;
+  } catch {
+    // Static constitution file not found — non-blocking
   }
 
   // Inject approved skills into system prompt
