@@ -19,12 +19,20 @@ export interface SkillMetadata {
   name: string;
   scope: SkillScope;
   description: string;
+  trigger?: string;
+  usageCount?: number;
+  lastUsedAt?: string;
+  deprecated?: boolean;
 }
 
 export const SkillMetadataSchema = z.object({
   name: z.string().min(1),
   scope: z.enum(SKILL_SCOPES),
   description: z.string().min(1),
+  trigger: z.string().optional(),
+  usageCount: z.number().optional(),
+  lastUsedAt: z.string().optional(),
+  deprecated: z.boolean().optional(),
 });
 
 // --- Evolution Proposal ---
@@ -105,6 +113,11 @@ export interface SkillInfo {
   filePath: string;
   proposalId: string;
   createdAt: string;
+  trigger?: string;
+  usageCount?: number;
+  lastUsedAt?: string;
+  deprecated?: boolean;
+  builtin?: boolean;
 }
 
 export const SkillInfoSchema = z.object({
@@ -115,6 +128,11 @@ export const SkillInfoSchema = z.object({
   filePath: z.string(),
   proposalId: z.string(),
   createdAt: z.string(),
+  trigger: z.string().optional(),
+  usageCount: z.number().optional(),
+  lastUsedAt: z.string().optional(),
+  deprecated: z.boolean().optional(),
+  builtin: z.boolean().optional(),
 });
 
 // --- LLM Proposal Candidate (raw response from evolution analyst) ---
