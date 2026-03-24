@@ -1,6 +1,6 @@
 <p align="center">
   <!-- TODO: Replace with custom banner image (1200x400) -->
-  <img src="https://img.shields.io/badge/🐱_Mosaicat-One_instruction._Ten_AI_agents._Validated.-blueviolet?style=for-the-badge&labelColor=1a1a2e" alt="Mosaicat" width="600" />
+  <img src="https://img.shields.io/badge/🐱_Mosaicat-One_instruction._Thirteen_AI_agents._Validated.-blueviolet?style=for-the-badge&labelColor=1a1a2e" alt="Mosaicat" width="600" />
 </p>
 
 <p align="center">
@@ -38,10 +38,10 @@ Mosaicat introduces **Spec Coding** — a delivery model where humans write and 
 ```
 You:  "Build a personal finance tracker with income/expense logging and monthly reports"
        ↓
-       10 AI agents run autonomously, humans approve at 4 checkpoints
+       13 AI agents run autonomously, humans approve at 4 checkpoints
        ↓
 Out:  Research → PRD → UX Flows → OpenAPI Spec → 25 React Components + Screenshots
-      → Tech Spec → Code → Code Review → 8-Check Validation Report
+      → Tech Spec → Code → Tests → Security Audit → Code Review → 8-Check Validation Report
 ```
 
 <!-- TODO: Add demo GIF or screenshot of pipeline terminal output here -->
@@ -49,7 +49,11 @@ Out:  Research → PRD → UX Flows → OpenAPI Spec → 25 React Components + S
 ### Key Features
 
 - **Spec-driven pipeline** — intent → layered specifications (PRD → UX → API → tech spec) → code; each spec layer is the sole input contract for the next agent
-- **10 autonomous agents** — mirrors a real product team: consultant, researcher, PM, UX/UI designers, architect, tech lead, coder, reviewer, validator
+- **13 autonomous agents** — mirrors a real product team: consultant, researcher, PM, UX/UI designers, architect, tech lead, coder, QA lead, tester, security auditor, reviewer, validator
+- **Skeleton-implement code generation** — skeleton phase writes all files with real imports/routes, implement phase fills in logic per module; compile-verified at every step
+- **Integrated QA pipeline** — QALead generates test plans, Tester writes and executes tests (per-module), SecurityAuditor runs programmatic + LLM security audit; test failures auto-trigger Coder fixes
+- **Build validation + smoke test** — static analysis on build artifacts (bundle size, placeholder detection) + HTTP smoke test (spawn preview, fetch HTML, verify non-blank)
+- **Post-delivery refinement** — `mosaicat refine` diagnoses and fixes issues in generated code with iterative feedback loop, dev server preview, and browser auto-open
 - **Multi-LLM support** — Claude, OpenAI, Gemini, DeepSeek, Qwen, Doubao, Kimi, MiniMax; run `mosaicat setup` to switch providers
 - **Batch UI generation** — components grouped by category for 80%+ fewer LLM calls; API spec auto-trimmed per batch
 - **Configurable approval gates** — full autonomy, full manual, or anything in between per stage
@@ -140,7 +144,19 @@ npx tsx src/mcp-entry.ts                                      # start MCP server
 
 Add to your Claude Code MCP config, then use `mosaic_run` tool inside the IDE.
 
-### 5. With Self-Evolution
+### 5. Refine Generated Code
+
+```bash
+npx tsx src/index.ts refine "the login button does nothing"
+```
+
+After a pipeline run, use `refine` to iteratively fix issues. The RefineAgent diagnoses the root cause, applies fixes, and verifies with `tsc` + build. A dev server starts automatically so you can preview changes in your browser.
+
+```bash
+npx tsx src/index.ts refine "homepage is blank" --run run-1774194269016  # target a specific run
+```
+
+### 6. With Self-Evolution
 
 ```bash
 npx tsx src/index.ts run "Build a task management app" --evolve
@@ -161,12 +177,17 @@ graph LR
     API --> UI[UI<br/>Designer]
     UI -->|"🔒"| TL[Tech<br/>Lead]
     TL -->|"🔒"| C[Coder]
-    C --> RV[Reviewer]
+    C --> QA[QA<br/>Lead]
+    QA --> T[Tester]
+    T -->|"fix loop"| C
+    T -->|"🔒"| SA[Security<br/>Auditor]
+    SA --> RV[Reviewer]
     RV -->|"🔒"| V[Validator]
 
     style PO fill:#e8b4cb,stroke:#333,color:#000
     style UI fill:#e8b4cb,stroke:#333,color:#000
     style TL fill:#e8b4cb,stroke:#333,color:#000
+    style T fill:#e8b4cb,stroke:#333,color:#000
     style RV fill:#e8b4cb,stroke:#333,color:#000
 ```
 
@@ -181,9 +202,12 @@ graph LR
 | 5 | **APIDesigner** | PRD + UX flows | `api-spec.yaml` + manifest | auto |
 | 6 | **UIDesigner** | PRD + UX + API spec | `components/` `screenshots/` `gallery.html` + manifest | **manual** |
 | 7 | **TechLead** | PRD + UX + API spec | `tech-spec.md` + manifest | **manual** |
-| 8 | **Coder** | tech spec + API spec | `code/` + manifest | auto |
-| 9 | **Reviewer** | tech spec + code | `review-report.md` + manifest | **manual** |
-| 10 | **Validator** | all manifests | `validation-report.md` (8 checks) | auto |
+| 8 | **Coder** | tech spec + API spec | `code/` + manifest (skeleton → implement → build → smoke test) | auto |
+| 9 | **QALead** | tech spec + code manifest | `test-plan.md` + manifest | auto |
+| 10 | **Tester** | test plan + code | `test-report.md` + manifest (failures → Coder fix loop) | **manual** |
+| 11 | **SecurityAuditor** | code + code manifest | `security-report.md` + manifest | auto |
+| 12 | **Reviewer** | tech spec + code | `review-report.md` + manifest | **manual** |
+| 13 | **Validator** | all manifests | `validation-report.md` (8 checks) | auto |
 
 ### Manifests and Spec Conformance
 
@@ -196,7 +220,7 @@ Each agent emits a **manifest** (~1–2 KB) declaring structural facts: which Fe
 | Profile | Stages | Use Case |
 |---|---|---|
 | `design-only` | Intent → Research → PRD → UX → API → UI → Validate | Product specification, design review |
-| `full` | All 10 agents | End-to-end: idea → validated code |
+| `full` | All 13 agents | End-to-end: idea → tested, audited, validated code |
 | `frontend-only` | Skips APIDesigner | Frontend-focused projects |
 
 ```bash
@@ -253,13 +277,15 @@ GitHub mode fits naturally into existing team workflows — designers review com
 | Capability | Mosaicat | MetaGPT | CrewAI | v0 / bolt.new | Cursor / Windsurf |
 |---|:---:|:---:|:---:|:---:|:---:|
 | Spec-driven pipeline | ✅ Layered specs → code | ❌ | ❌ | ❌ | ❌ |
-| Full pipeline (idea → code) | ✅ 10 agents | ✅ | ✅ | ❌ UI only | ❌ Code only |
+| Full pipeline (idea → code) | ✅ 13 agents | ✅ | ✅ | ❌ UI only | ❌ Code only |
 | Spec conformance validation | ✅ 8 checks | ❌ | ❌ | ❌ | ❌ |
 | Feature ID traceability | ✅ F-NNN end-to-end | ❌ | ❌ | ❌ | ❌ |
 | Configurable approval gates | ✅ Per-stage | ❌ | ❌ | ❌ | ❌ |
 | GitHub-native workflow | ✅ PR + Issues | ❌ | ❌ | ❌ | ❌ |
 | Visual design output | ✅ React + Playwright | ❌ | ❌ | ✅ | ❌ |
 | Self-evolution | ✅ Human-approved | ❌ | ❌ | ❌ | ❌ |
+| Integrated QA (test + security) | ✅ Auto test + audit | ❌ | ❌ | ❌ | ❌ |
+| Post-delivery refinement | ✅ `refine` command | ❌ | ❌ | ❌ | ❌ |
 | Spec isolation | ✅ Strict contracts | ❌ Shared memory | ❌ Shared memory | N/A | N/A |
 | Auth requirement | Claude subscription | API key | API key | Subscription | Subscription |
 
@@ -356,10 +382,10 @@ graph TB
         CtxMgr["Context Manager"]
     end
 
-    subgraph Agents["Agent Layer — 10 Agents"]
+    subgraph Agents["Agent Layer — 13 Agents"]
         direction LR
         A1["IntentConsultant → Researcher → ProductOwner → UXDesigner → APIDesigner"]
-        A2["UIDesigner → TechLead → Coder → Reviewer → Validator"]
+        A2["UIDesigner → TechLead → Coder → QALead → Tester → SecurityAuditor → Reviewer → Validator"]
     end
 
     subgraph Infra["Infrastructure"]
@@ -398,7 +424,11 @@ Each run produces artifacts in an isolated directory:
 ├── screenshots/                   # Playwright-rendered PNGs
 ├── gallery.html                   # Visual gallery with embedded screenshots
 ├── tech-spec.md                   # Technical architecture + task breakdown
-├── code/                          # Generated source code
+├── code/                          # Generated source code (skeleton → implement → build)
+├── code-plan.json                 # Module build plan with smoke test config
+├── test-plan.md                   # QALead test plan
+├── test-report.md                 # Tester execution results
+├── security-report.md             # SecurityAuditor findings (programmatic + LLM)
 ├── review-report.md               # Code vs spec compliance review
 ├── validation-report.md           # 8-check cross-artifact validation
 └── *.manifest.json                # Structural declarations per agent
@@ -415,8 +445,8 @@ Each run produces artifacts in an isolated directory:
 | **M1** — MVP Pipeline | ✅ Done | 6 agents, state machine, CLI provider |
 | **M2** — Observability + Delivery | ✅ Done | GitHub mode, screenshots, logging |
 | **M3** — Idea to Code | ✅ Done | 10 agents, 3 profiles, Feature ID, self-evolution |
-| **M4** — Optimization + Multi-LLM | ✅ Done | Batch UI generation (86% fewer calls), 7 LLM providers, setup wizard, artifact isolation |
-| **M5** — Quality + Scale | Planned | QA team agents, DAG engine, per-agent LLM routing, brownfield project support |
+| **M6** — Optimization + Quality + QA | ✅ Done | Batch UI (86% fewer calls), 7 LLM providers, skeleton-implement Coder, QA team (13 agents), build smoke test, `refine` command |
+| **M7** — Scale + Enterprise | Planned | DAG execution engine, per-agent LLM routing, brownfield project support |
 
 ---
 
