@@ -164,6 +164,20 @@ export function attachCLIProgress(): () => void {
     console.log(`  ${CYAN}↳ 通过 ${sourceLabel} 回复: "${answer}"${RESET}`);
   });
 
+  // ── Agent Summary ──
+
+  on('agent:summary', (_stage, summary) => {
+    // Display multi-line summaries with indentation
+    for (const line of summary.split('\n')) {
+      console.log(`  ${DIM}→ ${line}${RESET}`);
+    }
+  });
+
+  on('coder:fix-round', (round, totalTests, passedTests, approach) => {
+    const failed = totalTests - passedTests;
+    console.log(`  ${YELLOW}↻ fix round ${round}:${RESET} ${passedTests}/${totalTests} passed, ${failed} failed — ${approach}`);
+  });
+
   // ── Artifacts ──
 
   const presenter = new CLIArtifactPresenter();
@@ -205,6 +219,12 @@ export function attachCLIProgress(): () => void {
   on('evolution:rejected', (proposalId, stage) => {
     const label = AGENT_LABELS[stage];
     console.log(`  ${RED}✗ rejected: [${label}] ${proposalId}${RESET}`);
+  });
+
+  on('evolution:proposals', (proposals) => {
+    for (const p of proposals) {
+      console.log(`  ${YELLOW}→ ${p.type}: ${p.reason}${RESET} ${DIM}(${p.id})${RESET}`);
+    }
   });
 
   on('evolution:complete', (_runId, proposalCount) => {

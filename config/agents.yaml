@@ -112,6 +112,7 @@ agents:
       - ux-flows.md
       - api-spec.yaml
       - constitution.project.md
+      - run-memory.md
     outputs:
       - tech-spec.md
       - tech-spec.manifest.json
@@ -129,6 +130,7 @@ agents:
       - tech-spec.md
       - api-spec.yaml
       - constitution.project.md
+      - run-memory.md
     outputs:
       - code/
       - code-plan.json
@@ -204,6 +206,7 @@ agents:
       - code/
       - code.manifest.json
       - constitution.project.md
+      - run-memory.md
     outputs:
       - review-report.md
       - review.manifest.json
