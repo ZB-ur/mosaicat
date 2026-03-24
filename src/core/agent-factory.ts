@@ -4,6 +4,7 @@ import type { Logger } from './logger.js';
 import type { InteractionHandler } from './interaction-handler.js';
 import { BaseAgent, StubAgent } from './agent.js';
 import { StubProvider } from './llm-provider.js';
+import { getHooksForStage } from './hooks/index.js';
 import {
   ResearcherAgent,
   ProductOwnerAgent,
@@ -37,6 +38,16 @@ const AGENT_MAP: Partial<Record<StageName, AgentConstructor>> = {
   // intent_consultant — handled separately in orchestrator
 };
 
+function registerHooks(agent: BaseAgent, stage: StageName): void {
+  const hooks = getHooksForStage(stage);
+  for (const hook of hooks.preRun) {
+    agent.addPreRunHook(hook);
+  }
+  for (const hook of hooks.postRun) {
+    agent.addPostRunHook(hook);
+  }
+}
+
 export function createAgent(
   stage: StageName,
   provider: LLMProvider,
@@ -49,14 +60,21 @@ export function createAgent(
     return new StubAgent(stage, provider, logger);
   }
 
+  let agent: BaseAgent;
+
   // Coder needs InteractionHandler for retry confirmation
   if (stage === 'coder') {
-    return new CoderAgent(stage, provider, logger, interactionHandler);
+    agent = new CoderAgent(stage, provider, logger, interactionHandler);
+  } else {
+    const AgentClass = AGENT_MAP[stage];
+    if (!AgentClass) {
+      throw new Error(`No agent implementation registered for stage: ${stage}`);
+    }
+    agent = new AgentClass(stage, provider, logger);
   }
 
-  const AgentClass = AGENT_MAP[stage];
-  if (!AgentClass) {
-    throw new Error(`No agent implementation registered for stage: ${stage}`);
-  }
-  return new AgentClass(stage, provider, logger);
+  // Register quality hooks for this stage
+  registerHooks(agent, stage);
+
+  return agent;
 }
