@@ -131,6 +131,7 @@ agents:
       - api-spec.yaml
       - constitution.project.md
       - run-memory.md
+      - tests/
     outputs:
       - code/
       - code-plan.json
@@ -149,15 +150,24 @@ agents:
     name: QALead
     prompt_file: .claude/agents/mosaic/qa-lead.md
     inputs:
+      - prd.md
+      - ux-flows.md
+      - api-spec.yaml
       - tech-spec.md
-      - code.manifest.json
       - constitution.project.md
     outputs:
       - test-plan.md
       - test-plan.manifest.json
+      - tests/
     autonomy:
-      allowed_tools: []
-      max_turns: 1
+      allowed_tools:
+        - Read
+        - Write
+        - Bash
+      writable_paths:
+        - .mosaic/artifacts/tests/
+      max_turns: 10
+      max_budget_usd: 2
 
   tester:
     name: Tester
@@ -166,6 +176,7 @@ agents:
       - test-plan.md
       - test-plan.manifest.json
       - code/
+      - tests/
       - constitution.project.md
     outputs:
       - tests/
