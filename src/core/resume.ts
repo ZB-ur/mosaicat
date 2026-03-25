@@ -92,6 +92,95 @@ export function validateResumeState(
 }
 
 /**
+ * Stage → artifact outputs mapping for cleanup.
+ * Each entry lists the files/directories to delete when resetting that stage.
+ */
+const STAGE_ARTIFACTS: Record<string, string[]> = {
+  intent_consultant: ['intent-brief.json'],
+  researcher: ['research.md', 'research.manifest.json'],
+  product_owner: ['prd.md', 'prd.manifest.json', 'constitution.project.md'],
+  ux_designer: ['ux-flows.md', 'ux-flows.manifest.json'],
+  api_designer: ['api-spec.yaml', 'api-spec.manifest.json'],
+  ui_designer: ['ui-plan.json', 'gallery.html', 'components.manifest.json', 'components', 'previews', 'screenshots'],
+  tech_lead: ['tech-spec.md', 'tech-spec.manifest.json'],
+  qa_lead: ['test-plan.md', 'test-plan.manifest.json'],
+  coder: ['code-plan.json', 'code.manifest.json'],
+  tester: ['test-report.md', 'test-report.manifest.json', 'test_failures'],
+  security_auditor: ['security-report.md', 'security-report.manifest.json'],
+  reviewer: ['review-report.md', 'review.manifest.json'],
+  validator: ['validation-report.md'],
+};
+
+/**
+ * Reset pipeline state from a specific stage, cleaning up artifacts on disk.
+ *
+ * Rules:
+ * - The specified stage and all downstream stages are reset to idle
+ * - Their disk artifacts are deleted
+ * - Special handling for shared code/ directory:
+ *   - --from qa_lead (or earlier): delete entire code/
+ *   - --from coder: delete code/ except tests/ (preserve QALead's tests)
+ *   - --from tester (or later): don't touch code/
+ * - fixLoopRound reset to 0 when coder or tester is in the reset range
+ */
+export function resetFromStage(
+  state: SavedPipelineState,
+  fromStage: StageName,
+  stageOrder: readonly StageName[],
+): void {
+  const fromIdx = stageOrder.indexOf(fromStage);
+  if (fromIdx < 0) {
+    throw new Error(`Unknown stage: ${fromStage}. Valid stages: ${stageOrder.join(', ')}`);
+  }
+
+  // Validate: fromStage must be done or idle/failed (not ahead of progress)
+  const status = state.stages[fromStage];
+  if (!status) {
+    throw new Error(`Stage ${fromStage} not found in pipeline state`);
+  }
+
+  const runDir = path.join(ARTIFACTS_BASE, state.id);
+  const stagesToReset = stageOrder.slice(fromIdx);
+
+  // 1. Clean disk artifacts for each reset stage
+  for (const stage of stagesToReset) {
+    const artifacts = STAGE_ARTIFACTS[stage] ?? [];
+    for (const artifact of artifacts) {
+      const artifactPath = path.join(runDir, artifact);
+      if (fs.existsSync(artifactPath)) {
+        fs.rmSync(artifactPath, { recursive: true, force: true });
+      }
+    }
+  }
+
+  // 2. Handle shared code/ directory
+  const coderInReset = stagesToReset.includes('coder');
+  const qaLeadInReset = stagesToReset.includes('qa_lead');
+  const codeDirPath = path.join(runDir, 'code');
+
+  if (qaLeadInReset && fs.existsSync(codeDirPath)) {
+    // QALead is being reset — delete entire code/ (QALead + Coder both re-run)
+    fs.rmSync(codeDirPath, { recursive: true, force: true });
+  } else if (coderInReset && fs.existsSync(codeDirPath)) {
+    // Only Coder reset — preserve code/tests/ (QALead's output)
+    for (const entry of fs.readdirSync(codeDirPath)) {
+      if (entry === 'tests') continue;
+      fs.rmSync(path.join(codeDirPath, entry), { recursive: true, force: true });
+    }
+  }
+
+  // 3. Reset pipeline state
+  for (const stage of stagesToReset) {
+    state.stages[stage] = { state: 'idle', retryCount: 0 };
+  }
+
+  // 4. Reset fixLoopRound if coder/tester involved
+  if (coderInReset || stagesToReset.includes('tester')) {
+    state.fixLoopRound = 0;
+  }
+}
+
+/**
  * Find the most recent run that has a pipeline-state.json.
  * Returns the run ID or null.
  */

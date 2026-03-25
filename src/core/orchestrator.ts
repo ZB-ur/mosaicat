@@ -30,7 +30,7 @@ import { artifactExists, readArtifact, writeArtifact, initArtifactsDir, getArtif
 import { loadUserLLMConfig } from './llm-config-store.js';
 import { logRetry, classifyError } from './retry-log.js';
 import { RetryingProvider } from './retrying-provider.js';
-import { loadResumeState, validateResumeState, findResumableRun } from './resume.js';
+import { loadResumeState, validateResumeState, findResumableRun, resetFromStage } from './resume.js';
 const AGENT_DESC: Record<StageName, string> = {
   intent_consultant: '意图深挖',
   researcher: '市场调研 & 竞品分析',
@@ -233,7 +233,7 @@ export class Orchestrator {
    * Resume a previously interrupted pipeline run.
    * Restores state from pipeline-state.json, skips completed stages, continues from where it stopped.
    */
-  async resumeRun(runId?: string): Promise<PipelineRun> {
+  async resumeRun(runId?: string, fromStage?: string): Promise<PipelineRun> {
     const resolvedRunId = runId ?? findResumableRun();
     if (!resolvedRunId) {
       throw new Error('No resumable run found. Specify --run <runId> or ensure a pipeline-state.json exists.');
@@ -241,6 +241,16 @@ export class Orchestrator {
 
     initArtifactsDir(resolvedRunId);
     const state = loadResumeState(resolvedRunId);
+
+    // If --from specified, reset that stage and all downstream before validation
+    if (fromStage) {
+      const stageList = this.resolveStageList(state.profile as PipelineProfile);
+      resetFromStage(state, fromStage as StageName, stageList);
+      // Persist the reset state so subsequent crashes can resume correctly
+      const statePath = `.mosaic/artifacts/${resolvedRunId}/pipeline-state.json`;
+      fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+    }
+
     const validated = validateResumeState(state, this.agentsConfig);
 
     const logger = new Logger(resolvedRunId);

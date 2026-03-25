@@ -77,14 +77,17 @@ if (command === 'login') {
 } else if (command === 'resume') {
   const runIdx = args.indexOf('--run');
   const runId = runIdx >= 0 ? args[runIdx + 1] : undefined;
+  const fromIdx = args.indexOf('--from');
+  const fromStage = fromIdx >= 0 ? args[fromIdx + 1] : undefined;
 
   const detach = attachCLIProgress();
 
   const startResume = async () => {
     const orchestrator = new Orchestrator();
-    console.log(`[mosaicat] Resuming${runId ? ` run ${runId}` : ' latest run'}...`);
+    const fromLabel = fromStage ? ` from ${fromStage}` : '';
+    console.log(`[mosaicat] Resuming${runId ? ` run ${runId}` : ' latest run'}${fromLabel}...`);
 
-    const result = await orchestrator.resumeRun(runId);
+    const result = await orchestrator.resumeRun(runId, fromStage);
 
     console.log(`\x1b[2mRun ID: ${result.id}\x1b[0m`);
     console.log(`\x1b[2mArtifacts: .mosaic/artifacts/${result.id}/\x1b[0m`);
@@ -166,7 +169,7 @@ if (command === 'login') {
   console.log('  mosaicat login                                     # One-time GitHub OAuth login');
   console.log('  mosaicat logout                                    # Clear saved credentials');
   console.log('  mosaicat run <instruction> [--auto-approve] [--github] [--evolve]');
-  console.log('  mosaicat resume [--run <runId>]                     # Resume interrupted pipeline');
+  console.log('  mosaicat resume [--run <runId>] [--from <stage>]    # Resume pipeline (optionally from a specific stage)');
   console.log('  mosaicat refine <feedback> [--run <runId>]          # Fix issues in generated code');
   console.log('  mosaicat evolve                                     # Analyze retry patterns & generate skill proposals');
 }
