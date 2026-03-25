@@ -69,6 +69,33 @@ if (command === 'login') {
     console.error(`\x1b[31m[mosaicat] Refine failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
     process.exit(1);
   });
+} else if (command === 'evolve') {
+  import('./core/evolve-runner.js').then(({ runEvolve }) => runEvolve()).catch((err) => {
+    console.error(`\x1b[31m[mosaicat] Evolve failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
+    process.exit(1);
+  });
+} else if (command === 'resume') {
+  const runIdx = args.indexOf('--run');
+  const runId = runIdx >= 0 ? args[runIdx + 1] : undefined;
+
+  const detach = attachCLIProgress();
+
+  const startResume = async () => {
+    const orchestrator = new Orchestrator();
+    console.log(`[mosaicat] Resuming${runId ? ` run ${runId}` : ' latest run'}...`);
+
+    const result = await orchestrator.resumeRun(runId);
+
+    console.log(`\x1b[2mRun ID: ${result.id}\x1b[0m`);
+    console.log(`\x1b[2mArtifacts: .mosaic/artifacts/${result.id}/\x1b[0m`);
+    detach();
+  };
+
+  startResume().catch((err) => {
+    console.error(`\n\x1b[31m[mosaicat] Resume failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
+    detach();
+    process.exit(1);
+  });
 } else if (command === 'run') {
   const instruction = args[1];
   if (!instruction) {
@@ -139,5 +166,7 @@ if (command === 'login') {
   console.log('  mosaicat login                                     # One-time GitHub OAuth login');
   console.log('  mosaicat logout                                    # Clear saved credentials');
   console.log('  mosaicat run <instruction> [--auto-approve] [--github] [--evolve]');
+  console.log('  mosaicat resume [--run <runId>]                     # Resume interrupted pipeline');
   console.log('  mosaicat refine <feedback> [--run <runId>]          # Fix issues in generated code');
+  console.log('  mosaicat evolve                                     # Analyze retry patterns & generate skill proposals');
 }

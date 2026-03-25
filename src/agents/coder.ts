@@ -10,6 +10,7 @@ import type { OutputSpec } from '../core/prompt-assembler.js';
 import { eventBus } from '../core/event-bus.js';
 import { readArtifact, artifactExists, getArtifactsDir } from '../core/artifact.js';
 import { CodePlanSchema, type CodePlan, type CodePlanModule } from './code-plan-schema.js';
+import { logRetry, classifyError } from '../core/retry-log.js';
 
 const PLANNER_PROMPT_PATH = '.claude/agents/mosaic/code-planner.md';
 const BUILDER_PROMPT_PATH = '.claude/agents/mosaic/code-builder.md';
@@ -175,6 +176,18 @@ export class CoderAgent extends BaseAgent {
               errors: lastErrors.slice(0, 500),
             });
 
+            logRetry({
+              timestamp: new Date().toISOString(),
+              runId: context.task.runId,
+              stage: this.stage,
+              source: 'coder-module-fix',
+              attempt: retry,
+              errorCategory: classifyError(lastErrors),
+              errorMessage: lastErrors,
+              resolved: false,
+              module: mod.name,
+            });
+
             await this.implementModuleWithErrors(
               context, plan, mod, perModuleBudget, lastErrors, retry
             );
@@ -294,6 +307,18 @@ export class CoderAgent extends BaseAgent {
 
       // Fix: send failures to builder for targeted fix
       eventBus.emit('agent:progress', this.stage, `acceptance: ${result.failed} failed — fix round ${round}...`);
+
+      logRetry({
+        timestamp: new Date().toISOString(),
+        runId: context.task.runId,
+        stage: this.stage,
+        source: 'coder-acceptance-fix',
+        attempt: round,
+        errorCategory: 'test-failure',
+        errorMessage: result.errors,
+        resolved: false,
+      });
+
       await this.fixAcceptanceFailures(context, plan, result.errors, perRoundBudget);
     }
   }
