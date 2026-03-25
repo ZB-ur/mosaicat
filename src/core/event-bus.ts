@@ -24,6 +24,9 @@ export interface PipelineEvents {
   'artifact:written': (stage: StageName, name: string, size: number) => void;
   'manifest:written': (stage: StageName, name: string) => void;
   'snapshot:created': (stage: StageName, runId: string) => void;
+  'agent:summary': (stage: StageName, summary: string) => void;
+  'coder:fix-round': (round: number, totalTests: number, passedTests: number, approach: string) => void;
+  'evolution:proposals': (proposals: Array<{ id: string; type: string; reason: string }>) => void;
   'evolution:analyzing': (runId: string) => void;
   'evolution:proposed': (proposalId: string, stage: StageName) => void;
   'evolution:approved': (proposalId: string, stage: StageName) => void;

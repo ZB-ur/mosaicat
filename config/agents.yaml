@@ -24,6 +24,7 @@ agents:
     outputs:
       - prd.md
       - prd.manifest.json
+      - constitution.project.md
     autonomy:
       allowed_tools: []
       max_turns: 1
@@ -110,9 +111,12 @@ agents:
       - prd.md
       - ux-flows.md
       - api-spec.yaml
+      - constitution.project.md
+      - run-memory.md
     outputs:
       - tech-spec.md
       - tech-spec.manifest.json
+      - constitution.project.md
     autonomy:
       allowed_tools:
         - WebSearch
@@ -125,6 +129,8 @@ agents:
     inputs:
       - tech-spec.md
       - api-spec.yaml
+      - constitution.project.md
+      - run-memory.md
     outputs:
       - code/
       - code-plan.json
@@ -145,6 +151,7 @@ agents:
     inputs:
       - tech-spec.md
       - code.manifest.json
+      - constitution.project.md
     outputs:
       - test-plan.md
       - test-plan.manifest.json
@@ -159,6 +166,7 @@ agents:
       - test-plan.md
       - test-plan.manifest.json
       - code/
+      - constitution.project.md
     outputs:
       - tests/
       - test-report.md
@@ -179,6 +187,7 @@ agents:
     inputs:
       - code/
       - code.manifest.json
+      - constitution.project.md
     outputs:
       - security-report.md
       - security-report.manifest.json
@@ -196,6 +205,8 @@ agents:
       - tech-spec.md
       - code/
       - code.manifest.json
+      - constitution.project.md
+      - run-memory.md
     outputs:
       - review-report.md
       - review.manifest.json

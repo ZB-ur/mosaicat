@@ -1,14 +1,43 @@
 import type { AgentContext, StageName } from './types.js';
 import type { LLMProvider } from './llm-provider.js';
 import type { Logger } from './logger.js';
-import { writeArtifact } from './artifact.js';
+import { writeArtifact, readArtifact, artifactExists } from './artifact.js';
 import { writeManifest } from './manifest.js';
 import { eventBus } from './event-bus.js';
+
+// --- Agent Hook Interfaces ---
+
+export interface AgentHookResult {
+  pass: boolean;
+  message?: string;
+}
+
+export interface PreRunHook {
+  name: string;
+  mandatory: boolean;
+  execute(context: AgentContext): Promise<AgentHookResult>;
+}
+
+export interface PostRunHook {
+  name: string;
+  mandatory: boolean;
+  execute(context: AgentContext, output: string): Promise<AgentHookResult>;
+}
+
+export class HookFailedError extends Error {
+  constructor(hookName: string, message?: string) {
+    super(`Hook "${hookName}" failed: ${message ?? 'no details'}`);
+    this.name = 'HookFailedError';
+  }
+}
 
 export abstract class BaseAgent {
   protected provider: LLMProvider;
   protected logger: Logger;
   readonly stage: StageName;
+  protected preRunHooks: PreRunHook[] = [];
+  protected postRunHooks: PostRunHook[] = [];
+  private lastOutput = '';
 
   constructor(stage: StageName, provider: LLMProvider, logger: Logger) {
     this.stage = stage;
@@ -16,12 +45,35 @@ export abstract class BaseAgent {
     this.logger = logger;
   }
 
+  /** Register a pre-run hook */
+  addPreRunHook(hook: PreRunHook): void {
+    this.preRunHooks.push(hook);
+  }
+
+  /** Register a post-run hook */
+  addPostRunHook(hook: PostRunHook): void {
+    this.postRunHooks.push(hook);
+  }
+
   async execute(context: AgentContext): Promise<void> {
     const inputs = Array.from(context.inputArtifacts.keys());
     this.logger.agent(this.stage, 'info', 'agent:start', { inputs });
     eventBus.emit('agent:context', this.stage, inputs);
 
+    // 1. Run pre-run hooks
+    for (const hook of this.preRunHooks) {
+      const result = await hook.execute(context);
+      if (!result.pass && hook.mandatory) {
+        this.logger.agent(this.stage, 'error', 'hook:mandatory-failed', { hook: hook.name, message: result.message });
+        throw new HookFailedError(hook.name, result.message);
+      }
+      if (!result.pass) {
+        this.logger.agent(this.stage, 'warn', 'hook:optional-failed', { hook: hook.name, message: result.message });
+      }
+    }
+
     try {
+      // 2. Run agent
       await this.run(context);
       this.logger.agent(this.stage, 'info', 'agent:complete');
     } catch (err) {
@@ -29,12 +81,39 @@ export abstract class BaseAgent {
       this.logger.agent(this.stage, 'error', 'agent:error', { error: message });
       throw err;
     }
+
+    // 3. Run post-run hooks
+    for (const hook of this.postRunHooks) {
+      const result = await hook.execute(context, this.lastOutput);
+      if (!result.pass && hook.mandatory) {
+        this.logger.agent(this.stage, 'error', 'hook:mandatory-failed', { hook: hook.name, message: result.message });
+        throw new HookFailedError(hook.name, result.message);
+      }
+      if (!result.pass) {
+        this.logger.agent(this.stage, 'warn', 'hook:optional-failed', { hook: hook.name, message: result.message });
+      }
+    }
   }
 
   protected abstract run(context: AgentContext): Promise<void>;
 
+  /** Append an entry to run-memory.md for downstream agents */
+  protected appendRunMemory(entry: string): void {
+    const memoryFile = 'run-memory.md';
+    let existing = '';
+    try {
+      if (artifactExists(memoryFile)) {
+        existing = readArtifact(memoryFile);
+      }
+    } catch { /* first entry */ }
+    const header = `### ${this.stage} (${new Date().toISOString()})`;
+    const updated = existing ? `${existing}\n\n${header}\n${entry}` : `# Run Memory\n\n${header}\n${entry}`;
+    writeArtifact(memoryFile, updated);
+  }
+
   protected writeOutput(name: string, content: string): void {
     writeArtifact(name, content);
+    this.lastOutput = content;
     this.logger.agent(this.stage, 'info', 'artifact:written', { name });
     eventBus.emit('artifact:written', this.stage, name, content.length);
   }
