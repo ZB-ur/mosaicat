@@ -111,6 +111,13 @@ export function attachCLIProgress(): () => void {
     console.log(`  ${GREEN}✓ done${RESET} ${DIM}(${elapsed})${RESET}\n`);
   });
 
+  on('stage:skipped', (stage, _runId) => {
+    const idx = activeStages.indexOf(stage) + 1;
+    const label = AGENT_LABELS[stage] ?? stage;
+    const total = activeStages.length;
+    console.log(`${DIM}[${idx}/${total}] ${label} — ✓ cached${RESET}`);
+  });
+
   on('stage:failed', (stage, _runId, error) => {
     console.log(`  ${RED}✗ failed: ${error}${RESET}`);
   });

@@ -402,7 +402,7 @@ export class Orchestrator {
     // Skip stages that are already done (resume scenario)
     if (run.stages[stage]?.state === 'done') {
       logger.pipeline('info', 'stage:skipped-resume', { stage });
-      eventBus.emit('stage:complete', stage, run.id);
+      eventBus.emit('stage:skipped', stage, run.id);
       return;
     }
 
