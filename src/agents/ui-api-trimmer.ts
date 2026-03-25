@@ -1,6 +1,90 @@
 import yaml from 'js-yaml';
 
-const MIN_ENDPOINT_THRESHOLD = 3;
+const MIN_ENDPOINT_THRESHOLD = 1;
+
+/**
+ * Merge duplicate top-level `components:` keys in an OpenAPI YAML string.
+ *
+ * LLM-generated api-spec.yaml often produces two `components:` blocks:
+ *   - First: `components: { securitySchemes: ... }` (near the top)
+ *   - Second: `components: { schemas: ... }` (after paths)
+ *
+ * js-yaml throws "duplicated mapping key" on strict parse.
+ * This function merges the two blocks into one before parsing.
+ */
+export function mergeDuplicateComponentsKey(yamlStr: string): string {
+  // Find all top-level `components:` occurrences (column 0, not indented)
+  const lines = yamlStr.split('\n');
+  const componentStarts: number[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    if (/^components:\s*$/.test(lines[i])) {
+      componentStarts.push(i);
+    }
+  }
+
+  if (componentStarts.length <= 1) return yamlStr; // no duplicates
+
+  // Extract the indented block under each `components:` and merge
+  // Keep the first occurrence, merge children from subsequent ones
+  const firstIdx = componentStarts[0];
+
+  for (let k = 1; k < componentStarts.length; k++) {
+    const dupIdx = componentStarts[k];
+
+    // Collect the indented lines under the duplicate
+    const childLines: string[] = [];
+    for (let j = dupIdx + 1; j < lines.length; j++) {
+      // Stop at next top-level key (non-empty, non-comment, no leading space)
+      if (lines[j].length > 0 && !lines[j].startsWith(' ') && !lines[j].startsWith('#')) {
+        break;
+      }
+      childLines.push(lines[j]);
+    }
+
+    // Remove the duplicate block (components: line + its children)
+    const removeCount = 1 + childLines.length;
+    lines.splice(dupIdx, removeCount);
+
+    // Find the end of the first components block to append children
+    let insertAt = firstIdx + 1;
+    for (let j = firstIdx + 1; j < lines.length; j++) {
+      if (lines[j].length > 0 && !lines[j].startsWith(' ') && !lines[j].startsWith('#')) {
+        insertAt = j;
+        break;
+      }
+      insertAt = j + 1;
+    }
+
+    // Insert the children from the duplicate under the first block
+    lines.splice(insertAt, 0, ...childLines);
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Safely parse an OpenAPI YAML string, handling duplicate `components:` keys.
+ */
+function safeLoadApiSpec(fullYaml: string): Record<string, unknown> | null {
+  // Try direct parse first (fast path)
+  try {
+    const spec = yaml.load(fullYaml) as Record<string, unknown>;
+    if (spec && typeof spec === 'object') return spec;
+    return null;
+  } catch {
+    // Likely duplicate key — try merging
+  }
+
+  try {
+    const merged = mergeDuplicateComponentsKey(fullYaml);
+    const spec = yaml.load(merged) as Record<string, unknown>;
+    if (spec && typeof spec === 'object') return spec;
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Trim an OpenAPI spec to only include endpoints relevant to the given feature IDs.
@@ -13,14 +97,8 @@ export function trimApiSpec(
 ): string {
   if (!featureIds.length) return fullYaml;
 
-  let spec: Record<string, unknown>;
-  try {
-    spec = yaml.load(fullYaml) as Record<string, unknown>;
-  } catch {
-    return fullYaml;
-  }
-
-  if (!spec || typeof spec !== 'object' || !spec.paths) return fullYaml;
+  const spec = safeLoadApiSpec(fullYaml);
+  if (!spec || !spec.paths) return fullYaml;
 
   const featureEndpointMap = buildFeatureEndpointMap(prd, spec);
   const relevantPaths = new Set<string>();
@@ -29,6 +107,25 @@ export function trimApiSpec(
     const endpoints = featureEndpointMap.get(fid.toUpperCase());
     if (endpoints) {
       for (const ep of endpoints) relevantPaths.add(ep);
+    }
+  }
+
+  // Also try x-covers-features on operations directly
+  if (relevantPaths.size === 0) {
+    const paths = spec.paths as Record<string, Record<string, unknown>>;
+    for (const [pathKey, pathItem] of Object.entries(paths)) {
+      if (!pathItem || typeof pathItem !== 'object') continue;
+      for (const method of Object.keys(pathItem)) {
+        const op = pathItem[method] as Record<string, unknown> | undefined;
+        if (!op || typeof op !== 'object') continue;
+        const xcf = op['x-covers-features'] as string[] | undefined;
+        if (xcf && Array.isArray(xcf)) {
+          const upperIds = featureIds.map(f => f.toUpperCase());
+          if (xcf.some(f => upperIds.includes(f.toUpperCase()))) {
+            relevantPaths.add(pathKey);
+          }
+        }
+      }
     }
   }
 
@@ -55,6 +152,24 @@ export function trimApiSpec(
   }
 
   return yaml.dump(trimmed, { lineWidth: 120, noRefs: true });
+}
+
+/**
+ * Extract only the schemas section from an API spec.
+ * Used for composite components that need data type definitions but not endpoint details.
+ * Returns YAML string with just the schema definitions.
+ */
+export function extractSchemasOnly(fullYaml: string): string | null {
+  const spec = safeLoadApiSpec(fullYaml);
+  if (!spec) return null;
+
+  const schemas = (spec.components as Record<string, unknown>)?.schemas as Record<string, unknown>;
+  if (!schemas || Object.keys(schemas).length === 0) return null;
+
+  return yaml.dump(
+    { components: { schemas } },
+    { lineWidth: 120, noRefs: true },
+  );
 }
 
 /**
