@@ -55,7 +55,10 @@ export function validateResumeState(
     }
   }
 
-  // Step 2: Verify done stages have outputs on disk
+  // Step 2: Verify done stages have essential outputs on disk
+  // Only check manifest files as completion indicators (last thing written by BaseAgent).
+  // Skip directory outputs (e.g. "code/", "components/") and optional files
+  // (e.g. constitution.project.md) to avoid false cascade resets.
   const stageOrder = Object.keys(state.stages) as StageName[];
   let cascadeReset = false;
 
@@ -73,13 +76,22 @@ export function validateResumeState(
     if (status.state === 'done') {
       const agentConfig = agentsConfig.agents[stage];
       if (agentConfig) {
-        const missingOutput = (agentConfig.outputs ?? []).find((output: string) => {
+        const outputs = agentConfig.outputs ?? [];
+
+        // Essential outputs: manifest files are the definitive completion markers.
+        // Fallback: first non-directory, non-manifest file (e.g. validation-report.md).
+        const manifests = outputs.filter((o: string) => o.endsWith('.manifest.json'));
+        const essentialOutputs = manifests.length > 0
+          ? manifests
+          : outputs.filter((o: string) => !o.endsWith('/'));
+
+        const missingEssential = essentialOutputs.find((output: string) => {
           const outputPath = path.join(runDir, output);
           return !fs.existsSync(outputPath);
         });
 
-        if (missingOutput) {
-          // This stage's outputs are incomplete — reset it and all downstream
+        if (missingEssential) {
+          // This stage's essential outputs are missing — reset it and all downstream
           status.state = 'idle';
           status.retryCount = 0;
           cascadeReset = true;
