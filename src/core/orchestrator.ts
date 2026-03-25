@@ -255,10 +255,13 @@ export class Orchestrator {
 
     const logger = new Logger(resolvedRunId);
     const provider = createProvider(this.pipelineConfig);
+    const userLLMConfig = loadUserLLMConfig();
+    const providerName = userLLMConfig?.provider ?? this.pipelineConfig.llm?.default ?? 'claude-cli';
 
     logger.pipeline('info', 'pipeline:resume', {
       runId: resolvedRunId,
       profile: validated.profile,
+      provider: providerName,
       doneStages: Object.entries(validated.stages)
         .filter(([, s]) => s?.state === 'done')
         .map(([name]) => name),
@@ -274,7 +277,7 @@ export class Orchestrator {
       }
     }
 
-    eventBus.emit('pipeline:start', resolvedRunId, stageList, 'resume');
+    eventBus.emit('pipeline:start', resolvedRunId, stageList, providerName);
 
     const pipelineStages = stageList.filter((s) => s !== 'intent_consultant');
     let testerCoderFixCount = validated.fixLoopRound ?? 0;
