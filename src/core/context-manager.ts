@@ -31,20 +31,6 @@ export function buildContext(
     // Static constitution file not found — non-blocking
   }
 
-  // Inject approved skills into system prompt
-  try {
-    const skills = loadSkillsForAgent(task.stage);
-    if (skills.size > 0) {
-      let skillSection = '\n\n## Available Skills\n';
-      for (const [name, content] of skills) {
-        skillSection += `\n### Skill: ${name}\n${content}\n`;
-      }
-      systemPrompt += skillSection;
-    }
-  } catch (err) {
-    console.warn(`[context-manager] Failed to load skills for ${task.stage}: ${err instanceof Error ? err.message : String(err)}`);
-  }
-
   // Load only contracted input artifacts (artifact isolation)
   const inputArtifacts = new Map<string, string>();
   for (const input of config.inputs) {
@@ -58,6 +44,22 @@ export function buildContext(
     } else if (artifactExists(input)) {
       inputArtifacts.set(input, readArtifact(input));
     }
+  }
+
+  // Inject approved skills into system prompt (after artifacts loaded for trigger context)
+  try {
+    // Build task context from loaded artifacts for trigger matching
+    const taskContext = [...inputArtifacts.values()].join('\n').slice(0, 10000);
+    const skills = loadSkillsForAgent(task.stage, taskContext);
+    if (skills.size > 0) {
+      let skillSection = '\n\n## Available Skills\n';
+      for (const [name, content] of skills) {
+        skillSection += `\n### Skill: ${name}\n${content}\n`;
+      }
+      systemPrompt += skillSection;
+    }
+  } catch (err) {
+    console.warn(`[context-manager] Failed to load skills for ${task.stage}: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   return {

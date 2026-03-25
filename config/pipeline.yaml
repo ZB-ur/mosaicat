@@ -109,7 +109,7 @@ github:
     - "/reject"
 
 evolution:
-  enabled: false
+  enabled: true
   cooldown_hours: 24
 
 # LLM provider pool — configure which models are available
