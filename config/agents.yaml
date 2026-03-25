@@ -131,7 +131,6 @@ agents:
       - api-spec.yaml
       - constitution.project.md
       - run-memory.md
-      - tests/
     outputs:
       - code/
       - code-plan.json
@@ -158,14 +157,14 @@ agents:
     outputs:
       - test-plan.md
       - test-plan.manifest.json
-      - tests/
+      - code/tests/
     autonomy:
       allowed_tools:
         - Read
         - Write
         - Bash
       writable_paths:
-        - .mosaic/artifacts/tests/
+        - .mosaic/artifacts/code/tests/
       max_turns: 10
       max_budget_usd: 2
 
@@ -176,7 +175,6 @@ agents:
       - test-plan.md
       - test-plan.manifest.json
       - code/
-      - tests/
       - constitution.project.md
     outputs:
       - tests/
