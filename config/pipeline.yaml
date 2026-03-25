@@ -71,9 +71,9 @@ profiles:
     - api_designer
     - ui_designer
     - tech_lead
-    - coder
-    - qa_lead
-    - tester
+    - qa_lead            # moved before coder: generates acceptance tests first (TDD)
+    - coder              # targets: make acceptance tests pass
+    - tester             # executes acceptance tests + supplemental
     - security_auditor
     - reviewer
     - validator
@@ -84,8 +84,8 @@ profiles:
     - ux_designer
     - ui_designer
     - tech_lead
+    - qa_lead            # moved before coder: generates acceptance tests first (TDD)
     - coder
-    - qa_lead
     - tester
     - security_auditor
     - reviewer

@@ -7,6 +7,7 @@ import {
   transitionStage,
   shouldAutoApprove,
   getPreviousStage,
+  resetStageForResume,
 } from './pipeline.js';
 import type { LLMProvider } from './llm-provider.js';
 import { createProvider } from './provider-factory.js';
@@ -27,6 +28,9 @@ import { extractManifestSummary } from './manifest.js';
 import { IntentConsultantAgent } from '../agents/intent-consultant.js';
 import { artifactExists, readArtifact, writeArtifact, initArtifactsDir, getArtifactsDir } from './artifact.js';
 import { loadUserLLMConfig } from './llm-config-store.js';
+import { logRetry, classifyError } from './retry-log.js';
+import { RetryingProvider } from './retrying-provider.js';
+import { loadResumeState, validateResumeState, findResumableRun } from './resume.js';
 const AGENT_DESC: Record<StageName, string> = {
   intent_consultant: '意图深挖',
   researcher: '市场调研 & 竞品分析',
@@ -109,39 +113,81 @@ export class Orchestrator {
       // Filter stage list: skip intent_consultant (handled above)
       const pipelineStages = stageList.filter((s) => s !== 'intent_consultant');
       let testerCoderFixCount = 0;
-      const MAX_TESTER_CODER_LOOPS = 1;
+      const MAX_FIX_ROUNDS = 5;
+      const REPLAN_THRESHOLD = 3;
+      const attemptHistory: Array<{ round: number; failures: string; approach: string }> = [];
 
+      const resolvedProfile = profile ?? 'full';
       for (let i = 0; i < pipelineStages.length; i++) {
         const stage = pipelineStages[i];
         await this.executeStage(pipelineRun, stage, provider, logger);
 
-        // Tester → Coder fix loop: if tester fails, rollback to coder with test failures
-        if (stage === 'tester' && testerCoderFixCount < MAX_TESTER_CODER_LOOPS) {
+        // Save state after each successful stage for resume support
+        this.savePipelineState(pipelineRun, resolvedProfile, testerCoderFixCount);
+
+        // Progressive Tester → Coder fix loop
+        if (stage === 'tester' && testerCoderFixCount < MAX_FIX_ROUNDS) {
           const shouldRetry = this.checkTesterVerdict(logger);
           if (shouldRetry) {
             testerCoderFixCount++;
+            const round = testerCoderFixCount;
+
+            let approach: string;
+            if (round < REPLAN_THRESHOLD) {
+              approach = 'direct-fix';
+            } else if (round === REPLAN_THRESHOLD) {
+              approach = 'replan-failed-modules';
+            } else {
+              approach = 'full-history-fix';
+            }
+
             logger.pipeline('info', 'tester-coder-loop:start', {
-              attempt: testerCoderFixCount,
+              round,
+              approach,
+              historyLength: attemptHistory.length,
+            });
+            eventBus.emit('coder:fix-round', round, 0, 0, approach);
+
+            // Log to retry-log
+            logRetry({
+              timestamp: new Date().toISOString(),
+              runId: pipelineRun.id,
+              stage: 'tester',
+              source: 'tester-coder-loop',
+              attempt: round,
+              errorCategory: 'test-failure',
+              errorMessage: 'Tester verdict: fail — triggering coder fix loop',
+              resolved: false,
             });
 
-            // Rollback: re-run coder with test_failures injected
+            // Record failure history for cumulative context
+            try {
+              const failureData = readArtifact('test-report.manifest.json');
+              attemptHistory.push({ round, failures: failureData, approach });
+            } catch { /* non-fatal */ }
+
             const coderIdx = pipelineStages.indexOf('coder');
             if (coderIdx !== -1) {
-              // Inject test report into coder context
-              this.injectTestFailuresForCoder();
+              // Inject test failures + cumulative history
+              this.injectTestFailuresForCoder(attemptHistory);
               // Reset coder and tester stages for re-run
               pipelineRun.stages['coder'] = { state: 'idle', retryCount: 0 };
               pipelineRun.stages['tester'] = { state: 'idle', retryCount: 0 };
-              // Also reset qa_lead if it exists (it will be skipped if artifacts exist)
-              if (pipelineRun.stages['qa_lead']) {
-                pipelineRun.stages['qa_lead'] = { state: 'idle', retryCount: 0 };
-              }
               // Jump back to coder
-              i = coderIdx - 1; // will be incremented by for loop
+              i = coderIdx - 1;
               continue;
             }
           }
         }
+      }
+
+      // Log final fix loop summary if any rounds occurred
+      if (testerCoderFixCount > 0) {
+        const finalVerdict = this.checkTesterVerdict(logger) ? 'fail' : 'pass';
+        logger.pipeline('info', 'tester-coder-loop:complete', {
+          totalRounds: testerCoderFixCount,
+          finalVerdict,
+        });
       }
 
       // Post-run evolution analysis
@@ -183,6 +229,151 @@ export class Orchestrator {
     return pipelineRun;
   }
 
+  /**
+   * Resume a previously interrupted pipeline run.
+   * Restores state from pipeline-state.json, skips completed stages, continues from where it stopped.
+   */
+  async resumeRun(runId?: string): Promise<PipelineRun> {
+    const resolvedRunId = runId ?? findResumableRun();
+    if (!resolvedRunId) {
+      throw new Error('No resumable run found. Specify --run <runId> or ensure a pipeline-state.json exists.');
+    }
+
+    initArtifactsDir(resolvedRunId);
+    const state = loadResumeState(resolvedRunId);
+    const validated = validateResumeState(state, this.agentsConfig);
+
+    const logger = new Logger(resolvedRunId);
+    const provider = createProvider(this.pipelineConfig);
+
+    logger.pipeline('info', 'pipeline:resume', {
+      runId: resolvedRunId,
+      profile: validated.profile,
+      doneStages: Object.entries(validated.stages)
+        .filter(([, s]) => s?.state === 'done')
+        .map(([name]) => name),
+    });
+
+    const stageList = this.resolveStageList(validated.profile as PipelineProfile);
+    const pipelineRun = createPipelineRun(resolvedRunId, validated.instruction, validated.autoApprove, stageList);
+
+    // Restore completed stage states
+    for (const [stage, status] of Object.entries(validated.stages)) {
+      if (status && status.state === 'done') {
+        pipelineRun.stages[stage as StageName] = status;
+      }
+    }
+
+    eventBus.emit('pipeline:start', resolvedRunId, stageList, 'resume');
+
+    const pipelineStages = stageList.filter((s) => s !== 'intent_consultant');
+    let testerCoderFixCount = validated.fixLoopRound ?? 0;
+
+    try {
+      // Intent Consultant: skip if brief exists (it should, since state was saved)
+      await this.runIntentConsultant(pipelineRun, provider, logger);
+
+      const MAX_FIX_ROUNDS = 5;
+      const REPLAN_THRESHOLD = 3;
+      const attemptHistory: Array<{ round: number; failures: string; approach: string }> = [];
+
+      for (let i = 0; i < pipelineStages.length; i++) {
+        const stage = pipelineStages[i];
+        await this.executeStage(pipelineRun, stage, provider, logger);
+
+        // Save state after each successful stage
+        this.savePipelineState(pipelineRun, validated.profile, testerCoderFixCount);
+
+        // Progressive Tester → Coder fix loop (same as run())
+        if (stage === 'tester' && testerCoderFixCount < MAX_FIX_ROUNDS) {
+          const shouldRetry = this.checkTesterVerdict(logger);
+          if (shouldRetry) {
+            testerCoderFixCount++;
+            const round = testerCoderFixCount;
+
+            let approach: string;
+            if (round < REPLAN_THRESHOLD) {
+              approach = 'direct-fix';
+            } else if (round === REPLAN_THRESHOLD) {
+              approach = 'replan-failed-modules';
+            } else {
+              approach = 'full-history-fix';
+            }
+
+            logger.pipeline('info', 'tester-coder-loop:start', { round, approach, historyLength: attemptHistory.length });
+            eventBus.emit('coder:fix-round', round, 0, 0, approach);
+
+            logRetry({
+              timestamp: new Date().toISOString(),
+              runId: pipelineRun.id,
+              stage: 'tester',
+              source: 'tester-coder-loop',
+              attempt: round,
+              errorCategory: 'test-failure',
+              errorMessage: 'Tester verdict: fail — triggering coder fix loop',
+              resolved: false,
+            });
+
+            try {
+              const failureData = readArtifact('test-report.manifest.json');
+              attemptHistory.push({ round, failures: failureData, approach });
+            } catch { /* non-fatal */ }
+
+            const coderIdx = pipelineStages.indexOf('coder');
+            if (coderIdx !== -1) {
+              this.injectTestFailuresForCoder(attemptHistory);
+              pipelineRun.stages['coder'] = { state: 'idle', retryCount: 0 };
+              pipelineRun.stages['tester'] = { state: 'idle', retryCount: 0 };
+              i = coderIdx - 1;
+              continue;
+            }
+          }
+        }
+      }
+
+      if (testerCoderFixCount > 0) {
+        const finalVerdict = this.checkTesterVerdict(logger) ? 'fail' : 'pass';
+        logger.pipeline('info', 'tester-coder-loop:complete', { totalRounds: testerCoderFixCount, finalVerdict });
+      }
+
+      pipelineRun.completedAt = new Date().toISOString();
+      this.savePipelineState(pipelineRun, validated.profile, testerCoderFixCount);
+
+      logger.pipeline('info', 'pipeline:complete', { runId: resolvedRunId });
+      eventBus.emit('pipeline:complete', resolvedRunId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.pipeline('error', 'pipeline:failed', { runId: resolvedRunId, error: message });
+      eventBus.emit('pipeline:failed', resolvedRunId, message);
+      // Save state even on failure so next resume picks up where we left off
+      this.savePipelineState(pipelineRun, validated.profile, testerCoderFixCount ?? 0);
+      throw err;
+    } finally {
+      await logger.close();
+    }
+
+    return pipelineRun;
+  }
+
+  /**
+   * Persist pipeline state to disk so it can be resumed after crash.
+   */
+  private savePipelineState(run: PipelineRun, profile: string, fixLoopRound?: number): void {
+    try {
+      writeArtifact('pipeline-state.json', JSON.stringify({
+        id: run.id,
+        instruction: run.instruction,
+        stages: run.stages,
+        profile,
+        autoApprove: run.autoApprove,
+        createdAt: run.createdAt,
+        fixLoopRound: fixLoopRound ?? 0,
+      }, null, 2));
+    } catch {
+      // Non-fatal — resume is best-effort
+    }
+  }
+
   private resolveStageList(profile?: PipelineProfile): readonly StageName[] {
     const profiles = this.pipelineConfig.profiles;
     const resolvedProfile = profile ?? 'full';
@@ -198,6 +389,13 @@ export class Orchestrator {
     provider: LLMProvider,
     logger: Logger
   ): Promise<void> {
+    // Skip stages that are already done (resume scenario)
+    if (run.stages[stage]?.state === 'done') {
+      logger.pipeline('info', 'stage:skipped-resume', { stage });
+      eventBus.emit('stage:complete', stage, run.id);
+      return;
+    }
+
     const stageConfig = this.pipelineConfig.stages[stage]!;
     const maxRetries = stageConfig.retry_max;
 
@@ -205,6 +403,11 @@ export class Orchestrator {
     transitionStage(run, stage, 'running');
     logger.pipeline('info', 'stage:start', { stage });
     eventBus.emit('stage:start', stage, run.id);
+
+    // Update retry context on provider (if wrapped with RetryingProvider)
+    if (provider instanceof RetryingProvider) {
+      provider.setContext(run.id, stage);
+    }
 
     // Initialize metrics for this stage (only on first entry, not retries)
     if (!this.stageMetrics.has(stage)) {
@@ -325,10 +528,7 @@ export class Orchestrator {
       logger.pipeline('info', 'stage:complete', { stage });
       eventBus.emit('stage:complete', stage, run.id);
 
-      // Stage-level evolution analysis (non-blocking)
-      if (this.pipelineConfig.evolution?.enabled) {
-        await this.runStageEvolution(run.id, stage, provider, logger);
-      }
+      // Stage-level evolution removed — use `mosaicat evolve` instead
     } catch (err) {
       // ClarificationNeeded is handled inside executeAgent, not here
       const message = err instanceof Error ? err.message : String(err);
@@ -337,6 +537,16 @@ export class Orchestrator {
       // Automatic retry (within retry_max)
       if (stageStatus.retryCount < maxRetries) {
         stageStatus.retryCount++;
+        logRetry({
+          timestamp: new Date().toISOString(),
+          runId: run.id,
+          stage,
+          source: 'orchestrator',
+          attempt: stageStatus.retryCount,
+          errorCategory: classifyError(message),
+          errorMessage: message,
+          resolved: false,
+        });
         transitionStage(run, stage, 'failed');
         transitionStage(run, stage, 'idle');
         logger.pipeline('warn', 'stage:retry', { stage, retry: stageStatus.retryCount });
@@ -800,17 +1010,29 @@ export class Orchestrator {
    * Write test failures to a well-known artifact location so Coder can read them.
    * The Coder agent checks for 'test_failures' in inputArtifacts.
    */
-  private injectTestFailuresForCoder(): void {
+  private injectTestFailuresForCoder(
+    attemptHistory?: Array<{ round: number; failures: string; approach: string }>,
+  ): void {
     try {
       if (!artifactExists('test-report.manifest.json')) return;
       const manifest = readArtifact('test-report.manifest.json');
+
+      // Build cumulative context with attempt history
+      let failureContext = manifest;
+      if (attemptHistory && attemptHistory.length > 0) {
+        const historySection = attemptHistory.map(h =>
+          `\n--- Round ${h.round} (${h.approach}) ---\n${h.failures}`
+        ).join('\n');
+        failureContext = `${manifest}\n\n## Previous Fix Attempts\n${historySection}`;
+      }
+
       // Add test_failures to coder's inputs so context-manager loads it
       const agentConfig = this.agentsConfig.agents['coder'];
       if (agentConfig && !agentConfig.inputs.includes('test_failures')) {
         agentConfig.inputs.push('test_failures');
       }
       // Write test failures as an artifact the coder can read
-      writeArtifact('test_failures', manifest);
+      writeArtifact('test_failures', failureContext);
     } catch {
       // Non-fatal
     }

@@ -10,6 +10,7 @@ import type { OutputSpec } from '../core/prompt-assembler.js';
 import { eventBus } from '../core/event-bus.js';
 import { readArtifact, artifactExists, getArtifactsDir } from '../core/artifact.js';
 import { CodePlanSchema, type CodePlan, type CodePlanModule } from './code-plan-schema.js';
+import { logRetry, classifyError } from '../core/retry-log.js';
 
 const PLANNER_PROMPT_PATH = '.claude/agents/mosaic/code-planner.md';
 const BUILDER_PROMPT_PATH = '.claude/agents/mosaic/code-builder.md';
@@ -175,6 +176,18 @@ export class CoderAgent extends BaseAgent {
               errors: lastErrors.slice(0, 500),
             });
 
+            logRetry({
+              timestamp: new Date().toISOString(),
+              runId: context.task.runId,
+              stage: this.stage,
+              source: 'coder-module-fix',
+              attempt: retry,
+              errorCategory: classifyError(lastErrors),
+              errorMessage: lastErrors,
+              resolved: false,
+              module: mod.name,
+            });
+
             await this.implementModuleWithErrors(
               context, plan, mod, perModuleBudget, lastErrors, retry
             );
@@ -210,15 +223,168 @@ export class CoderAgent extends BaseAgent {
       await this.runBuildFix(context, plan, buildResult.errors, totalBudget * 0.2);
     }
 
-    // Step 7: Build artifact analysis (zero LLM cost)
+    // Step 7: Run acceptance tests (if available)
+    await this.runAcceptanceTests(context, plan, totalBudget * 0.2);
+
+    // Step 8: Build artifact analysis (zero LLM cost)
     this.analyzeBuildArtifacts(plan);
 
-    // Step 8: HTTP smoke test (zero LLM cost)
+    // Step 9: HTTP smoke test (zero LLM cost)
     await this.runSmokeTest(plan);
 
-    // Step 9: Generate manifest + README
+    // Step 10: Generate manifest + README
     this.generateManifest(plan);
     this.generateReadme(plan);
+  }
+
+  // ─── Acceptance Tests ────────────────────────────────────────
+
+  /**
+   * Run acceptance tests written by QALead (if they exist).
+   * On failure: attempt fix cycles with escalating strategies.
+   */
+  private async runAcceptanceTests(
+    context: AgentContext,
+    plan: CodePlan,
+    fixBudgetUsd: number,
+  ): Promise<void> {
+    const codeDir = `${getArtifactsDir()}/code`;
+    const testsDir = `${getArtifactsDir()}/tests/acceptance`;
+
+    // Check if acceptance tests exist
+    if (!fs.existsSync(testsDir)) {
+      this.logger.agent(this.stage, 'info', 'acceptance:skipped', {
+        reason: 'no tests/acceptance/ directory',
+      });
+      return;
+    }
+
+    // Install test dependencies if test plan exists
+    try {
+      const testPlanManifest = readArtifact('test-plan.manifest.json');
+      const manifest = JSON.parse(testPlanManifest);
+      if (manifest.commands?.setupCommand) {
+        eventBus.emit('agent:progress', this.stage, `acceptance: installing test deps`);
+        try {
+          execSync(manifest.commands.setupCommand, {
+            cwd: codeDir,
+            timeout: 120_000,
+            stdio: 'pipe',
+          });
+        } catch { /* non-fatal */ }
+      }
+    } catch { /* no manifest */ }
+
+    const MAX_ACCEPTANCE_FIX_ROUNDS = 3;
+    const perRoundBudget = fixBudgetUsd / MAX_ACCEPTANCE_FIX_ROUNDS;
+
+    for (let round = 1; round <= MAX_ACCEPTANCE_FIX_ROUNDS; round++) {
+      const result = this.executeAcceptanceTests(codeDir);
+
+      eventBus.emit('coder:fix-round', round, result.total, result.passed,
+        round === 1 ? 'initial run' : `fix attempt ${round - 1}`);
+
+      if (result.passed === result.total) {
+        eventBus.emit('agent:progress', this.stage, `acceptance: all ${result.total} tests passed`);
+        this.logger.agent(this.stage, 'info', 'acceptance:passed', {
+          total: result.total,
+          passed: result.passed,
+          rounds: round,
+        });
+        return;
+      }
+
+      if (round >= MAX_ACCEPTANCE_FIX_ROUNDS) {
+        eventBus.emit('agent:progress', this.stage, `acceptance: ${result.passed}/${result.total} passed after ${round} rounds`);
+        this.logger.agent(this.stage, 'warn', 'acceptance:partial', {
+          total: result.total,
+          passed: result.passed,
+          failed: result.failed,
+          rounds: round,
+        });
+        return;
+      }
+
+      // Fix: send failures to builder for targeted fix
+      eventBus.emit('agent:progress', this.stage, `acceptance: ${result.failed} failed — fix round ${round}...`);
+
+      logRetry({
+        timestamp: new Date().toISOString(),
+        runId: context.task.runId,
+        stage: this.stage,
+        source: 'coder-acceptance-fix',
+        attempt: round,
+        errorCategory: 'test-failure',
+        errorMessage: result.errors,
+        resolved: false,
+      });
+
+      await this.fixAcceptanceFailures(context, plan, result.errors, perRoundBudget);
+    }
+  }
+
+  private executeAcceptanceTests(codeDir: string): {
+    total: number;
+    passed: number;
+    failed: number;
+    errors: string;
+  } {
+    try {
+      const output = execSync('npx vitest run tests/acceptance/ --reporter=verbose 2>&1 || true', {
+        cwd: codeDir,
+        timeout: 120_000,
+        encoding: 'utf-8',
+      });
+
+      // Parse vitest output for pass/fail counts
+      const passMatch = output.match(/(\d+)\s+passed/);
+      const failMatch = output.match(/(\d+)\s+failed/);
+      const totalMatch = output.match(/Tests\s+(\d+)/);
+
+      const passed = passMatch ? parseInt(passMatch[1]) : 0;
+      const failed = failMatch ? parseInt(failMatch[1]) : 0;
+      const total = totalMatch ? parseInt(totalMatch[1]) : passed + failed;
+
+      return { total, passed, failed, errors: failed > 0 ? output : '' };
+    } catch (err: unknown) {
+      const error = err as { stdout?: string; stderr?: string; message?: string };
+      const output = (error.stdout ?? '') + '\n' + (error.stderr ?? '');
+      return { total: 0, passed: 0, failed: 0, errors: output || error.message || 'Unknown error' };
+    }
+  }
+
+  private async fixAcceptanceFailures(
+    context: AgentContext,
+    plan: CodePlan,
+    errors: string,
+    budgetUsd: number,
+  ): Promise<void> {
+    const builderPrompt = fs.readFileSync(BUILDER_PROMPT_PATH, 'utf-8');
+    const codeDir = `${getArtifactsDir()}/code`;
+
+    const prompt = [
+      '## Fix Acceptance Test Failures',
+      `Working directory: ${codeDir}`,
+      '',
+      '## Test Output',
+      '```',
+      errors.slice(0, 4000),
+      '```',
+      '',
+      '## Instructions',
+      '1. Read the failing test files to understand what behavior is expected',
+      '2. Read the corresponding source files',
+      '3. Fix the source code to make the tests pass',
+      '4. Do NOT modify the test files — only fix the source code',
+      '5. Preserve all existing imports, exports, and type signatures',
+    ].join('\n');
+
+    await this.provider.call(prompt, {
+      systemPrompt: builderPrompt,
+      allowedTools: ['Read', 'Write', 'Bash'],
+      maxBudgetUsd: budgetUsd,
+      timeoutMs: MODULE_TIMEOUT_MS,
+    });
   }
 
   // ─── Planner ─────────────────────────────────────────────────

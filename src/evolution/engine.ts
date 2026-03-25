@@ -323,6 +323,26 @@ export class EvolutionEngine {
     };
   }
 
+  /**
+   * Analyze from retry-log failure statistics (used by `mosaicat evolve`).
+   * Bypasses cooldown — user explicitly triggered evolution.
+   */
+  async analyzeFromRetryStats(
+    stats: import('../core/retry-log.js').FailureStat[],
+  ): Promise<EvolutionProposal[]> {
+    if (stats.length === 0) return [];
+
+    const statsText = stats.map((s, i) => {
+      const samples = s.sampleErrors.map(e => `- ${e.slice(0, 200)}`).join('\n');
+      return `Pattern ${i + 1}: ${s.stage} / ${s.errorCategory} (${s.count} occurrences, avg ${s.avgAttempts} rounds, ${Math.round(s.resolvedRate * 100)}% resolved)\nSample errors:\n${samples}`;
+    }).join('\n\n');
+
+    const summary = `# Retry-Log Failure Analysis\n\n${statsText}`;
+    const state = this.loadState();
+
+    return this.runAnalysis('evolve-cli', summary, state);
+  }
+
   private loadEvolutionConfig(): { cooldown_hours: number } {
     try {
       const config = yaml.load(

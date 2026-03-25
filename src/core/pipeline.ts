@@ -59,6 +59,11 @@ export function getNextStage(run: PipelineRun, stage: StageName): StageName | nu
   return idx < stages.length - 1 ? stages[idx + 1] : null;
 }
 
+/** Reset a stage for resume — bypasses normal state machine validation. */
+export function resetStageForResume(run: PipelineRun, stage: StageName): void {
+  run.stages[stage] = { state: 'idle', retryCount: 0 };
+}
+
 // Valid state transitions
 const VALID_TRANSITIONS: Record<StageState, StageState[]> = {
   idle: ['running', 'skipped'],

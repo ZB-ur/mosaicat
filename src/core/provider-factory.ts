@@ -5,6 +5,7 @@ import { ClaudeCLIProvider } from '../providers/claude-cli.js';
 import { AnthropicSDKProvider } from '../providers/anthropic-sdk.js';
 import { OpenAICompatibleProvider } from '../providers/openai-compatible.js';
 import { loadUserLLMConfig } from './llm-config-store.js';
+import { RetryingProvider } from './retrying-provider.js';
 
 // Provider metadata for resolving user config → provider instance
 const OPENAI_COMPATIBLE_PROVIDERS: Record<string, { baseUrl: string; defaultModel: string }> = {
@@ -26,21 +27,31 @@ const OPENAI_COMPATIBLE_PROVIDERS: Record<string, { baseUrl: string; defaultMode
  * 4. Auto-detect: ANTHROPIC_API_KEY → anthropic-sdk, else → claude-cli
  */
 export function createProvider(config?: PipelineConfig): LLMProvider {
+  let provider: LLMProvider;
+
   // 1. User-level config from `mosaicat setup`
   const userConfig = loadUserLLMConfig();
   if (userConfig) {
-    return createFromUserConfig(userConfig, config);
-  }
-
-  // 2. Try config-based resolution
-  if (config?.llm) {
+    provider = createFromUserConfig(userConfig, config);
+  } else if (config?.llm) {
+    // 2. Try config-based resolution
     const defaultName = config.llm.default;
     const providerConfig = config.llm.providers[defaultName];
     if (providerConfig) {
-      return instantiateProvider(defaultName, providerConfig);
+      provider = instantiateProvider(defaultName, providerConfig);
+    } else {
+      provider = resolveFromEnv();
     }
+  } else {
+    provider = resolveFromEnv();
   }
 
+  // Wrap with retry logic (StubProvider excluded — no real network)
+  if (provider instanceof StubProvider) return provider;
+  return new RetryingProvider(provider);
+}
+
+function resolveFromEnv(): LLMProvider {
   // 3. Env var override
   let providerType = process.env.MOSAIC_PROVIDER;
   if (!providerType) {
@@ -109,7 +120,9 @@ export function createProviderByName(name: string, config: PipelineConfig): LLMP
   if (!config.llm?.providers[name]) {
     throw new Error(`Provider "${name}" not found in pipeline.yaml llm.providers`);
   }
-  return instantiateProvider(name, config.llm.providers[name]);
+  const provider = instantiateProvider(name, config.llm.providers[name]);
+  if (provider instanceof StubProvider) return provider;
+  return new RetryingProvider(provider);
 }
 
 function instantiateProvider(name: string, providerConfig: LLMProviderConfig): LLMProvider {

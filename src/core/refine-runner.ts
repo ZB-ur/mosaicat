@@ -102,6 +102,21 @@ export async function runRefine(feedback: string, runId?: string): Promise<void>
           } catch {
             console.log('\x1b[33mBuild failed (check output above)\x1b[0m');
           }
+
+          // Run acceptance tests if they exist
+          if (artifactExists('test-plan.manifest.json')) {
+            try {
+              const testManifest = JSON.parse(readArtifact('test-plan.manifest.json'));
+              const testCmd = testManifest.commands?.runCommand ?? 'npx vitest run tests/acceptance/';
+              console.log(`\x1b[2mRunning acceptance tests: ${testCmd}\x1b[0m`);
+              try {
+                execSync(testCmd, { cwd: codeDir, timeout: 300_000, stdio: 'pipe' });
+                console.log('\x1b[32mAcceptance tests passed\x1b[0m');
+              } catch {
+                console.log('\x1b[33mAcceptance tests failed (some tests may need further fixing)\x1b[0m');
+              }
+            } catch { /* manifest parse error */ }
+          }
         } catch { /* plan parse error — skip verification */ }
       }
 
