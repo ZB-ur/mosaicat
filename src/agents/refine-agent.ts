@@ -66,6 +66,12 @@ export class RefineAgent extends BaseAgent {
       parts.push('');
     }
 
+    // Load constitution for constraints
+    if (artifactExists('constitution.project.md')) {
+      const constitution = readArtifact('constitution.project.md');
+      parts.push(`## Project Constitution (DO NOT VIOLATE)\n${constitution}\n`);
+    }
+
     // Load tech-spec for expected behavior
     if (artifactExists('tech-spec.md')) {
       const techSpec = readArtifact('tech-spec.md');

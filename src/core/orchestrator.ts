@@ -109,39 +109,65 @@ export class Orchestrator {
       // Filter stage list: skip intent_consultant (handled above)
       const pipelineStages = stageList.filter((s) => s !== 'intent_consultant');
       let testerCoderFixCount = 0;
-      const MAX_TESTER_CODER_LOOPS = 1;
+      const MAX_FIX_ROUNDS = 5;
+      const REPLAN_THRESHOLD = 3;
+      const attemptHistory: Array<{ round: number; failures: string; approach: string }> = [];
 
       for (let i = 0; i < pipelineStages.length; i++) {
         const stage = pipelineStages[i];
         await this.executeStage(pipelineRun, stage, provider, logger);
 
-        // Tester → Coder fix loop: if tester fails, rollback to coder with test failures
-        if (stage === 'tester' && testerCoderFixCount < MAX_TESTER_CODER_LOOPS) {
+        // Progressive Tester → Coder fix loop
+        if (stage === 'tester' && testerCoderFixCount < MAX_FIX_ROUNDS) {
           const shouldRetry = this.checkTesterVerdict(logger);
           if (shouldRetry) {
             testerCoderFixCount++;
-            logger.pipeline('info', 'tester-coder-loop:start', {
-              attempt: testerCoderFixCount,
-            });
+            const round = testerCoderFixCount;
 
-            // Rollback: re-run coder with test_failures injected
+            let approach: string;
+            if (round < REPLAN_THRESHOLD) {
+              approach = 'direct-fix';
+            } else if (round === REPLAN_THRESHOLD) {
+              approach = 'replan-failed-modules';
+            } else {
+              approach = 'full-history-fix';
+            }
+
+            logger.pipeline('info', 'tester-coder-loop:start', {
+              round,
+              approach,
+              historyLength: attemptHistory.length,
+            });
+            eventBus.emit('coder:fix-round', round, 0, 0, approach);
+
+            // Record failure history for cumulative context
+            try {
+              const failureData = readArtifact('test-report.manifest.json');
+              attemptHistory.push({ round, failures: failureData, approach });
+            } catch { /* non-fatal */ }
+
             const coderIdx = pipelineStages.indexOf('coder');
             if (coderIdx !== -1) {
-              // Inject test report into coder context
-              this.injectTestFailuresForCoder();
+              // Inject test failures + cumulative history
+              this.injectTestFailuresForCoder(attemptHistory);
               // Reset coder and tester stages for re-run
               pipelineRun.stages['coder'] = { state: 'idle', retryCount: 0 };
               pipelineRun.stages['tester'] = { state: 'idle', retryCount: 0 };
-              // Also reset qa_lead if it exists (it will be skipped if artifacts exist)
-              if (pipelineRun.stages['qa_lead']) {
-                pipelineRun.stages['qa_lead'] = { state: 'idle', retryCount: 0 };
-              }
               // Jump back to coder
-              i = coderIdx - 1; // will be incremented by for loop
+              i = coderIdx - 1;
               continue;
             }
           }
         }
+      }
+
+      // Log final fix loop summary if any rounds occurred
+      if (testerCoderFixCount > 0) {
+        const finalVerdict = this.checkTesterVerdict(logger) ? 'fail' : 'pass';
+        logger.pipeline('info', 'tester-coder-loop:complete', {
+          totalRounds: testerCoderFixCount,
+          finalVerdict,
+        });
       }
 
       // Post-run evolution analysis
@@ -800,17 +826,29 @@ export class Orchestrator {
    * Write test failures to a well-known artifact location so Coder can read them.
    * The Coder agent checks for 'test_failures' in inputArtifacts.
    */
-  private injectTestFailuresForCoder(): void {
+  private injectTestFailuresForCoder(
+    attemptHistory?: Array<{ round: number; failures: string; approach: string }>,
+  ): void {
     try {
       if (!artifactExists('test-report.manifest.json')) return;
       const manifest = readArtifact('test-report.manifest.json');
+
+      // Build cumulative context with attempt history
+      let failureContext = manifest;
+      if (attemptHistory && attemptHistory.length > 0) {
+        const historySection = attemptHistory.map(h =>
+          `\n--- Round ${h.round} (${h.approach}) ---\n${h.failures}`
+        ).join('\n');
+        failureContext = `${manifest}\n\n## Previous Fix Attempts\n${historySection}`;
+      }
+
       // Add test_failures to coder's inputs so context-manager loads it
       const agentConfig = this.agentsConfig.agents['coder'];
       if (agentConfig && !agentConfig.inputs.includes('test_failures')) {
         agentConfig.inputs.push('test_failures');
       }
       // Write test failures as an artifact the coder can read
-      writeArtifact('test_failures', manifest);
+      writeArtifact('test_failures', failureContext);
     } catch {
       // Non-fatal
     }
