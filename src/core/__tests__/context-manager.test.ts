@@ -87,13 +87,33 @@ describe('ContextManager', () => {
   });
 
   it('should throw when prompt file missing in non-dev mode', () => {
+    const missingConfig: AgentsConfig = {
+      agents: {
+        researcher: {
+          name: 'Researcher',
+          prompt_file: '/tmp/nonexistent-prompt-file-12345.md',
+          inputs: ['user_instruction'],
+          outputs: ['research.md'],
+        },
+      },
+    };
     const task: Task = { runId: 'run-1', stage: 'researcher', instruction: 'test' };
-    expect(() => buildContext(mockAgentsConfig, task, store, logger, false)).toThrow('Required prompt file missing');
+    expect(() => buildContext(missingConfig, task, store, logger, false)).toThrow('Required prompt file missing');
   });
 
   it('should warn when prompt file missing in dev mode', () => {
+    const missingConfig: AgentsConfig = {
+      agents: {
+        researcher: {
+          name: 'Researcher',
+          prompt_file: '/tmp/nonexistent-prompt-file-12345.md',
+          inputs: ['user_instruction'],
+          outputs: ['research.md'],
+        },
+      },
+    };
     const task: Task = { runId: 'run-1', stage: 'researcher', instruction: 'test' };
-    const ctx = buildContext(mockAgentsConfig, task, store, logger, true);
+    const ctx = buildContext(missingConfig, task, store, logger, true);
     expect(ctx.systemPrompt).toContain('You are the Researcher agent.');
     expect(logger.pipeline).toHaveBeenCalledWith('warn', 'context:prompt-missing', expect.any(Object));
   });
