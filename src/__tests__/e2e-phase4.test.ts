@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
+import { createTestMosaicDir, cleanupTestMosaicDir } from './test-helpers.js';
 import { DEFAULT_STAGES } from '../core/types.js';
 import type { GitPlatformAdapter, CreateIssueParams, IssueComment, IssueDetails, PRRef, GitRef, GitBlob, GitTreeEntry, GitTree, GitCommit } from '../adapters/types.js';
 import type { GitHubConfig } from '../core/types.js';
@@ -223,16 +224,14 @@ const securityConfig: SecurityConfig = {
 };
 
 describe('Phase 4 E2E: GitHub Issue-based Approval', () => {
+  let tmpRoot: string;
+
   beforeEach(() => {
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    tmpRoot = createTestMosaicDir();
   });
 
   afterEach(() => {
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    cleanupTestMosaicDir(tmpRoot);
   });
 
   it('should run full pipeline with GitHub adapter, creating Issues at each stage', async () => {

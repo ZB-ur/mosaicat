@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-provider.js';
 import type { AgentContext } from '../../core/types.js';
 import { ClarificationNeeded } from '../../core/types.js';
+import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
 import { UIDesignerAgent } from '../ui-designer.js';
 import { Logger } from '../../core/logger.js';
 
@@ -81,16 +82,14 @@ function makeContext(): AgentContext {
 }
 
 describe('UIDesignerAgent', () => {
+  let tmpRoot: string;
+
   beforeEach(() => {
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    tmpRoot = createTestMosaicDir();
   });
 
   afterEach(() => {
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    cleanupTestMosaicDir(tmpRoot);
   });
 
   it('should make 1 planner call + N builder calls', async () => {

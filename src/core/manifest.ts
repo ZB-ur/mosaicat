@@ -100,8 +100,9 @@ export const TestPlanManifestSchema = z.object({
       test_cases: z.array(
         z.object({
           name: z.string(),
-          covers_tasks: z.array(z.string()),
-          type: z.enum(['unit', 'integration', 'e2e']),
+          covers_tasks: z.array(z.string()).optional(),
+          covers_features: z.array(z.string()).optional(),
+          type: z.enum(['unit', 'integration', 'e2e', 'acceptance']),
         })
       ),
     })

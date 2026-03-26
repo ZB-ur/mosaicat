@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
 import type { StageName, GateResult } from '../core/types.js';
 import { DEFAULT_STAGES } from '../core/types.js';
+import { createTestMosaicDir, cleanupTestMosaicDir } from './test-helpers.js';
 import type { InteractionHandler, EvolutionApprovalResult } from '../core/interaction-handler.js';
 import type { EvolutionProposal } from '../evolution/types.js';
 import { Orchestrator } from '../core/orchestrator.js';
@@ -134,19 +135,16 @@ vi.mock('../core/agent-factory.js', async () => {
 
 describe('Phase 5 E2E: Self-Evolution', () => {
   let originalPrompt: string;
+  let tmpRoot: string;
 
   beforeEach(() => {
     originalPrompt = fs.readFileSync(PROMPT_FILE, 'utf-8');
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    tmpRoot = createTestMosaicDir();
   });
 
   afterEach(() => {
     fs.writeFileSync(PROMPT_FILE, originalPrompt);
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    cleanupTestMosaicDir(tmpRoot);
   });
 
   it('should run pipeline, propose evolution, approve, and update prompt', async () => {
