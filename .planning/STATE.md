@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 04-03-PLAN.md
-last_updated: "2026-03-26T22:22:43.871Z"
+status: executing
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-03-26T22:46:44.114Z"
 last_activity: 2026-03-26
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 13
-  completed_plans: 13
+  total_plans: 16
+  completed_plans: 15
   percent: 0
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** Pipeline engine reliability and maintainability -- errors must be visible, state must be trackable
-**Current focus:** Phase 04 — coder-decomposition
+**Current focus:** Phase 05 — orchestrator-facade
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
-Status: Phase complete — ready for verification
+Phase: 05 (orchestrator-facade) — EXECUTING
+Plan: 3 of 3
+Status: Ready to execute
 Last activity: 2026-03-26
 
 Progress: [..........] 0%
@@ -63,6 +63,8 @@ Progress: [..........] 0%
 | Phase 04 P01 | 4min | 2 tasks | 6 files |
 | Phase 04 P02 | 4min | 2 tasks | 4 files |
 | Phase 04 P03 | 38min | 2 tasks | 4 files |
+| Phase 05 P01 | 2min | 2 tasks | 4 files |
+| Phase 05 P02 | 5min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -93,6 +95,8 @@ Recent decisions affecting current work:
 - [Phase 04]: extractErrorFiles returns relative paths without codeDir prefix for cleaner API
 - [Phase 04]: SmokeRunner.runSmokeTest accepts optional timeoutOverrideMs for testability
 - [Phase 04]: OutputGenerator extracted to keep facade under 250-line target
+- [Phase 05]: Retained EventBus singleton with stronger deprecation -- 15+ production files still import it, migration not in any phase 05 plan
+- [Phase 05]: console.warn -> process.stderr.write; 3 extra files (snapshot, git-publisher, retrying-provider) fixed beyond plan scope
 
 ### Pending Todos
 
@@ -106,6 +110,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-26T22:15:06.427Z
-Stopped at: Completed 04-03-PLAN.md
+Last session: 2026-03-26T22:46:44.111Z
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None
