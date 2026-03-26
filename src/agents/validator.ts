@@ -4,6 +4,7 @@ import { BaseAgent } from '../core/agent.js';
 import { assemblePrompt, type OutputSpec } from '../core/prompt-assembler.js';
 import { eventBus } from '../core/event-bus.js';
 import { artifactExists } from '../core/artifact.js';
+import { type Result, ok, err } from '../core/result.js';
 import {
   readManifest,
   type PrdManifest,
@@ -18,6 +19,16 @@ interface CheckResult {
   name: string;
   passed: boolean;
   details: string | string[];
+}
+
+/** Safely read and parse a manifest, returning Result instead of throwing. */
+function readManifestSafe<T>(name: string): Result<T, string> {
+  try {
+    const data = readManifest<T>(name);
+    return ok(data);
+  } catch (e) {
+    return err(`${name}: ${e instanceof Error ? e.message : 'unreadable'}`);
+  }
 }
 
 export class ValidatorAgent extends BaseAgent {
@@ -88,9 +99,11 @@ export class ValidatorAgent extends BaseAgent {
   private checkFileIntegrity(): CheckResult {
     const missing: string[] = [];
 
-    try {
-      const manifest = readManifest<ComponentsManifest>('components.manifest.json');
-
+    const result = readManifestSafe<ComponentsManifest>('components.manifest.json');
+    if (!result.ok) {
+      missing.push(`components.manifest.json (unreadable: ${result.error})`);
+    } else {
+      const manifest = result.value;
       for (const comp of manifest.components) {
         if (!artifactExists(comp.file)) missing.push(comp.file);
       }
@@ -102,8 +115,6 @@ export class ValidatorAgent extends BaseAgent {
           if (!artifactExists(preview)) missing.push(preview);
         }
       }
-    } catch {
-      missing.push('components.manifest.json (unreadable)');
     }
 
     const passed = missing.length === 0;
@@ -117,30 +128,29 @@ export class ValidatorAgent extends BaseAgent {
     const details: string[] = [];
     let allFeatureIds: string[] = [];
 
-    try {
-      const prd = readManifest<PrdManifest>('prd.manifest.json');
-      allFeatureIds = prd.features.map((f) => f.id);
-      details.push(`PRD defines ${allFeatureIds.length} features: ${allFeatureIds.join(', ')}`);
-    } catch {
-      return { name: 'Check 6: Feature ID Traceability', passed: false, details: ['prd.manifest.json unreadable — cannot trace features'] };
+    const prdResult = readManifestSafe<PrdManifest>('prd.manifest.json');
+    if (!prdResult.ok) {
+      return { name: 'Check 6: Feature ID Traceability', passed: false, details: [`prd.manifest.json unreadable (${prdResult.error}) -- cannot trace features`] };
     }
+    allFeatureIds = prdResult.value.features.map((f) => f.id);
+    details.push(`PRD defines ${allFeatureIds.length} features: ${allFeatureIds.join(', ')}`);
 
     if (allFeatureIds.length === 0) {
-      return { name: 'Check 6: Feature ID Traceability', passed: true, details: ['No features defined in PRD — skipping traceability'] };
+      return { name: 'Check 6: Feature ID Traceability', passed: true, details: ['No features defined in PRD -- skipping traceability'] };
     }
 
     const checkLayer = (manifestName: string, label: string, extractIds: (data: unknown) => Set<string>) => {
-      try {
-        const data = readManifest(manifestName);
-        const covered = extractIds(data);
-        const missing = allFeatureIds.filter((id) => !covered.has(id));
-        if (missing.length > 0) {
-          details.push(`${label} missing coverage for: ${missing.join(', ')}`);
-        } else {
-          details.push(`${label} cover all ${allFeatureIds.length} features`);
-        }
-      } catch {
-        details.push(`${manifestName} unreadable — ${label} traceability skipped`);
+      const layerResult = readManifestSafe(manifestName);
+      if (!layerResult.ok) {
+        details.push(`${manifestName} unreadable (${layerResult.error}) -- ${label} traceability skipped`);
+        return;
+      }
+      const covered = extractIds(layerResult.value);
+      const missing = allFeatureIds.filter((id) => !covered.has(id));
+      if (missing.length > 0) {
+        details.push(`${label} missing coverage for: ${missing.join(', ')}`);
+      } else {
+        details.push(`${label} cover all ${allFeatureIds.length} features`);
       }
     };
 
@@ -167,50 +177,46 @@ export class ValidatorAgent extends BaseAgent {
   }
 
   private checkTechSpecFeatureCoverage(): CheckResult {
-    let allFeatureIds: string[] = [];
-    try {
-      const prd = readManifest<PrdManifest>('prd.manifest.json');
-      allFeatureIds = prd.features.map((f) => f.id);
-    } catch {
-      return { name: 'Check 7: Tech-Spec Feature Coverage', passed: true, details: 'prd.manifest.json unreadable — skipped (warning)' };
+    const prdResult = readManifestSafe<PrdManifest>('prd.manifest.json');
+    if (!prdResult.ok) {
+      return { name: 'Check 7: Tech-Spec Feature Coverage', passed: true, details: `prd.manifest.json unreadable (${prdResult.error}) -- skipped (warning)` };
+    }
+    const allFeatureIds = prdResult.value.features.map((f) => f.id);
+
+    const techSpecResult = readManifestSafe<TechSpecManifest>('tech-spec.manifest.json');
+    if (!techSpecResult.ok) {
+      return { name: 'Check 7: Tech-Spec Feature Coverage', passed: true, details: `tech-spec.manifest.json unreadable (${techSpecResult.error}) -- skipped (warning, stage may be skipped)` };
     }
 
-    try {
-      const techSpec = readManifest<TechSpecManifest>('tech-spec.manifest.json');
-      const covered = new Set<string>();
-      for (const mod of techSpec.modules) {
-        for (const fid of mod.covers_features) covered.add(fid);
-      }
-      const missing = allFeatureIds.filter((id) => !covered.has(id));
-      if (missing.length > 0) {
-        return { name: 'Check 7: Tech-Spec Feature Coverage', passed: false, details: `Tech-spec modules missing coverage for: ${missing.join(', ')}` };
-      }
-      return { name: 'Check 7: Tech-Spec Feature Coverage', passed: true, details: `Tech-spec modules cover all ${allFeatureIds.length} features` };
-    } catch {
-      return { name: 'Check 7: Tech-Spec Feature Coverage', passed: true, details: 'tech-spec.manifest.json unreadable — skipped (warning, stage may be skipped)' };
+    const covered = new Set<string>();
+    for (const mod of techSpecResult.value.modules) {
+      for (const fid of mod.covers_features) covered.add(fid);
     }
+    const missing = allFeatureIds.filter((id) => !covered.has(id));
+    if (missing.length > 0) {
+      return { name: 'Check 7: Tech-Spec Feature Coverage', passed: false, details: `Tech-spec modules missing coverage for: ${missing.join(', ')}` };
+    }
+    return { name: 'Check 7: Tech-Spec Feature Coverage', passed: true, details: `Tech-spec modules cover all ${allFeatureIds.length} features` };
   }
 
   private checkCodeTaskCoverage(): CheckResult {
-    let allTaskIds: string[] = [];
-    try {
-      const techSpec = readManifest<TechSpecManifest>('tech-spec.manifest.json');
-      allTaskIds = techSpec.implementation_tasks.map((t) => t.id);
-    } catch {
-      return { name: 'Check 8: Code Task Coverage', passed: true, details: 'tech-spec.manifest.json unreadable — skipped (warning, stage may be skipped)' };
+    const techSpecResult = readManifestSafe<TechSpecManifest>('tech-spec.manifest.json');
+    if (!techSpecResult.ok) {
+      return { name: 'Check 8: Code Task Coverage', passed: true, details: `tech-spec.manifest.json unreadable (${techSpecResult.error}) -- skipped (warning, stage may be skipped)` };
+    }
+    const allTaskIds = techSpecResult.value.implementation_tasks.map((t) => t.id);
+
+    const codeResult = readManifestSafe<CodeManifest>('code.manifest.json');
+    if (!codeResult.ok) {
+      return { name: 'Check 8: Code Task Coverage', passed: true, details: `code.manifest.json unreadable (${codeResult.error}) -- skipped (warning, stage may be skipped)` };
     }
 
-    try {
-      const code = readManifest<CodeManifest>('code.manifest.json');
-      const coveredTasks = new Set(code.covers_tasks);
-      const missing = allTaskIds.filter((id) => !coveredTasks.has(id));
-      if (missing.length > 0) {
-        return { name: 'Check 8: Code Task Coverage', passed: false, details: `Code missing coverage for tasks: ${missing.join(', ')}` };
-      }
-      return { name: 'Check 8: Code Task Coverage', passed: true, details: `Code covers all ${allTaskIds.length} tasks` };
-    } catch {
-      return { name: 'Check 8: Code Task Coverage', passed: true, details: 'code.manifest.json unreadable — skipped (warning, stage may be skipped)' };
+    const coveredTasks = new Set(codeResult.value.covers_tasks);
+    const missing = allTaskIds.filter((id) => !coveredTasks.has(id));
+    if (missing.length > 0) {
+      return { name: 'Check 8: Code Task Coverage', passed: false, details: `Code missing coverage for tasks: ${missing.join(', ')}` };
     }
+    return { name: 'Check 8: Code Task Coverage', passed: true, details: `Code covers all ${allTaskIds.length} tasks` };
   }
 
   /** Unified method to append a programmatic check to the report */
