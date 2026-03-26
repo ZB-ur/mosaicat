@@ -4,7 +4,6 @@ import type { StageName } from './types.js';
 export interface PipelineEvents {
   'stage:start': (stage: StageName, runId: string) => void;
   'stage:complete': (stage: StageName, runId: string) => void;
-  'stage:skipped': (stage: StageName, runId: string) => void;
   'stage:failed': (stage: StageName, runId: string, error: string) => void;
   'stage:awaiting_human': (stage: StageName, runId: string) => void;
   'stage:approved': (stage: StageName, runId: string) => void;
@@ -58,9 +57,10 @@ class EventBus {
 }
 
 /**
- * Legacy singleton — kept for non-agent callers (orchestrator, cli-progress, etc.).
- * Agent layer now receives EventBus via RunContext. Will be removed in Plan 04.
- * @deprecated Use RunContext.eventBus instead.
+ * @deprecated Use RunContext.eventBus (instance-scoped) instead.
+ * This singleton remains only for backward compatibility with production code
+ * that has not yet been migrated to instance-based EventBus via RunContext.
+ * Will be removed once all consumers are migrated.
  */
 export const eventBus = new EventBus();
 
