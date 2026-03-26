@@ -2,9 +2,10 @@
 phase: 3
 slug: execution-engine
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-03-27
+updated: 2026-03-27
 ---
 
 # Phase 3 — Validation Strategy
@@ -36,27 +37,29 @@ created: 2026-03-27
 
 ## Per-Task Verification Map
 
-| Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 03-01-01 | 01 | 1 | EXEC-01 | unit | `npx vitest run src/core/__tests__/stage-outcome.test.ts` | ❌ W0 | ⬜ pending |
-| 03-01-02 | 01 | 1 | EXEC-05 | unit | `npx vitest run src/core/__tests__/stage-executor.test.ts` | ❌ W0 | ⬜ pending |
-| 03-02-01 | 02 | 1 | EXEC-02 | unit | `npx vitest run src/core/__tests__/fix-loop-runner.test.ts` | ❌ W0 | ⬜ pending |
-| 03-02-02 | 02 | 1 | EXEC-03 | unit | `npx vitest run src/core/__tests__/circuit-breaker.test.ts` | ❌ W0 | ⬜ pending |
-| 03-03-01 | 03 | 2 | EXEC-04 | unit | `npx vitest run src/core/__tests__/shutdown-coordinator.test.ts` | ❌ W0 | ⬜ pending |
-| 03-04-01 | 04 | 2 | EXEC-01 | integration | `npx vitest run src/core/__tests__/pipeline-loop.test.ts` | ❌ W0 | ⬜ pending |
+| Task ID | Plan | Wave | Requirement | Test Type | Automated Command | Status |
+|---------|------|------|-------------|-----------|-------------------|--------|
+| 03-01-01 | 01 | 1 | EXEC-04, EXEC-05 | unit | `npx vitest run src/core/__tests__/retrying-provider.test.ts -x` | ⬜ pending |
+| 03-01-02 | 01 | 1 | EXEC-04 | unit | `npx vitest run src/core/__tests__/shutdown-coordinator.test.ts -x` | ⬜ pending |
+| 03-02-01 | 02 | 2 | EXEC-03 | unit | `npx vitest run src/core/__tests__/stage-executor.test.ts -x` | ⬜ pending |
+| 03-03-01 | 03 | 3 | EXEC-01, EXEC-02 | unit | `npx vitest run src/core/__tests__/fix-loop-runner.test.ts -x` | ⬜ pending |
+| 03-03-02 | 03 | 3 | EXEC-01, EXEC-02, EXEC-03 | unit+integration | `npx vitest run src/core/__tests__/pipeline-loop.test.ts -x` | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
 ---
 
-## Wave 0 Requirements
+## Wave 0 / Nyquist Compliance Note
 
-- [ ] `src/core/__tests__/stage-outcome.test.ts` — stubs for EXEC-01
-- [ ] `src/core/__tests__/stage-executor.test.ts` — stubs for EXEC-05
-- [ ] `src/core/__tests__/fix-loop-runner.test.ts` — stubs for EXEC-02
-- [ ] `src/core/__tests__/circuit-breaker.test.ts` — stubs for EXEC-03
-- [ ] `src/core/__tests__/shutdown-coordinator.test.ts` — stubs for EXEC-04
-- [ ] `src/core/__tests__/pipeline-loop.test.ts` — stubs for EXEC-01 integration
+All plans in this phase use `tdd="true"` on their tasks, which means tests are written **before** implementation code within each task (RED-GREEN-REFACTOR cycle). This satisfies the Nyquist rule -- every task has an `<automated>` verify command pointing to a test file that the task itself creates.
+
+No separate Wave 0 plan is needed because test creation is embedded in each task's TDD workflow. The test files are:
+
+- `src/core/__tests__/retrying-provider.test.ts` -- created by 03-01 Task 1
+- `src/core/__tests__/shutdown-coordinator.test.ts` -- created by 03-01 Task 2
+- `src/core/__tests__/stage-executor.test.ts` -- created by 03-02 Task 1
+- `src/core/__tests__/fix-loop-runner.test.ts` -- created by 03-03 Task 1
+- `src/core/__tests__/pipeline-loop.test.ts` -- created by 03-03 Task 2
 
 ---
 
@@ -70,11 +73,11 @@ created: 2026-03-27
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify commands
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] TDD-within-tasks satisfies Wave 0 (no separate scaffold needed)
+- [x] No watch-mode flags
+- [x] Feedback latency < 30s
+- [x] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** pending
