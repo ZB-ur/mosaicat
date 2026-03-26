@@ -74,8 +74,8 @@ Plans:
   5. `coder.ts` is a thin facade (under 250 lines) that delegates to the 4 sub-modules -- all existing Coder behavior is preserved
 **Plans:** 3 plans
 Plans:
-- [ ] 04-01-PLAN.md — CoderDeps types + CoderPlanner + CoderBuilder sub-modules
-- [ ] 04-02-PLAN.md — BuildVerifier + SmokeRunner sub-modules with shell command tests (TEST-04)
+- [x] 04-01-PLAN.md — CoderDeps types + CoderPlanner + CoderBuilder sub-modules
+- [x] 04-02-PLAN.md — BuildVerifier + SmokeRunner sub-modules with shell command tests (TEST-04)
 - [ ] 04-03-PLAN.md — Thin facade rewrite + delegation tests
 
 ### Phase 5: Orchestrator Facade + Logging Cleanup

@@ -10,7 +10,7 @@
 - [x] **TEST-01**: 消除所有测试文件中的 `as any` 类型转换，创建 typed mock factories (`createTestContext()`, `createMockProvider()`)
 - [x] **TEST-02**: 编写 resume 流程集成测试，覆盖 `resumeRun()`、`--from` stage reset、artifact cleanup
 - [x] **TEST-03**: 添加 canary 集成测试（使用真实模块除 LLM 外），验证端到端 pipeline 执行
-- [ ] **TEST-04**: 编写 Coder shell 命令执行路径测试（setup/build/verify/smoke-test）
+- [x] **TEST-04**: 编写 Coder shell 命令执行路径测试（setup/build/verify/smoke-test）
 
 ### Error Handling
 
@@ -36,10 +36,10 @@
 
 ### Coder Decomposition
 
-- [ ] **CODER-01**: 从 `coder.ts` 提取 `CoderPlanner` — 负责生成 code-plan.json
-- [ ] **CODER-02**: 从 `coder.ts` 提取 `CoderBuilder` — 负责骨架生成和模块实现
-- [ ] **CODER-03**: 从 `coder.ts` 提取 `BuildVerifier` — 负责编译检查和构建修复循环
-- [ ] **CODER-04**: 从 `coder.ts` 提取 `SmokeRunner` — 负责 HTTP 探测和冒烟测试
+- [x] **CODER-01**: 从 `coder.ts` 提取 `CoderPlanner` — 负责生成 code-plan.json
+- [x] **CODER-02**: 从 `coder.ts` 提取 `CoderBuilder` — 负责骨架生成和模块实现
+- [x] **CODER-03**: 从 `coder.ts` 提取 `BuildVerifier` — 负责编译检查和构建修复循环
+- [x] **CODER-04**: 从 `coder.ts` 提取 `SmokeRunner` — 负责 HTTP 探测和冒烟测试
 - [ ] **CODER-05**: `coder.ts` 重写为 thin facade（~200 行），委派到 4 个子模块
 
 ### Orchestrator Facade
@@ -89,7 +89,7 @@
 | TEST-01 | Phase 1 | Complete |
 | TEST-02 | Phase 1 | Complete |
 | TEST-03 | Phase 1 | Complete |
-| TEST-04 | Phase 4 | Pending |
+| TEST-04 | Phase 4 | Complete |
 | ERR-01 | Phase 2 | Pending |
 | ERR-02 | Phase 2 | Pending |
 | ERR-03 | Phase 2 | Pending |
@@ -103,10 +103,10 @@
 | EXEC-03 | Phase 3 | Complete |
 | EXEC-04 | Phase 3 | Complete |
 | EXEC-05 | Phase 3 | Complete |
-| CODER-01 | Phase 4 | Pending |
-| CODER-02 | Phase 4 | Pending |
-| CODER-03 | Phase 4 | Pending |
-| CODER-04 | Phase 4 | Pending |
+| CODER-01 | Phase 4 | Complete |
+| CODER-02 | Phase 4 | Complete |
+| CODER-03 | Phase 4 | Complete |
+| CODER-04 | Phase 4 | Complete |
 | CODER-05 | Phase 4 | Pending |
 | ORCH-01 | Phase 5 | Pending |
 | ORCH-02 | Phase 5 | Pending |
