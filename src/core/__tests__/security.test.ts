@@ -11,7 +11,7 @@ import {
 import type { PipelineConfig } from '../types.js';
 
 const basePipelineConfig: PipelineConfig = {
-  stages: {} as any,
+  stages: {},
   pipeline: { max_retries_per_stage: 3, snapshot: 'on_stage_complete' },
   security: { initiator: 'config-user', reject_policy: 'silent' },
   github: {
