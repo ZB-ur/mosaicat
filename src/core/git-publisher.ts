@@ -54,7 +54,7 @@ export class GitPublisher {
 
       const content = this.readFileAsBase64(filePath);
       if (content === null) {
-        console.warn(`[git-publisher] Skipping missing file: ${filePath}`);
+        process.stderr.write(`[git-publisher] Skipping missing file: ${filePath}\n`);
         continue;
       }
 
