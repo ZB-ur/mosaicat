@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import type { ArtifactStore } from './artifact-store.js';
-import { writeArtifact as legacyWrite, readArtifact as legacyRead } from './artifact.js';
 
 // --- Manifest Schemas ---
 
@@ -186,47 +185,16 @@ export type TestReportManifest = z.infer<typeof TestReportManifestSchema>;
 export type SecurityReportManifest = z.infer<typeof SecurityReportManifestSchema>;
 export type ReviewManifest = z.infer<typeof ReviewManifestSchema>;
 
-/** Write a manifest using an ArtifactStore (new API). */
-export function writeManifest(store: ArtifactStore, name: string, data: unknown): void;
-/** @deprecated Legacy overload — use store-based signature. Will be removed in Plan 04. */
-export function writeManifest(name: string, data: unknown): void;
-export function writeManifest(storeOrName: ArtifactStore | string, nameOrData: string | unknown, maybeData?: unknown): void {
-  let name: string;
-  let data: unknown;
-  if (typeof storeOrName === 'string') {
-    // Legacy call: writeManifest(name, data)
-    name = storeOrName;
-    data = nameOrData;
-    const schema = MANIFEST_SCHEMAS[name];
-    if (schema) schema.parse(data);
-    legacyWrite(name, JSON.stringify(data, null, 2));
-  } else {
-    // New call: writeManifest(store, name, data)
-    const store = storeOrName;
-    name = nameOrData as string;
-    data = maybeData;
-    const schema = MANIFEST_SCHEMAS[name];
-    if (schema) schema.parse(data);
-    store.write(name, JSON.stringify(data, null, 2));
-  }
+/** Write a manifest using an ArtifactStore. Validates against schema if available. */
+export function writeManifest(store: ArtifactStore, name: string, data: unknown): void {
+  const schema = MANIFEST_SCHEMAS[name];
+  if (schema) schema.parse(data);
+  store.write(name, JSON.stringify(data, null, 2));
 }
 
-/** Read a manifest using an ArtifactStore (new API). */
-export function readManifest<T = unknown>(store: ArtifactStore, name: string): T;
-/** @deprecated Legacy overload — use store-based signature. Will be removed in Plan 04. */
-export function readManifest<T = unknown>(name: string): T;
-export function readManifest<T = unknown>(storeOrName: ArtifactStore | string, maybeName?: string): T {
-  let content: string;
-  let name: string;
-  if (typeof storeOrName === 'string') {
-    // Legacy call: readManifest(name)
-    name = storeOrName;
-    content = legacyRead(name);
-  } else {
-    // New call: readManifest(store, name)
-    name = maybeName!;
-    content = storeOrName.read(name);
-  }
+/** Read a manifest from an ArtifactStore. Validates against schema if available. */
+export function readManifest<T = unknown>(store: ArtifactStore, name: string): T {
+  const content = store.read(name);
   const parsed = JSON.parse(content) as unknown;
   const schema = MANIFEST_SCHEMAS[name];
   if (schema) schema.parse(parsed);
@@ -237,17 +205,10 @@ export function readManifest<T = unknown>(storeOrName: ArtifactStore | string, m
  * Extract human-readable summary lines from a manifest file.
  * Returns empty array if manifest doesn't exist or can't be parsed.
  */
-export function extractManifestSummary(store: ArtifactStore, manifestName: string): string[];
-/** @deprecated Legacy overload — use store-based signature. Will be removed in Plan 04. */
-export function extractManifestSummary(manifestName: string): string[];
-export function extractManifestSummary(storeOrName: ArtifactStore | string, maybeName?: string): string[] {
+export function extractManifestSummary(store: ArtifactStore, manifestName: string): string[] {
   try {
-    if (typeof storeOrName === 'string') {
-      const data = readManifest(storeOrName) as Record<string, unknown>;
-      return SUMMARY_EXTRACTORS[storeOrName]?.(data) ?? [];
-    }
-    const data = readManifest(storeOrName, maybeName!) as Record<string, unknown>;
-    return SUMMARY_EXTRACTORS[maybeName!]?.(data) ?? [];
+    const data = readManifest(store, manifestName) as Record<string, unknown>;
+    return SUMMARY_EXTRACTORS[manifestName]?.(data) ?? [];
   } catch {
     return [];
   }

@@ -4,7 +4,7 @@ import yaml from 'js-yaml';
 import type { LLMProvider } from '../core/llm-provider.js';
 import type { Logger } from '../core/logger.js';
 import { type Result, ok, err } from '../core/result.js';
-import { getArtifactsDir } from '../core/artifact.js';
+import { ArtifactStore } from '../core/artifact-store.js';
 import type { StageName, PipelineConfig } from '../core/types.js';
 import { STAGE_NAMES } from '../core/types.js';
 import type { EvolutionProposal, EvolutionState, EvolutionType, LLMProposalCandidate } from './types.js';
@@ -54,10 +54,17 @@ function ensureDir(dir: string): void {
 export class EvolutionEngine {
   private provider: LLMProvider;
   private logger: Logger;
+  private artifactsDir: string;
 
-  constructor(provider: LLMProvider, logger: Logger) {
+  constructor(provider: LLMProvider, logger: Logger, artifactsDir?: string) {
     this.provider = provider;
     this.logger = logger;
+    this.artifactsDir = artifactsDir ?? this.resolveArtifactsDir();
+  }
+
+  private resolveArtifactsDir(): string {
+    const latestRun = ArtifactStore.findLatestRun('.mosaic/artifacts');
+    return latestRun ? `.mosaic/artifacts/${latestRun}` : '.mosaic/artifacts';
   }
 
   /**
@@ -204,7 +211,7 @@ export class EvolutionEngine {
 
   private buildStageSummary(stage: StageName): string | null {
     const parts: string[] = [];
-    const artifactsDir = getArtifactsDir();
+    const artifactsDir = this.artifactsDir;
 
     // Find manifests and artifacts for this stage
     const stageArtifactMap: Record<string, string[]> = {
@@ -240,7 +247,7 @@ export class EvolutionEngine {
     const parts: string[] = [];
 
     // Read validation report
-    const validationPath = `${getArtifactsDir()}/validation-report.md`;
+    const validationPath = `${this.artifactsDir}/validation-report.md`;
     try {
       parts.push('## Validation Report\n' + fs.readFileSync(validationPath, 'utf-8'));
     } catch (e) {
@@ -250,7 +257,7 @@ export class EvolutionEngine {
     }
 
     // Read all manifests
-    const artifactsDir = getArtifactsDir();
+    const artifactsDir = this.artifactsDir;
     try {
       const files = fs.readdirSync(artifactsDir);
       for (const file of files) {

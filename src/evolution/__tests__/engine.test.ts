@@ -55,7 +55,7 @@ describe('EvolutionEngine', () => {
   });
 
   it('returns empty array when no artifacts exist', async () => {
-    const engine = new EvolutionEngine(provider, logger);
+    const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
     const proposals = await engine.analyze(runId);
     expect(proposals).toEqual([]);
   });
@@ -72,7 +72,7 @@ describe('EvolutionEngine', () => {
       },
     ]);
 
-    const engine = new EvolutionEngine(provider, logger);
+    const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
     const proposals = await engine.analyze(runId);
 
     expect(proposals.length).toBe(1);
@@ -95,7 +95,7 @@ describe('EvolutionEngine', () => {
       },
     ]) + '\n```';
 
-    const engine = new EvolutionEngine(provider, logger);
+    const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
     const proposals = await engine.analyze(runId);
 
     expect(proposals.length).toBe(1);
@@ -106,7 +106,7 @@ describe('EvolutionEngine', () => {
     setupArtifacts(runId, tmpRoot);
     provider.response = 'This is not valid JSON at all.';
 
-    const engine = new EvolutionEngine(provider, logger);
+    const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
     const proposals = await engine.analyze(runId);
     expect(proposals).toEqual([]);
   });
@@ -119,7 +119,7 @@ describe('EvolutionEngine', () => {
       { type: 'prompt_modification', agentStage: 'researcher', reason: 'valid', proposedContent: 'valid' },
     ]);
 
-    const engine = new EvolutionEngine(provider, logger);
+    const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
     const proposals = await engine.analyze(runId);
 
     expect(proposals.length).toBe(1);
@@ -135,7 +135,7 @@ describe('EvolutionEngine', () => {
         { type: 'prompt_modification', agentStage: 'researcher', reason: 'first', proposedContent: 'v1' },
       ]);
 
-      const engine = new EvolutionEngine(provider, logger);
+      const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
       const first = await engine.analyze(runId);
       expect(first.length).toBe(1);
 
@@ -163,7 +163,7 @@ describe('EvolutionEngine', () => {
         { type: 'skill_creation', agentStage: 'researcher', reason: 'first', proposedContent: 'skill1', skillMetadata: { name: 's1', scope: 'shared', description: 'd1' } },
       ]);
 
-      const engine = new EvolutionEngine(provider, logger);
+      const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
       const first = await engine.analyze(runId);
       expect(first.length).toBe(1);
 
@@ -192,7 +192,7 @@ describe('EvolutionEngine', () => {
         { type: 'skill_creation', agentStage: 'researcher', reason: 'first', proposedContent: 'skill1', skillMetadata: { name: 's1', scope: 'shared', description: 'd1' } },
       ]);
 
-      const engine = new EvolutionEngine(provider, logger);
+      const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
       const first = await engine.analyze(runId);
       expect(first.length).toBe(1);
 
@@ -208,7 +208,7 @@ describe('EvolutionEngine', () => {
 
   describe('state persistence', () => {
     it('saves and loads state correctly', () => {
-      const engine = new EvolutionEngine(provider, logger);
+      const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
 
       const stateResult = engine.loadState();
       // No state file yet -- should return err
@@ -232,7 +232,7 @@ describe('EvolutionEngine', () => {
         { type: 'prompt_modification', agentStage: 'researcher', reason: 'test', proposedContent: 'new prompt' },
       ]);
 
-      const engine = new EvolutionEngine(provider, logger);
+      const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
       await engine.analyze(runId);
 
       const stateResult = engine.loadState();
@@ -261,7 +261,7 @@ describe('EvolutionEngine', () => {
       fs.mkdirSync(STATE_DIR, { recursive: true });
       fs.writeFileSync(STATE_FILE, '{corrupt json!!!');
 
-      const engine = new EvolutionEngine(provider, logger);
+      const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
       const result = engine.loadState();
 
       expect(result.ok).toBe(false);
@@ -271,7 +271,7 @@ describe('EvolutionEngine', () => {
     });
 
     it('loadState returns Result.err when state file is missing', () => {
-      const engine = new EvolutionEngine(provider, logger);
+      const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
       const result = engine.loadState();
 
       expect(result.ok).toBe(false);
@@ -284,7 +284,7 @@ describe('EvolutionEngine', () => {
       // Create artifacts dir but no files for the stage
       fs.mkdirSync('.mosaic/artifacts', { recursive: true });
 
-      const engine = new EvolutionEngine(provider, logger);
+      const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
       const logSpy = vi.spyOn(logger, 'pipeline');
 
       const proposals = await engine.analyzeStage(runId, 'researcher');
@@ -301,7 +301,7 @@ describe('EvolutionEngine', () => {
       setupArtifacts(runId, tmpRoot);
       provider.response = 'not json {{{';
 
-      const engine = new EvolutionEngine(provider, logger);
+      const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
       const logSpy = vi.spyOn(logger, 'pipeline');
 
       const proposals = await engine.analyze(runId);
@@ -323,7 +323,7 @@ describe('EvolutionEngine', () => {
         { type: 'prompt_modification', agentStage: 'researcher', reason: 'test', proposedContent: 'content' },
       ]);
 
-      const engine = new EvolutionEngine(provider, logger);
+      const engine = new EvolutionEngine(provider, logger, getArtifactsDir());
       const proposals = await engine.analyze(runId);
 
       // Should still produce proposals using fallback empty state

@@ -125,6 +125,7 @@ describe('Security', () => {
         ...baseParams,
         repoSlug: 'ZB-ur/test-repo',
         commitSha: 'abc1234567890',
+        artifactsDir: '.mosaic/artifacts',
       });
       expect(body).toContain('[`research.md`](https://github.com/ZB-ur/test-repo/blob/abc1234567890/.mosaic/artifacts/research.md)');
     });
