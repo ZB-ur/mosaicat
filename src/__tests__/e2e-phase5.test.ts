@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
 import type { StageName, GateResult } from '../core/types.js';
 import { DEFAULT_STAGES } from '../core/types.js';
-import { createTestMosaicDir, cleanupTestMosaicDir } from './test-helpers.js';
+import { createTestMosaicDir, cleanupTestMosaicDir, createTestArtifactStore, createMockLogger } from './test-helpers.js';
 import type { InteractionHandler, EvolutionApprovalResult } from '../core/interaction-handler.js';
 import type { EvolutionProposal } from '../evolution/types.js';
 import { Orchestrator } from '../core/orchestrator.js';
@@ -126,9 +126,9 @@ vi.mock('../core/agent-factory.js', async () => {
   } as const;
 
   return {
-    createAgent: (stage: keyof typeof AGENT_MAP, provider: LLMProvider, logger: Logger) => {
+    createAgent: (stage: keyof typeof AGENT_MAP, ctx: import('../core/run-context.js').RunContext) => {
       const AgentClass = AGENT_MAP[stage];
-      return new AgentClass(stage, provider, logger);
+      return new AgentClass(stage, ctx);
     },
   };
 });
@@ -226,7 +226,7 @@ describe('Phase 5 E2E: Self-Evolution', () => {
       runId: 'test',
       stage: 'researcher',
       instruction: 'test',
-    });
+    }, createTestArtifactStore(), createMockLogger(), true);
     expect(context.systemPrompt).toContain('## Available Skills');
     expect(context.systemPrompt).toContain('comparison-framework');
   }, 30000);

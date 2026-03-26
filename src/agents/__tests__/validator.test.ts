@@ -6,7 +6,8 @@ import { ValidatorAgent } from '../validator.js';
 import { Logger } from '../../core/logger.js';
 import { writeArtifact, initArtifactsDir, getArtifactsDir } from '../../core/artifact.js';
 import { writeManifest } from '../../core/manifest.js';
-import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
+import { createTestMosaicDir, cleanupTestMosaicDir, createTestRunContext } from '../../__tests__/test-helpers.js';
+import { ArtifactStore } from '../../core/artifact-store.js';
 
 class MockValidatorProvider implements LLMProvider {
   async call(_prompt: string, _options?: LLMCallOptions): Promise<LLMResponse> {
@@ -85,7 +86,9 @@ describe('ValidatorAgent', () => {
 
     const provider = new MockValidatorProvider();
     const logger = new Logger('test');
-    const agent = new ValidatorAgent('validator', provider, logger);
+    // Bridge RunContext: store points to same dir as global artifacts for backward compat
+    const bridgeStore = Object.assign(Object.create(ArtifactStore.prototype), { runDir: getArtifactsDir() }) as ArtifactStore;
+    const agent = new ValidatorAgent('validator', createTestRunContext({ provider, logger, store: bridgeStore }));
 
     await agent.execute(makeContext());
     await logger.close();
@@ -114,7 +117,9 @@ describe('ValidatorAgent', () => {
 
     const provider = new MockValidatorProvider();
     const logger = new Logger('test');
-    const agent = new ValidatorAgent('validator', provider, logger);
+    // Bridge RunContext: store points to same dir as global artifacts for backward compat
+    const bridgeStore = Object.assign(Object.create(ArtifactStore.prototype), { runDir: getArtifactsDir() }) as ArtifactStore;
+    const agent = new ValidatorAgent('validator', createTestRunContext({ provider, logger, store: bridgeStore }));
 
     await agent.execute(makeContext());
     await logger.close();
@@ -133,7 +138,9 @@ describe('ValidatorAgent', () => {
 
     const provider = new MockValidatorProvider();
     const logger = new Logger('test');
-    const agent = new ValidatorAgent('validator', provider, logger);
+    // Bridge RunContext: store points to same dir as global artifacts for backward compat
+    const bridgeStore = Object.assign(Object.create(ArtifactStore.prototype), { runDir: getArtifactsDir() }) as ArtifactStore;
+    const agent = new ValidatorAgent('validator', createTestRunContext({ provider, logger, store: bridgeStore }));
 
     await agent.execute(makeContext());
     await logger.close();

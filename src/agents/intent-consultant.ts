@@ -2,9 +2,7 @@ import fs from 'node:fs';
 import type { AgentContext, StageName, ClarificationOption } from '../core/types.js';
 import { IntentBriefSchema } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
-import type { LLMProvider } from '../core/llm-provider.js';
-import type { Logger } from '../core/logger.js';
-import { eventBus } from '../core/event-bus.js';
+import type { RunContext } from '../core/run-context.js';
 import type { InteractionHandler } from '../core/interaction-handler.js';
 
 const PROMPT_PATH = '.claude/agents/mosaic/intent-consultant.md';
@@ -48,11 +46,10 @@ export class IntentConsultantAgent extends BaseAgent {
 
   constructor(
     stage: StageName,
-    provider: LLMProvider,
-    logger: Logger,
+    ctx: RunContext,
     interactionHandler: InteractionHandler,
   ) {
-    super(stage, provider, logger);
+    super(stage, ctx);
     this.interactionHandler = interactionHandler;
   }
 
@@ -75,7 +72,7 @@ export class IntentConsultantAgent extends BaseAgent {
         round,
         promptLength: prompt.length,
       });
-      eventBus.emit('agent:thinking', this.stage, prompt.length);
+      this.ctx.eventBus.emit('agent:thinking', this.stage, prompt.length);
 
       const response = await this.provider.call(prompt, {
         systemPrompt,
@@ -86,7 +83,7 @@ export class IntentConsultantAgent extends BaseAgent {
         round,
         responseLength: response.content.length,
       });
-      eventBus.emit('agent:response', this.stage, response.content.length);
+      this.ctx.eventBus.emit('agent:response', this.stage, response.content.length);
 
       let parsed: ConsultantResponse;
       try {

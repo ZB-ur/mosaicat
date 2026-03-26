@@ -64,9 +64,9 @@ vi.mock('../agent-factory.js', async () => {
   } as const;
 
   return {
-    createAgent: (stage: keyof typeof AGENT_MAP, provider: LLMProvider, logger: Logger) => {
+    createAgent: (stage: keyof typeof AGENT_MAP, ctx: import('../run-context.js').RunContext) => {
       const AgentClass = AGENT_MAP[stage];
-      return new AgentClass(stage, provider, logger);
+      return new AgentClass(stage, ctx);
     },
   };
 });

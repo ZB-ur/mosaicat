@@ -1,11 +1,8 @@
 import fs from 'node:fs';
 import type { AgentContext, StageName } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
-import type { LLMProvider } from '../core/llm-provider.js';
-import type { Logger } from '../core/logger.js';
+import type { RunContext } from '../core/run-context.js';
 import type { OutputSpec } from '../core/prompt-assembler.js';
-import { eventBus } from '../core/event-bus.js';
-import { readArtifact, artifactExists, getArtifactsDir } from '../core/artifact.js';
 import { CodePlanSchema } from './code-plan-schema.js';
 
 const REFINE_PROMPT_PATH = '.claude/agents/mosaic/refine.md';
@@ -21,11 +18,10 @@ const REFINE_BUDGET_USD = 3.00;
  */
 export class RefineAgent extends BaseAgent {
   constructor(
-    provider: LLMProvider,
-    logger: Logger,
+    ctx: RunContext,
   ) {
     // Use 'coder' as the stage for logging purposes
-    super('coder' as StageName, provider, logger);
+    super('coder' as StageName, ctx);
   }
 
   getOutputSpec(): OutputSpec {
@@ -37,7 +33,7 @@ export class RefineAgent extends BaseAgent {
 
   protected async run(context: AgentContext): Promise<void> {
     const refinePrompt = fs.readFileSync(REFINE_PROMPT_PATH, 'utf-8');
-    const codeDir = `${getArtifactsDir()}/code`;
+    const codeDir = `${this.ctx.store.getDir()}/code`;
 
     const userFeedback = context.inputArtifacts.get('user_feedback');
     if (!userFeedback) {
@@ -53,8 +49,8 @@ export class RefineAgent extends BaseAgent {
     parts.push('');
 
     // Load code-plan.json for structure context
-    if (artifactExists('code-plan.json')) {
-      const planRaw = readArtifact('code-plan.json');
+    if (this.ctx.store.exists('code-plan.json')) {
+      const planRaw = this.ctx.store.read('code-plan.json');
       const plan = CodePlanSchema.parse(JSON.parse(planRaw));
       parts.push('## code-plan.json');
       parts.push('```json');
@@ -67,14 +63,14 @@ export class RefineAgent extends BaseAgent {
     }
 
     // Load constitution for constraints
-    if (artifactExists('constitution.project.md')) {
-      const constitution = readArtifact('constitution.project.md');
+    if (this.ctx.store.exists('constitution.project.md')) {
+      const constitution = this.ctx.store.read('constitution.project.md');
       parts.push(`## Project Constitution (DO NOT VIOLATE)\n${constitution}\n`);
     }
 
     // Load tech-spec for expected behavior
-    if (artifactExists('tech-spec.md')) {
-      const techSpec = readArtifact('tech-spec.md');
+    if (this.ctx.store.exists('tech-spec.md')) {
+      const techSpec = this.ctx.store.read('tech-spec.md');
       parts.push(`## tech-spec.md\n${techSpec}\n`);
     }
 
@@ -94,8 +90,8 @@ export class RefineAgent extends BaseAgent {
       feedbackLength: userFeedback.length,
       promptLength: userPrompt.length,
     });
-    eventBus.emit('agent:thinking', this.stage, userPrompt.length);
-    eventBus.emit('agent:progress', this.stage, 'refine: diagnosing and fixing...');
+    this.ctx.eventBus.emit('agent:thinking', this.stage, userPrompt.length);
+    this.ctx.eventBus.emit('agent:progress', this.stage, 'refine: diagnosing and fixing...');
 
     const response = await this.provider.call(userPrompt, {
       systemPrompt: refinePrompt,
@@ -104,7 +100,7 @@ export class RefineAgent extends BaseAgent {
       timeoutMs: REFINE_TIMEOUT_MS,
     });
 
-    eventBus.emit('agent:response', this.stage, response.content.length);
+    this.ctx.eventBus.emit('agent:response', this.stage, response.content.length);
     this.logger.agent(this.stage, 'info', 'refine:complete', {});
   }
 

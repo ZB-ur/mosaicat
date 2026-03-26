@@ -291,10 +291,9 @@ vi.mock('../core/agent-factory.js', async () => {
   const { BaseAgent } = await import('../core/agent.js');
   const fsLib = await import('node:fs');
 
-  type ProviderParam = import('../core/llm-provider.js').LLMProvider;
-  type LoggerParam = import('../core/logger.js').Logger;
   type StageName = import('../core/types.js').StageName;
   type AgentContext = import('../core/types.js').AgentContext;
+  type RunContextParam = import('../core/run-context.js').RunContext;
   type InteractionHandlerParam = import('../core/interaction-handler.js').InteractionHandler;
   type OutputSpec = import('../core/prompt-assembler.js').OutputSpec;
 
@@ -425,7 +424,7 @@ vi.mock('../core/agent-factory.js', async () => {
     }
   }
 
-  const STANDARD_AGENTS: Record<string, new (stage: StageName, provider: ProviderParam, logger: LoggerParam) => InstanceType<typeof BaseAgent>> = {
+  const STANDARD_AGENTS: Record<string, new (stage: StageName, ctx: RunContextParam) => InstanceType<typeof BaseAgent>> = {
     researcher: ResearcherAgent,
     product_owner: ProductOwnerAgent,
     ux_designer: UXDesignerAgent,
@@ -437,7 +436,7 @@ vi.mock('../core/agent-factory.js', async () => {
   };
 
   // Stages that use custom stub agents (too complex for simple LLM mock)
-  const STUB_AGENTS: Record<string, new (stage: StageName, provider: ProviderParam, logger: LoggerParam) => InstanceType<typeof BaseAgent>> = {
+  const STUB_AGENTS: Record<string, new (stage: StageName, ctx: RunContextParam) => InstanceType<typeof BaseAgent>> = {
     coder: CanaryCoderStub,
     tester: CanaryTesterStub,
     security_auditor: CanarySecurityAuditorStub,
@@ -447,20 +446,19 @@ vi.mock('../core/agent-factory.js', async () => {
   return {
     createAgent: (
       stage: StageName,
-      provider: ProviderParam,
-      logger: LoggerParam,
+      ctx: RunContextParam,
       _autonomy?: unknown,
       _interactionHandler?: InteractionHandlerParam,
     ) => {
       const StubClass = STUB_AGENTS[stage];
       if (StubClass) {
-        return new StubClass(stage, provider, logger);
+        return new StubClass(stage, ctx);
       }
       const AgentClass = STANDARD_AGENTS[stage];
       if (!AgentClass) {
         throw new Error(`Canary test: no agent for stage ${stage}`);
       }
-      return new AgentClass(stage, provider, logger);
+      return new AgentClass(stage, ctx);
     },
   };
 });
