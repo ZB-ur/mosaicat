@@ -81,6 +81,16 @@ describe('StageExecutor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
+    // Re-set default mock implementations after clearAllMocks
+    (buildContext as ReturnType<typeof vi.fn>).mockReturnValue({
+      systemPrompt: 'test prompt',
+      task: { runId: 'run-1', stage: 'researcher', instruction: 'test' },
+      inputArtifacts: new Map(),
+    });
+    (createAgent as ReturnType<typeof vi.fn>).mockReturnValue({
+      execute: vi.fn().mockResolvedValue(undefined),
+    });
+
     const stageConfig: StageConfig = { clarification: true, gate: 'auto', retry_max: 3 };
     ctx = createTestRunContext({
       config: createTestPipelineConfig({
