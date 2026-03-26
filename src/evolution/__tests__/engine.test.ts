@@ -128,7 +128,7 @@ describe('EvolutionEngine', () => {
     it('blocks prompt_modification within cooldown period', async () => {
       setupArtifacts(runId);
 
-      // First analysis — should produce a proposal
+      // First analysis -- should produce a proposal
       provider.response = JSON.stringify([
         { type: 'prompt_modification', agentStage: 'researcher', reason: 'first', proposedContent: 'v1' },
       ]);
@@ -137,15 +137,18 @@ describe('EvolutionEngine', () => {
       const first = await engine.analyze(runId);
       expect(first.length).toBe(1);
 
-      // Second analysis — should be blocked by cooldown
+      // Second analysis -- should be blocked by cooldown
       provider.response = JSON.stringify([
         { type: 'prompt_modification', agentStage: 'researcher', reason: 'second', proposedContent: 'v2' },
       ]);
 
       // Need to resolve the first proposal to remove pending block
-      const state = engine.loadState();
-      state.proposals[0].status = 'approved';
-      engine.saveState(state);
+      const stateResult = engine.loadState();
+      expect(stateResult.ok).toBe(true);
+      if (stateResult.ok) {
+        stateResult.value.proposals[0].status = 'approved';
+        engine.saveState(stateResult.value);
+      }
 
       const second = await engine.analyze(runId);
       expect(second.length).toBe(0);
@@ -163,9 +166,12 @@ describe('EvolutionEngine', () => {
       expect(first.length).toBe(1);
 
       // Resolve first
-      const state = engine.loadState();
-      state.proposals[0].status = 'approved';
-      engine.saveState(state);
+      const stateResult = engine.loadState();
+      expect(stateResult.ok).toBe(true);
+      if (stateResult.ok) {
+        stateResult.value.proposals[0].status = 'approved';
+        engine.saveState(stateResult.value);
+      }
 
       provider.response = JSON.stringify([
         { type: 'skill_creation', agentStage: 'researcher', reason: 'second', proposedContent: 'skill2', skillMetadata: { name: 's2', scope: 'shared', description: 'd2' } },
@@ -188,7 +194,7 @@ describe('EvolutionEngine', () => {
       const first = await engine.analyze(runId);
       expect(first.length).toBe(1);
 
-      // Don't resolve — still pending
+      // Don't resolve -- still pending
       provider.response = JSON.stringify([
         { type: 'skill_creation', agentStage: 'researcher', reason: 'second', proposedContent: 'skill2', skillMetadata: { name: 's2', scope: 'shared', description: 'd2' } },
       ]);
@@ -202,16 +208,19 @@ describe('EvolutionEngine', () => {
     it('saves and loads state correctly', () => {
       const engine = new EvolutionEngine(provider, logger);
 
-      const state = engine.loadState();
-      expect(state.proposals).toEqual([]);
-      expect(state.promptVersions).toEqual({});
-      expect(state.cooldowns).toEqual({});
+      const stateResult = engine.loadState();
+      // No state file yet -- should return err
+      expect(stateResult.ok).toBe(false);
 
-      state.cooldowns['test'] = new Date().toISOString();
+      // Save a state and reload
+      const state = { proposals: [], promptVersions: {}, cooldowns: { test: new Date().toISOString() } };
       engine.saveState(state);
 
       const reloaded = engine.loadState();
-      expect(reloaded.cooldowns['test']).toBeDefined();
+      expect(reloaded.ok).toBe(true);
+      if (reloaded.ok) {
+        expect(reloaded.value.cooldowns['test']).toBeDefined();
+      }
     });
 
     it('persists proposals across analyze calls', async () => {
@@ -224,9 +233,12 @@ describe('EvolutionEngine', () => {
       const engine = new EvolutionEngine(provider, logger);
       await engine.analyze(runId);
 
-      const state = engine.loadState();
-      expect(state.proposals.length).toBe(1);
-      expect(state.proposals[0].status).toBe('pending');
+      const stateResult = engine.loadState();
+      expect(stateResult.ok).toBe(true);
+      if (stateResult.ok) {
+        expect(stateResult.value.proposals.length).toBe(1);
+        expect(stateResult.value.proposals[0].status).toBe('pending');
+      }
     });
   });
 
@@ -240,5 +252,80 @@ describe('EvolutionEngine', () => {
     const engine = new EvolutionEngine(failingProvider, logger);
     const proposals = await engine.analyze(runId);
     expect(proposals).toEqual([]);
+  });
+
+  describe('error handling', () => {
+    it('loadState returns Result.err for corrupt JSON', () => {
+      fs.mkdirSync(STATE_DIR, { recursive: true });
+      fs.writeFileSync(STATE_FILE, '{corrupt json!!!');
+
+      const engine = new EvolutionEngine(provider, logger);
+      const result = engine.loadState();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain('state-file-unreadable');
+      }
+    });
+
+    it('loadState returns Result.err when state file is missing', () => {
+      const engine = new EvolutionEngine(provider, logger);
+      const result = engine.loadState();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain('state-file-unreadable');
+      }
+    });
+
+    it('buildStageSummary logs warning for missing artifact files', async () => {
+      // Create artifacts dir but no files for the stage
+      fs.mkdirSync('.mosaic/artifacts', { recursive: true });
+
+      const engine = new EvolutionEngine(provider, logger);
+      const logSpy = vi.spyOn(logger, 'pipeline');
+
+      const proposals = await engine.analyzeStage(runId, 'researcher');
+      expect(proposals).toEqual([]);
+
+      // Should have logged warnings for missing files
+      const warnCalls = logSpy.mock.calls.filter(
+        (c) => c[0] === 'warn' && (c[1] as string).includes('stage-summary-read-failed')
+      );
+      expect(warnCalls.length).toBeGreaterThan(0);
+    });
+
+    it('parseCandidates returns Result.err for invalid JSON', async () => {
+      setupArtifacts(runId);
+      provider.response = 'not json {{{';
+
+      const engine = new EvolutionEngine(provider, logger);
+      const logSpy = vi.spyOn(logger, 'pipeline');
+
+      const proposals = await engine.analyze(runId);
+      expect(proposals).toEqual([]);
+
+      // Should have logged parse error
+      const parseCalls = logSpy.mock.calls.filter(
+        (c) => c[0] === 'warn' && (c[1] as string).includes('parse-error')
+      );
+      expect(parseCalls.length).toBeGreaterThan(0);
+    });
+
+    it('analyze still works when state file is corrupt (uses fallback)', async () => {
+      setupArtifacts(runId);
+      fs.mkdirSync(STATE_DIR, { recursive: true });
+      fs.writeFileSync(STATE_FILE, 'CORRUPT');
+
+      provider.response = JSON.stringify([
+        { type: 'prompt_modification', agentStage: 'researcher', reason: 'test', proposedContent: 'content' },
+      ]);
+
+      const engine = new EvolutionEngine(provider, logger);
+      const proposals = await engine.analyze(runId);
+
+      // Should still produce proposals using fallback empty state
+      expect(proposals.length).toBe(1);
+    });
   });
 });
