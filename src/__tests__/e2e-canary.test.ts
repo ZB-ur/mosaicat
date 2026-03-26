@@ -68,8 +68,7 @@ class CanaryStubProvider implements LLMProvider {
     // Each agent prompt file starts with "# {AgentName} Agent"
     // We match against these unique identifiers first.
     const stageMap: Array<[string, () => string]> = [
-      ['securityauditor agent', () => this.securityAuditorResponse()],
-      ['tester agent', () => this.testerResponse()],
+      // securityauditor and tester are handled by stub agents, not this provider
       ['researcher agent', () => this.researcherResponse()],
       ['productowner agent', () => this.productOwnerResponse()],
       ['uxdesigner agent', () => this.uxDesignerResponse()],
@@ -426,7 +425,7 @@ vi.mock('../core/agent-factory.js', async () => {
     }
   }
 
-  const STANDARD_AGENTS: Record<string, new (stage: StageName, provider: ProviderParam, logger: LoggerParam) => InstanceType<typeof ResearcherAgent>> = {
+  const STANDARD_AGENTS: Record<string, new (stage: StageName, provider: ProviderParam, logger: LoggerParam) => InstanceType<typeof BaseAgent>> = {
     researcher: ResearcherAgent,
     product_owner: ProductOwnerAgent,
     ux_designer: UXDesignerAgent,
