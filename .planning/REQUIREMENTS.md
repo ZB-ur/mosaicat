@@ -40,7 +40,7 @@
 - [x] **CODER-02**: 从 `coder.ts` 提取 `CoderBuilder` — 负责骨架生成和模块实现
 - [x] **CODER-03**: 从 `coder.ts` 提取 `BuildVerifier` — 负责编译检查和构建修复循环
 - [x] **CODER-04**: 从 `coder.ts` 提取 `SmokeRunner` — 负责 HTTP 探测和冒烟测试
-- [ ] **CODER-05**: `coder.ts` 重写为 thin facade（~200 行），委派到 4 个子模块
+- [x] **CODER-05**: `coder.ts` 重写为 thin facade（~200 行），委派到 4 个子模块
 
 ### Orchestrator Facade
 
@@ -107,7 +107,7 @@
 | CODER-02 | Phase 4 | Complete |
 | CODER-03 | Phase 4 | Complete |
 | CODER-04 | Phase 4 | Complete |
-| CODER-05 | Phase 4 | Pending |
+| CODER-05 | Phase 4 | Complete |
 | ORCH-01 | Phase 5 | Pending |
 | ORCH-02 | Phase 5 | Pending |
 | ORCH-03 | Phase 5 | Pending |
