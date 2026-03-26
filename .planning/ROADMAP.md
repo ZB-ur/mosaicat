@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 3 plans
 Plans:
 - [x] 01-01-PLAN.md — Typed mock factories + eliminate all `as any` casts from test files
-- [ ] 01-02-PLAN.md — Resume flow integration tests (5 scenarios)
+- [x] 01-02-PLAN.md — Resume flow integration tests (5 scenarios)
 - [ ] 01-03-PLAN.md — Full 13-stage canary E2E test + coverage baseline
 
 ### Phase 2: Foundation Layer
