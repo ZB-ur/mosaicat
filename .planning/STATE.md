@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: verifying
-stopped_at: Completed 02-02-PLAN.md
-last_updated: "2026-03-26T18:21:48.566Z"
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-03-26T19:08:37.077Z"
 last_activity: 2026-03-26
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 3
-  completed_plans: 3
+  completed_plans: 6
   percent: 0
 ---
 
@@ -56,6 +56,7 @@ Progress: [..........] 0%
 | Phase 01 P02 | 5min | 1 tasks | 1 files |
 | Phase 01 P03 | 57min | 2 tasks | 5 files |
 | Phase 02 P02 | 19min | 2 tasks | 30 files |
+| Phase 02 P04 | 40min | 2 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,9 @@ Recent decisions affecting current work:
 - [Phase 02]: eventBus singleton kept with @deprecated for non-agent callers -- bridge until Plan 04
 - [Phase 02]: manifest.ts uses function overloads for backward-compatible gradual migration
 - [Phase 02]: Bridge RunContext pattern using Object.create(ArtifactStore.prototype) for orchestrator
+- [Phase 02]: Orchestrator owns single EventBus instance shared across runs for CLI progress attachment
+- [Phase 02]: enableEvolution is constructor option, not runtime mutation (D-14 complete)
+- [Phase 02]: manifest.ts legacy overloads removed entirely -- all production callers use store-based API
 
 ### Pending Todos
 
@@ -86,6 +90,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-26T18:21:48.563Z
-Stopped at: Completed 02-02-PLAN.md
+Last session: 2026-03-26T19:08:37.074Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None

@@ -23,8 +23,8 @@
 
 - [ ] **STATE-01**: 实现 `ArtifactStore` 类替代 `artifact.ts` 全局可变状态 `currentRunDir`，按 run 实例化
 - [x] **STATE-02**: ArtifactStore 提供 bridge pattern 兼容层，使保留模块（BaseAgent 等）无需修改即可工作
-- [ ] **STATE-03**: Config 在执行前通过 `structuredClone` + `Object.freeze` 冻结，消除可变 config 注入问题
-- [ ] **STATE-04**: 实现 `RunContext` 对象，聚合 ArtifactStore/Logger/Provider/EventBus/Config/AbortSignal
+- [x] **STATE-03**: Config 在执行前通过 `structuredClone` + `Object.freeze` 冻结，消除可变 config 注入问题
+- [x] **STATE-04**: 实现 `RunContext` 对象，聚合 ArtifactStore/Logger/Provider/EventBus/Config/AbortSignal
 
 ### Execution Engine
 
@@ -96,8 +96,8 @@
 | ERR-04 | Phase 2 | Complete |
 | STATE-01 | Phase 2 | Pending |
 | STATE-02 | Phase 2 | Complete |
-| STATE-03 | Phase 2 | Pending |
-| STATE-04 | Phase 2 | Pending |
+| STATE-03 | Phase 2 | Complete |
+| STATE-04 | Phase 2 | Complete |
 | EXEC-01 | Phase 3 | Pending |
 | EXEC-02 | Phase 3 | Pending |
 | EXEC-03 | Phase 3 | Pending |
