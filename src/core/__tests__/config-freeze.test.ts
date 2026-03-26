@@ -34,7 +34,7 @@ describe('freezeConfig', () => {
   it('mutating nested property throws TypeError (deep freeze)', () => {
     const frozen = freezeConfig(makeConfig());
     expect(() => {
-      (frozen.github as Record<string, unknown>).enabled = true;
+      (frozen.github as unknown as Record<string, unknown>).enabled = true;
     }).toThrow(TypeError);
   });
 
