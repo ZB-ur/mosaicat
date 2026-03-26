@@ -53,7 +53,7 @@ Out:  Research → PRD → UX Flows → OpenAPI Spec → 25 React Components + S
 - **13 autonomous agents** — mirrors a real product team: consultant, researcher, PM, UX/UI designers, architect, tech lead, QA lead, coder, tester, security auditor, reviewer, validator
 - **Acceptance TDD** — QALead derives acceptance tests from PRD → Coder targets passing them → Tester executes; 5-round progressive fix loop (direct-fix → replan → full-history)
 - **Agent Constitution** — 6 immutable quality articles (Verifiability First / Spec Is Authority / No Placeholder / Acceptance-Driven / Traceability / No Ambiguity), auto-injected via BaseAgent hooks
-- **Crash recovery** — `mosaicat resume` continues from the last completed stage; no wasted outputs on interruption
+- **Crash recovery** — `mosaicat resume` continues from the breakpoint; `--from <stage>` lets you re-run from a specific stage (automatically cleans up that stage's and downstream artifacts)
 - **Infinite LLM retry** — exponential backoff for transient errors (429, 503, network disconnects); only unrecoverable errors terminate
 - **Skeleton-implement code generation** — skeleton phase writes all files with real imports/routes, implement phase fills in logic per module; compile-verified at every step
 - **Integrated QA pipeline** — QALead generates acceptance tests, Tester executes, SecurityAuditor runs programmatic + LLM security audit; test failures auto-trigger Coder fixes
@@ -344,7 +344,7 @@ Each agent sees only its contracted spec inputs, never upstream reasoning. The U
 > A full pipeline may run 30+ minutes and consume significant tokens. Losing everything to a single 429 or network blip is unacceptable.
 
 - **RetryingProvider** decorates all LLM providers with infinite exponential-backoff retry for transient errors (429, 503, network)
-- **Stage Resume** persists state after every stage; `mosaicat resume` picks up from the breakpoint after a crash
+- **Stage Resume** persists state after every stage; `mosaicat resume` picks up from the breakpoint after a crash; `--from <stage>` supports targeted re-run with automatic downstream artifact cleanup
 - **retry-log** persists all retry events, providing real data for `mosaicat evolve`
 
 ### Data-Driven Evolution

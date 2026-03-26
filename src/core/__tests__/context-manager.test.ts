@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import fs from 'node:fs';
 import { buildContext } from '../context-manager.js';
 import type { AgentsConfig, Task } from '../types.js';
-import { writeArtifact } from '../artifact.js';
+import { writeArtifact, initArtifactsDir } from '../artifact.js';
+import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
 
 const mockAgentsConfig: AgentsConfig = {
   agents: {
@@ -46,12 +46,15 @@ const mockAgentsConfig: AgentsConfig = {
 };
 
 describe('ContextManager', () => {
+  let tmpRoot: string;
+
   beforeEach(() => {
-    fs.mkdirSync('.mosaic/artifacts', { recursive: true });
+    tmpRoot = createTestMosaicDir();
+    initArtifactsDir('test-run');
   });
 
   afterEach(() => {
-    fs.rmSync('.mosaic', { recursive: true, force: true });
+    cleanupTestMosaicDir(tmpRoot);
   });
 
   it('should include user_instruction for researcher', () => {

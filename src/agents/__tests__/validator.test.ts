@@ -4,10 +4,9 @@ import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-pr
 import type { AgentContext } from '../../core/types.js';
 import { ValidatorAgent } from '../validator.js';
 import { Logger } from '../../core/logger.js';
-import { writeArtifact } from '../../core/artifact.js';
+import { writeArtifact, initArtifactsDir, getArtifactsDir } from '../../core/artifact.js';
 import { writeManifest } from '../../core/manifest.js';
-
-const ARTIFACTS_DIR = '.mosaic/artifacts';
+import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
 
 class MockValidatorProvider implements LLMProvider {
   async call(_prompt: string, _options?: LLMCallOptions): Promise<LLMResponse> {
@@ -46,16 +45,15 @@ function makeContext(): AgentContext {
 }
 
 describe('ValidatorAgent', () => {
+  let tmpRoot: string;
+
   beforeEach(() => {
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    tmpRoot = createTestMosaicDir();
+    initArtifactsDir('test-run');
   });
 
   afterEach(() => {
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    cleanupTestMosaicDir(tmpRoot);
   });
 
   it('should append Check 5 PASS when all referenced files exist', async () => {
@@ -92,7 +90,7 @@ describe('ValidatorAgent', () => {
     await agent.execute(makeContext());
     await logger.close();
 
-    const report = fs.readFileSync(`${ARTIFACTS_DIR}/validation-report.md`, 'utf-8');
+    const report = fs.readFileSync(`${getArtifactsDir()}/validation-report.md`, 'utf-8');
     expect(report).toContain('Check 5: File Integrity');
     expect(report).toContain('Status: PASS');
     expect(report).toContain('All referenced files exist on disk');
@@ -121,7 +119,7 @@ describe('ValidatorAgent', () => {
     await agent.execute(makeContext());
     await logger.close();
 
-    const report = fs.readFileSync(`${ARTIFACTS_DIR}/validation-report.md`, 'utf-8');
+    const report = fs.readFileSync(`${getArtifactsDir()}/validation-report.md`, 'utf-8');
     expect(report).toContain('Check 5: File Integrity');
     expect(report).toContain('FAIL');
     expect(report).toContain('screenshots/CompA.png');
@@ -140,7 +138,7 @@ describe('ValidatorAgent', () => {
     await agent.execute(makeContext());
     await logger.close();
 
-    const report = fs.readFileSync(`${ARTIFACTS_DIR}/validation-report.md`, 'utf-8');
+    const report = fs.readFileSync(`${getArtifactsDir()}/validation-report.md`, 'utf-8');
     expect(report).toContain('Check 5: File Integrity');
     expect(report).toContain('FAIL');
     expect(report).toContain('unreadable');

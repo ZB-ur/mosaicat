@@ -1,15 +1,33 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const BASE_DIR = '.mosaic/artifacts';
-let currentRunDir: string = BASE_DIR;
+const DEFAULT_BASE_DIR = '.mosaic/artifacts';
+let baseDir: string = DEFAULT_BASE_DIR;
+let currentRunDir: string = baseDir;
+
+/**
+ * Override the base directory for artifacts (used by tests to avoid
+ * touching the project's real .mosaic/ directory).
+ */
+export function setBaseDir(dir: string): void {
+  baseDir = dir;
+  currentRunDir = dir;
+}
+
+/**
+ * Reset the base directory back to the default.
+ */
+export function resetBaseDir(): void {
+  baseDir = DEFAULT_BASE_DIR;
+  currentRunDir = DEFAULT_BASE_DIR;
+}
 
 /**
  * Initialize artifact directory for a specific run.
  * Must be called at the start of each pipeline run.
  */
 export function initArtifactsDir(runId: string): string {
-  currentRunDir = path.join(BASE_DIR, runId);
+  currentRunDir = path.join(baseDir, runId);
   fs.mkdirSync(currentRunDir, { recursive: true });
   return currentRunDir;
 }
@@ -38,13 +56,13 @@ export function artifactExists(name: string): boolean {
  * Returns the run ID (directory name) or null if none found.
  */
 export function findLatestRun(): string | null {
-  if (!fs.existsSync(BASE_DIR)) return null;
+  if (!fs.existsSync(baseDir)) return null;
 
-  const entries = fs.readdirSync(BASE_DIR, { withFileTypes: true })
+  const entries = fs.readdirSync(baseDir, { withFileTypes: true })
     .filter(e => e.isDirectory())
     .map(e => ({
       name: e.name,
-      mtime: fs.statSync(path.join(BASE_DIR, e.name)).mtime.getTime(),
+      mtime: fs.statSync(path.join(baseDir, e.name)).mtime.getTime(),
     }))
     .sort((a, b) => b.mtime - a.mtime);
 
@@ -56,7 +74,7 @@ export function findLatestRun(): string | null {
  * Returns a Map of relative artifact path → content.
  */
 export function loadFromRun(runId: string): Map<string, string> {
-  const runDir = path.join(BASE_DIR, runId);
+  const runDir = path.join(baseDir, runId);
   const artifacts = new Map<string, string>();
 
   if (!fs.existsSync(runDir)) return artifacts;

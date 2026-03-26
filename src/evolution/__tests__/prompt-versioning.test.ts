@@ -7,15 +7,19 @@ import {
   listPromptVersions,
   getCurrentPromptPath,
 } from '../prompt-versioning.js';
+import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
 
 const PROMPT_FILE = '.claude/agents/mosaic/researcher.md';
 const EVOLUTION_DIR = '.mosaic/evolution/prompts';
 
 describe('prompt-versioning', () => {
   let originalContent: string;
+  let tmpRoot: string;
 
   beforeEach(() => {
     originalContent = fs.readFileSync(PROMPT_FILE, 'utf-8');
+    tmpRoot = createTestMosaicDir();
+    // Also clean the real evolution dir for prompt-versioning (uses hardcoded paths)
     if (fs.existsSync(EVOLUTION_DIR)) {
       fs.rmSync(EVOLUTION_DIR, { recursive: true });
     }
@@ -24,6 +28,8 @@ describe('prompt-versioning', () => {
   afterEach(() => {
     // Restore original prompt
     fs.writeFileSync(PROMPT_FILE, originalContent);
+    cleanupTestMosaicDir(tmpRoot);
+    // Clean only the evolution prompts subdir (not all of .mosaic)
     if (fs.existsSync(EVOLUTION_DIR)) {
       fs.rmSync(EVOLUTION_DIR, { recursive: true });
     }

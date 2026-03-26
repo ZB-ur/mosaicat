@@ -1,15 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import fs from 'node:fs';
 import { writeManifest, readManifest } from '../manifest.js';
 import type { PrdManifest, ResearchManifest } from '../manifest.js';
+import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
+import { initArtifactsDir } from '../artifact.js';
 
 describe('Manifest', () => {
+  let tmpRoot: string;
+
   beforeEach(() => {
-    fs.mkdirSync('.mosaic/artifacts', { recursive: true });
+    tmpRoot = createTestMosaicDir();
+    initArtifactsDir('test-run');
   });
 
   afterEach(() => {
-    fs.rmSync('.mosaic', { recursive: true, force: true });
+    cleanupTestMosaicDir(tmpRoot);
   });
 
   it('should write and read a valid prd manifest', () => {

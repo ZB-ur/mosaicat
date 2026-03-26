@@ -12,13 +12,13 @@ const QA_LEAD_PROMPT_PATH = '.claude/agents/mosaic/qa-lead.md';
  * QALead Agent — Acceptance Test Generator
  *
  * Generates acceptance test code BEFORE the Coder runs (TDD approach).
- * Uses tool use to write test files to tests/acceptance/.
+ * Uses tool use to write test files to code/tests/acceptance/.
  *
  * Flow:
  * 1. Build prompt from PRD + UX flows + API spec + tech-spec + constitution
  * 2. LLM call with tool use (Read, Write, Bash) to generate:
  *    - test-plan.md (strategy document)
- *    - tests/acceptance/ directory with executable test code
+ *    - code/tests/acceptance/ directory with executable test code
  *    - test-plan.manifest.json
  * 3. Parse LLM response for manifest data
  */
@@ -34,9 +34,11 @@ export class QALeadAgent extends BaseAgent {
     const autonomy = context.task.autonomy;
     const maxBudget = autonomy?.max_budget_usd ?? 2;
 
-    // Ensure tests/acceptance directory exists
+    // Ensure code/tests/acceptance directory exists
+    // Tests live inside the project directory (code/) so vitest and imports resolve naturally
     const artifactsDir = getArtifactsDir();
-    const testsDir = `${artifactsDir}/tests/acceptance`;
+    const codeDir = `${artifactsDir}/code`;
+    const testsDir = `${codeDir}/tests/acceptance`;
     fs.mkdirSync(testsDir, { recursive: true });
 
     // Build the prompt with all inputs
@@ -47,14 +49,20 @@ export class QALeadAgent extends BaseAgent {
     const toolPrompt = `${prompt}
 
 ## Working Directory
-The code output directory is: ${artifactsDir}
-Write all test files under: ${artifactsDir}/tests/acceptance/
+The project root directory is: ${codeDir}
+Write all test files under: ${codeDir}/tests/acceptance/
+
+## Import Path Convention
+Tests live inside the project directory (code/). Import paths are relative to the test file location within the project:
+- From \`tests/acceptance/features/foo.test.ts\`, import source as: \`import { X } from '../../../src/...';\`
+- From \`tests/acceptance/flows/foo.test.ts\`, same relative depth: \`import { X } from '../../../src/...';\`
+- From \`tests/acceptance/api/foo.test.ts\`, same: \`import { X } from '../../../src/...';\`
 
 ## Required Outputs
-1. Write test files to tests/acceptance/ using the Write tool:
-   - tests/acceptance/features/ — one test file per F-NNN feature
-   - tests/acceptance/flows/ — one test file per UX flow
-   - tests/acceptance/api/ — API contract tests
+1. Write test files to ${codeDir}/tests/acceptance/ using the Write tool:
+   - ${codeDir}/tests/acceptance/features/ — one test file per F-NNN feature
+   - ${codeDir}/tests/acceptance/flows/ — one test file per UX flow
+   - ${codeDir}/tests/acceptance/api/ — API contract tests
 2. After writing all test files, output your final response as JSON:
 \`\`\`json
 {
@@ -123,7 +131,7 @@ Write all test files under: ${artifactsDir}/tests/acceptance/
   }
 
   private countTestFiles(artifactsDir: string): number {
-    const testsDir = `${artifactsDir}/tests/acceptance`;
+    const testsDir = `${artifactsDir}/code/tests/acceptance`;
     try {
       return this.countFilesRecursive(testsDir);
     } catch {

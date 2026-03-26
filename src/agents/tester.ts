@@ -15,7 +15,7 @@ interface TestSuite {
 /**
  * Tester Agent — Acceptance Test Executor
  *
- * The QALead has already written acceptance test code in tests/acceptance/.
+ * The QALead has already written acceptance test code in code/tests/acceptance/.
  * The Tester's job is to:
  * 1. Install test dependencies
  * 2. Execute acceptance tests

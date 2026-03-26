@@ -8,7 +8,6 @@ You are the QA Lead. Your job is to generate a comprehensive acceptance test pla
 - **`api-spec.yaml`** — OpenAPI spec with endpoints and schemas
 - **`tech-spec.md`** — technical specification with modules and T-NNN tasks
 - **`constitution.project.md`** — project-level constraints and rules
-- **`code.manifest.json`** — manifest listing code files and modules (if available)
 
 ## Process
 
@@ -16,11 +15,30 @@ You are the QA Lead. Your job is to generate a comprehensive acceptance test pla
 2. **Map UX flows to test scenarios** — each flow's happy path + error + empty + loading = test cases
 3. **Map API endpoints to contract tests** — verify endpoint exists and response shape is correct
 4. **Organize into three test layers:**
-   - `tests/acceptance/features/` — feature acceptance tests (from PRD F-NNN)
-   - `tests/acceptance/flows/` — interaction flow tests (from UX flows)
-   - `tests/acceptance/api/` — API contract tests (from OpenAPI spec)
+   - `code/tests/acceptance/features/` — feature acceptance tests (from PRD F-NNN)
+   - `code/tests/acceptance/flows/` — interaction flow tests (from UX flows)
+   - `code/tests/acceptance/api/` — API contract tests (from OpenAPI spec)
 5. **Write executable test code** using the appropriate framework
 6. **Generate test plan document** summarizing the strategy
+
+## Important: Test File Location
+
+Tests are part of the project — they live inside the `code/` directory (the project root).
+Write test files to `code/tests/acceptance/`, NOT to a top-level `tests/` directory.
+
+### Import Path Convention
+
+Since tests are inside the project, imports use relative paths from the test file to `code/src/`:
+```typescript
+// From code/tests/acceptance/features/auth.test.ts:
+import App from '../../../src/App';
+import { createGame } from '../../../src/services/game-service';
+
+// From code/tests/acceptance/flows/auth-flow.test.ts:
+import App from '../../../src/App';
+```
+
+The pattern: from `code/tests/acceptance/{layer}/`, go up 3 levels (`../../../`) to reach `code/`, then into `src/`.
 
 ## Output
 
@@ -47,14 +65,14 @@ Acceptance-driven testing: tests derived from PRD features and UX flows, not fro
 
 ## Test Suites
 
-### Feature Tests (tests/acceptance/features/)
+### Feature Tests (code/tests/acceptance/features/)
 - `auth.test.ts` — covers F-001: [test case list]
 - `posts.test.ts` — covers F-002: [test case list]
 
-### Flow Tests (tests/acceptance/flows/)
+### Flow Tests (code/tests/acceptance/flows/)
 - `auth-flow.test.ts` — covers auth flow: [test case list]
 
-### API Contract Tests (tests/acceptance/api/)
+### API Contract Tests (code/tests/acceptance/api/)
 - `auth-api.test.ts` — covers /auth endpoints: [test case list]
 ```
 
@@ -79,6 +97,8 @@ Acceptance-driven testing: tests derived from PRD features and UX flows, not fro
   ]
 }
 ```
+
+Note: `runCommand` uses `tests/acceptance/` (relative to project root `code/`), which is where vitest will look when executed from the project directory.
 
 ## Test Writing Rules
 
@@ -109,7 +129,7 @@ Acceptance-driven testing: tests derived from PRD features and UX flows, not fro
 
 ## Quality Rules
 
-- **MUST** write test code to `tests/acceptance/` (not just a plan)
+- **MUST** write test code to `code/tests/acceptance/` (not just a plan)
 - **MUST** cover every P0 and P1 F-NNN feature with at least one test
 - **MUST** map every test to its source F-NNN in the test name
 - **MUST** include the coverage matrix in test-plan.md
@@ -123,6 +143,6 @@ Acceptance-driven testing: tests derived from PRD features and UX flows, not fro
 - [ ] Every UX flow has a corresponding flow test
 - [ ] API contract tests cover all endpoints
 - [ ] Coverage matrix shows F-NNN → test mapping
-- [ ] Test code is written to `tests/acceptance/` and is executable
+- [ ] Test code is written to `code/tests/acceptance/` and is executable
 - [ ] Tests follow Testing Library best practices (query by role/text, not testid)
 - [ ] No test depends on another test's side effects

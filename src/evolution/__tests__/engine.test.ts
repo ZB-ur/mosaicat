@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
+import path from 'node:path';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-provider.js';
 import { Logger } from '../../core/logger.js';
 import { EvolutionEngine } from '../engine.js';
-
-const STATE_DIR = '.mosaic/evolution';
-const STATE_FILE = '.mosaic/evolution/state.json';
+import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
+import { initArtifactsDir, getArtifactsDir } from '../../core/artifact.js';
 
 class StubEvolutionProvider implements LLMProvider {
   response: string = '[]';
@@ -15,19 +15,20 @@ class StubEvolutionProvider implements LLMProvider {
   }
 }
 
-function setupArtifacts(runId: string) {
-  fs.mkdirSync('.mosaic/artifacts', { recursive: true });
+function setupArtifacts(runId: string, tmpRoot: string) {
+  const artifactsDir = getArtifactsDir();
   fs.writeFileSync(
-    '.mosaic/artifacts/validation-report.md',
+    path.join(artifactsDir, 'validation-report.md'),
     '## Validation Summary\n- Status: PASS\n- Checks passed: 4/4'
   );
   fs.writeFileSync(
-    '.mosaic/artifacts/research.manifest.json',
+    path.join(artifactsDir, 'research.manifest.json'),
     JSON.stringify({ competitors: ['A'], key_insights: ['test'] })
   );
-  fs.mkdirSync(`.mosaic/logs/${runId}`, { recursive: true });
+  const logsDir = path.join(tmpRoot, 'logs', runId);
+  fs.mkdirSync(logsDir, { recursive: true });
   fs.writeFileSync(
-    `.mosaic/logs/${runId}/pipeline.log`,
+    path.join(logsDir, 'pipeline.log'),
     'stage:start researcher\nstage:complete researcher\n'
   );
 }
@@ -35,21 +36,19 @@ function setupArtifacts(runId: string) {
 describe('EvolutionEngine', () => {
   let provider: StubEvolutionProvider;
   let logger: Logger;
+  let tmpRoot: string;
   const runId = 'run-test-evo';
 
   beforeEach(() => {
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    tmpRoot = createTestMosaicDir();
+    initArtifactsDir(runId);
     provider = new StubEvolutionProvider();
-    logger = new Logger(runId);
+    logger = new Logger(runId, path.join(tmpRoot, 'logs'));
   });
 
   afterEach(async () => {
     await logger.close();
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    cleanupTestMosaicDir(tmpRoot);
   });
 
   it('returns empty array when no artifacts exist', async () => {
@@ -59,7 +58,7 @@ describe('EvolutionEngine', () => {
   });
 
   it('calls LLM with pipeline summary and parses proposals', async () => {
-    setupArtifacts(runId);
+    setupArtifacts(runId, tmpRoot);
 
     provider.response = JSON.stringify([
       {
@@ -81,7 +80,7 @@ describe('EvolutionEngine', () => {
   });
 
   it('parses proposals wrapped in markdown code blocks', async () => {
-    setupArtifacts(runId);
+    setupArtifacts(runId, tmpRoot);
 
     provider.response = '```json\n' + JSON.stringify([
       {
@@ -101,7 +100,7 @@ describe('EvolutionEngine', () => {
   });
 
   it('returns empty array on invalid JSON response', async () => {
-    setupArtifacts(runId);
+    setupArtifacts(runId, tmpRoot);
     provider.response = 'This is not valid JSON at all.';
 
     const engine = new EvolutionEngine(provider, logger);
@@ -110,7 +109,7 @@ describe('EvolutionEngine', () => {
   });
 
   it('filters invalid candidates via Zod validation', async () => {
-    setupArtifacts(runId);
+    setupArtifacts(runId, tmpRoot);
 
     provider.response = JSON.stringify([
       { type: 'invalid_type', agentStage: 'researcher', reason: 'test', proposedContent: 'test' },
@@ -126,7 +125,7 @@ describe('EvolutionEngine', () => {
 
   describe('cooldown enforcement', () => {
     it('blocks prompt_modification within cooldown period', async () => {
-      setupArtifacts(runId);
+      setupArtifacts(runId, tmpRoot);
 
       // First analysis — should produce a proposal
       provider.response = JSON.stringify([
@@ -152,7 +151,7 @@ describe('EvolutionEngine', () => {
     });
 
     it('allows skill_creation without cooldown', async () => {
-      setupArtifacts(runId);
+      setupArtifacts(runId, tmpRoot);
 
       provider.response = JSON.stringify([
         { type: 'skill_creation', agentStage: 'researcher', reason: 'first', proposedContent: 'skill1', skillMetadata: { name: 's1', scope: 'shared', description: 'd1' } },
@@ -178,7 +177,7 @@ describe('EvolutionEngine', () => {
 
   describe('max-1-pending-per-agent', () => {
     it('blocks second proposal for same agent when first is pending', async () => {
-      setupArtifacts(runId);
+      setupArtifacts(runId, tmpRoot);
 
       provider.response = JSON.stringify([
         { type: 'skill_creation', agentStage: 'researcher', reason: 'first', proposedContent: 'skill1', skillMetadata: { name: 's1', scope: 'shared', description: 'd1' } },
@@ -215,7 +214,7 @@ describe('EvolutionEngine', () => {
     });
 
     it('persists proposals across analyze calls', async () => {
-      setupArtifacts(runId);
+      setupArtifacts(runId, tmpRoot);
 
       provider.response = JSON.stringify([
         { type: 'prompt_modification', agentStage: 'researcher', reason: 'test', proposedContent: 'new prompt' },
@@ -231,7 +230,7 @@ describe('EvolutionEngine', () => {
   });
 
   it('handles LLM call failure gracefully', async () => {
-    setupArtifacts(runId);
+    setupArtifacts(runId, tmpRoot);
 
     const failingProvider: LLMProvider = {
       async call(): Promise<LLMResponse> { throw new Error('LLM unavailable'); },

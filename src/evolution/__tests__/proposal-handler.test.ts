@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
+import path from 'node:path';
 import type { StageName, GateResult } from '../../core/types.js';
 import type { InteractionHandler, EvolutionApprovalResult } from '../../core/interaction-handler.js';
 import type { EvolutionProposal } from '../types.js';
@@ -9,6 +10,7 @@ import { Logger } from '../../core/logger.js';
 import { listPromptVersions } from '../prompt-versioning.js';
 import { listSkills } from '../skill-manager.js';
 import { eventBus } from '../../core/event-bus.js';
+import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
 
 const PROMPT_FILE = '.claude/agents/mosaic/researcher.md';
 
@@ -45,21 +47,18 @@ function makeProposal(overrides: Partial<EvolutionProposal> = {}): EvolutionProp
 describe('ProposalHandler', () => {
   let originalContent: string;
   let logger: Logger;
+  let tmpRoot: string;
 
   beforeEach(() => {
     originalContent = fs.readFileSync(PROMPT_FILE, 'utf-8');
-    if (fs.existsSync('.mosaic/evolution')) {
-      fs.rmSync('.mosaic/evolution', { recursive: true });
-    }
-    logger = new Logger('test-proposal');
+    tmpRoot = createTestMosaicDir();
+    logger = new Logger('test-proposal', path.join(tmpRoot, 'logs'));
   });
 
   afterEach(async () => {
     fs.writeFileSync(PROMPT_FILE, originalContent);
     await logger.close();
-    if (fs.existsSync('.mosaic/evolution')) {
-      fs.rmSync('.mosaic/evolution', { recursive: true });
-    }
+    cleanupTestMosaicDir(tmpRoot);
     eventBus.removeAllListeners();
   });
 

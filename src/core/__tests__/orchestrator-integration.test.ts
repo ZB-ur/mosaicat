@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../llm-provider.js';
 import { Orchestrator } from '../orchestrator.js';
 import { DEFAULT_STAGES } from '../types.js';
+import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
+import { getArtifactsDir } from '../artifact.js';
 
 // Mock provider — routes UIDesigner sub-phases by system prompt
 class MockLLMProvider implements LLMProvider {
@@ -148,26 +150,21 @@ vi.mock('../agent-factory.js', async () => {
   };
 });
 
-const ARTIFACTS_DIR = '.mosaic/artifacts';
-const SNAPSHOTS_DIR = '.mosaic/snapshots';
-
 describe('Orchestrator Integration (Mock LLM)', () => {
+  let tmpRoot: string;
+
   beforeEach(() => {
-    // Clean up artifacts and snapshots
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    tmpRoot = createTestMosaicDir();
   });
 
   afterEach(() => {
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    cleanupTestMosaicDir(tmpRoot);
   });
 
   it('should run full pipeline with mock LLM and produce all artifacts', async () => {
     const orchestrator = new Orchestrator();
     const result = await orchestrator.run('做一个博客系统', true);
+    const ARTIFACTS_DIR = getArtifactsDir();
 
     // Pipeline completed
     expect(result.completedAt).toBeDefined();
@@ -226,8 +223,11 @@ describe('Orchestrator Integration (Mock LLM)', () => {
     await orchestrator.run('做一个博客系统', true);
 
     // Snapshots directory should exist with entries
+    const SNAPSHOTS_DIR = '.mosaic/snapshots';
     expect(fs.existsSync(SNAPSHOTS_DIR)).toBe(true);
     const snapshots = fs.readdirSync(SNAPSHOTS_DIR);
     expect(snapshots.length).toBe(6); // One per stage
+    // Clean up snapshots (not covered by temp dir isolation)
+    fs.rmSync(SNAPSHOTS_DIR, { recursive: true, force: true });
   }, 60000);
 });

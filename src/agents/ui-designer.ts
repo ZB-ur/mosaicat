@@ -8,13 +8,13 @@ import { eventBus } from '../core/event-bus.js';
 import type { ReviewComment } from '../core/types.js';
 import { readArtifact, artifactExists, getArtifactsDir } from '../core/artifact.js';
 import { UIPlanSchema, type UIPlan, type UIPlanComponent } from './ui-plan-schema.js';
-import { trimApiSpec } from './ui-api-trimmer.js';
+import { trimApiSpec, extractSchemasOnly } from './ui-api-trimmer.js';
 
 const PLANNER_PROMPT_PATH = '.claude/agents/mosaic/ui-planner.md';
 const BUILDER_PROMPT_PATH = '.claude/agents/mosaic/ui-builder.md';
 
-/** Max atomic components per batch */
-const ATOMIC_BATCH_SIZE = 6;
+/** Max components per batch (atomic and composite alike) */
+const MAX_BATCH_SIZE = 6;
 
 export class UIDesignerAgent extends BaseAgent {
   getOutputSpec(): OutputSpec {
@@ -448,13 +448,22 @@ export class UIDesignerAgent extends BaseAgent {
     const batches: UIPlanComponent[][] = [];
 
     // Atomic: fixed-size batches
-    for (let i = 0; i < atomic.length; i += ATOMIC_BATCH_SIZE) {
-      batches.push(atomic.slice(i, i + ATOMIC_BATCH_SIZE));
+    for (let i = 0; i < atomic.length; i += MAX_BATCH_SIZE) {
+      batches.push(atomic.slice(i, i + MAX_BATCH_SIZE));
     }
 
-    // Composite: group by module, fall back to parent
+    // Composite: group by module, fall back to parent, then cap each group
     const compositeGroups = this.groupComposites(composite, plan);
-    batches.push(...compositeGroups);
+    for (const group of compositeGroups) {
+      if (group.length <= MAX_BATCH_SIZE) {
+        batches.push(group);
+      } else {
+        // Split oversized groups into chunks of MAX_BATCH_SIZE
+        for (let i = 0; i < group.length; i += MAX_BATCH_SIZE) {
+          batches.push(group.slice(i, i + MAX_BATCH_SIZE));
+        }
+      }
+    }
 
     // Page: each is its own batch (built individually)
     for (const comp of page) {
@@ -697,10 +706,23 @@ If you need clarification about design direction, use a CLARIFICATION block inst
       sections.push(`## Design Tokens\n\`\`\`json\n${JSON.stringify(plan.design_tokens, null, 2)}\n\`\`\``);
     }
 
-    // API spec for data binding context
+    // Layered API spec injection based on component category:
+    // - atomic: no api-spec (pure UI, props are primitive types passed by parent)
+    // - composite: schemas only (data type definitions, no endpoint details)
+    // - page: trimmed endpoints + schemas (pages handle data fetching)
     const apiSpec = context.inputArtifacts.get('api-spec.yaml');
-    if (apiSpec) {
-      sections.push(`## API Specification\n${apiSpec}`);
+    if (apiSpec && comp.category !== 'atomic') {
+      if (comp.category === 'page') {
+        const prd = context.inputArtifacts.get('prd.md') ?? '';
+        const trimmed = trimApiSpec(apiSpec, comp.covers_features, prd);
+        sections.push(`## API Specification\n${trimmed}`);
+      } else {
+        // composite — schemas only
+        const schemas = extractSchemasOnly(apiSpec);
+        if (schemas) {
+          sections.push(`## Data Type Definitions (from API spec schemas)\n\`\`\`yaml\n${schemas}\`\`\``);
+        }
+      }
     }
 
     // Output requirements
@@ -737,13 +759,23 @@ Produce exactly 2 ARTIFACT blocks:
       sections.push(`## Design Tokens\n\`\`\`json\n${JSON.stringify(plan.design_tokens, null, 2)}\n\`\`\``);
     }
 
-    // Trimmed API spec based on batch's collective feature coverage
+    // Layered API spec injection based on batch category
+    // Batch components share the same category (batching groups by category)
+    const batchCategory = batch[0]?.category ?? 'composite';
     const apiSpec = context.inputArtifacts.get('api-spec.yaml');
-    if (apiSpec) {
-      const batchFeatureIds = [...new Set(batch.flatMap(c => c.covers_features))];
-      const prd = context.inputArtifacts.get('prd.md') ?? '';
-      const trimmed = trimApiSpec(apiSpec, batchFeatureIds, prd);
-      sections.push(`## API Specification\n${trimmed}`);
+    if (apiSpec && batchCategory !== 'atomic') {
+      if (batchCategory === 'page') {
+        const batchFeatureIds = [...new Set(batch.flatMap(c => c.covers_features))];
+        const prd = context.inputArtifacts.get('prd.md') ?? '';
+        const trimmed = trimApiSpec(apiSpec, batchFeatureIds, prd);
+        sections.push(`## API Specification\n${trimmed}`);
+      } else {
+        // composite — schemas only
+        const schemas = extractSchemasOnly(apiSpec);
+        if (schemas) {
+          sections.push(`## Data Type Definitions (from API spec schemas)\n\`\`\`yaml\n${schemas}\`\`\``);
+        }
+      }
     }
 
     // Batch output requirements — 2 ARTIFACT blocks per component

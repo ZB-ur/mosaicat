@@ -249,12 +249,12 @@ export class CoderAgent extends BaseAgent {
     fixBudgetUsd: number,
   ): Promise<void> {
     const codeDir = `${getArtifactsDir()}/code`;
-    const testsDir = `${getArtifactsDir()}/tests/acceptance`;
+    const testsDir = `${codeDir}/tests/acceptance`;
 
-    // Check if acceptance tests exist
+    // Check if acceptance tests exist (tests live inside code/ project directory)
     if (!fs.existsSync(testsDir)) {
       this.logger.agent(this.stage, 'info', 'acceptance:skipped', {
-        reason: 'no tests/acceptance/ directory',
+        reason: 'no code/tests/acceptance/ directory',
       });
       return;
     }

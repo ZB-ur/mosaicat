@@ -4,6 +4,7 @@ import type { StageName } from './types.js';
 export interface PipelineEvents {
   'stage:start': (stage: StageName, runId: string) => void;
   'stage:complete': (stage: StageName, runId: string) => void;
+  'stage:skipped': (stage: StageName, runId: string) => void;
   'stage:failed': (stage: StageName, runId: string, error: string) => void;
   'stage:awaiting_human': (stage: StageName, runId: string) => void;
   'stage:approved': (stage: StageName, runId: string) => void;
