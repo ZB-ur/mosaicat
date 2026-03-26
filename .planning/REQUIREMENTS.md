@@ -9,7 +9,7 @@
 
 - [x] **TEST-01**: 消除所有测试文件中的 `as any` 类型转换，创建 typed mock factories (`createTestContext()`, `createMockProvider()`)
 - [x] **TEST-02**: 编写 resume 流程集成测试，覆盖 `resumeRun()`、`--from` stage reset、artifact cleanup
-- [ ] **TEST-03**: 添加 canary 集成测试（使用真实模块除 LLM 外），验证端到端 pipeline 执行
+- [x] **TEST-03**: 添加 canary 集成测试（使用真实模块除 LLM 外），验证端到端 pipeline 执行
 - [ ] **TEST-04**: 编写 Coder shell 命令执行路径测试（setup/build/verify/smoke-test）
 
 ### Error Handling
@@ -88,7 +88,7 @@
 |-------------|-------|--------|
 | TEST-01 | Phase 1 | Complete |
 | TEST-02 | Phase 1 | Complete |
-| TEST-03 | Phase 1 | Pending |
+| TEST-03 | Phase 1 | Complete |
 | TEST-04 | Phase 4 | Pending |
 | ERR-01 | Phase 2 | Pending |
 | ERR-02 | Phase 2 | Pending |
