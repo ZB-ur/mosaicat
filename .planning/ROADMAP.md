@@ -72,7 +72,11 @@ Plans:
   3. `BuildVerifier` runs compilation checks and build-fix loops independently -- its retry behavior is testable without the full Coder
   4. `SmokeRunner` performs HTTP probes and smoke tests as a standalone module with shell command execution path tests
   5. `coder.ts` is a thin facade (under 250 lines) that delegates to the 4 sub-modules -- all existing Coder behavior is preserved
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 04-01-PLAN.md — CoderDeps types + CoderPlanner + CoderBuilder sub-modules
+- [ ] 04-02-PLAN.md — BuildVerifier + SmokeRunner sub-modules with shell command tests (TEST-04)
+- [ ] 04-03-PLAN.md — Thin facade rewrite + delegation tests
 
 ### Phase 5: Orchestrator Facade + Logging Cleanup
 **Goal**: The Orchestrator is a thin wiring layer that creates RunContext and delegates to PipelineLoop -- all console output goes through Logger, EventBus is instance-scoped
@@ -95,5 +99,5 @@ Note: Phase 4 depends on Phase 2 (not Phase 3), so it could theoretically overla
 | 1. Test Infrastructure Hardening | 0/3 | Planning complete | - |
 | 2. Foundation Layer | 0/TBD | Not started | - |
 | 3. Execution Engine | 1/3 | In Progress|  |
-| 4. Coder Decomposition | 0/TBD | Not started | - |
+| 4. Coder Decomposition | 0/3 | Planning complete | - |
 | 5. Orchestrator Facade + Logging Cleanup | 0/TBD | Not started | - |
