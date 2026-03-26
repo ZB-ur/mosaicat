@@ -19,7 +19,7 @@ export interface InteractionHandler {
 
 export class CLIInteractionHandler implements InteractionHandler {
   async onManualGate(stage: StageName, _runId: string): Promise<GateResult> {
-    console.log(`\n\x1b[33m🔍 [${stage}] Review the artifacts above and decide:\x1b[0m\n`);
+    process.stdout.write(`\n\x1b[33m🔍 [${stage}] Review the artifacts above and decide:\x1b[0m\n\n`);
 
     const action = await select({
       message: 'Decision:',
@@ -67,15 +67,15 @@ export class CLIInteractionHandler implements InteractionHandler {
       const emoji = AGENT_EMOJI[stage] ?? '❓';
       const label = stage.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-      console.log(`\n\x1b[36m┌─ ${emoji} ${label} 需要确认 ${'─'.repeat(Math.max(0, 40 - label.length))}\x1b[0m`);
-      if (context) console.log(`\x1b[36m│\x1b[0m 上下文: ${context}`);
-      if (impact) console.log(`\x1b[36m│\x1b[0m 影响:   ${impact}`);
-      console.log(`\x1b[36m└${'─'.repeat(50)}\x1b[0m\n`);
+      process.stdout.write(`\n\x1b[36m┌─ ${emoji} ${label} 需要确认 ${'─'.repeat(Math.max(0, 40 - label.length))}\x1b[0m\n`);
+      if (context) process.stdout.write(`\x1b[36m│\x1b[0m 上下文: ${context}\n`);
+      if (impact) process.stdout.write(`\x1b[36m│\x1b[0m 影响:   ${impact}\n`);
+      process.stdout.write(`\x1b[36m└${'─'.repeat(50)}\x1b[0m\n\n`);
     } else {
-      console.log(`\n\x1b[33m❓ [${stage}] Agent needs your input:\x1b[0m\n`);
+      process.stdout.write(`\n\x1b[33m❓ [${stage}] Agent needs your input:\x1b[0m\n\n`);
     }
 
-    console.log(`   ${question}\n`);
+    process.stdout.write(`   ${question}\n\n`);
 
     if (options && options.length > 0) {
       const choices = options.map((opt) => ({
@@ -94,26 +94,26 @@ export class CLIInteractionHandler implements InteractionHandler {
 
       if (answer === '__custom__') {
         const custom = await input({ message: 'Your answer:' });
-        console.log(`\x1b[32m✓ 已选择: ${custom}\x1b[0m`);
+        process.stdout.write(`\x1b[32m✓ 已选择: ${custom}\x1b[0m\n`);
         return custom;
       }
 
-      console.log(`\x1b[32m✓ 已选择: ${answer}\x1b[0m`);
+      process.stdout.write(`\x1b[32m✓ 已选择: ${answer}\x1b[0m\n`);
       return answer;
     }
 
     const answer = await input({ message: 'Your answer:' });
-    console.log(`\x1b[32m✓ 已选择: ${answer}\x1b[0m`);
+    process.stdout.write(`\x1b[32m✓ 已选择: ${answer}\x1b[0m\n`);
     return answer;
   }
 
   async onEvolutionProposal(proposal: EvolutionProposal): Promise<EvolutionApprovalResult> {
-    console.log(`\n\x1b[35m[evolution]\x1b[0m ${proposal.type} proposal for ${proposal.agentStage}:`);
-    console.log(`  Reason: ${proposal.reason}`);
+    process.stdout.write(`\n\x1b[35m[evolution]\x1b[0m ${proposal.type} proposal for ${proposal.agentStage}:\n`);
+    process.stdout.write(`  Reason: ${proposal.reason}\n`);
     if (proposal.skillMetadata) {
-      console.log(`  Skill: ${proposal.skillMetadata.name} (${proposal.skillMetadata.scope})`);
+      process.stdout.write(`  Skill: ${proposal.skillMetadata.name} (${proposal.skillMetadata.scope})\n`);
     }
-    console.log(`  Content preview: ${proposal.proposedContent.slice(0, 200)}...`);
+    process.stdout.write(`  Content preview: ${proposal.proposedContent.slice(0, 200)}...\n`);
 
     const action = await select({
       message: 'Approve this evolution?',

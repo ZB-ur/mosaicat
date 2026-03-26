@@ -77,21 +77,21 @@ export function attachCLIProgress(eventBusInstance: EventBus): () => void {
 
   on('pipeline:start', (runId, stages, provider) => {
     if (stages) activeStages = stages;
-    console.log(`\n${BOLD}${CYAN}━━━ Mosaicat Pipeline ━━━${RESET}`);
-    console.log(`${DIM}Run: ${runId}${RESET}`);
-    if (provider) console.log(`${DIM}LLM: ${provider}${RESET}`);
-    console.log(`${DIM}Stages: ${activeStages.map((s, i) => `${i + 1}.${AGENT_LABELS[s]}`).join(' → ')}${RESET}\n`);
+    process.stdout.write(`\n${BOLD}${CYAN}━━━ Mosaicat Pipeline ━━━${RESET}\n`);
+    process.stdout.write(`${DIM}Run: ${runId}${RESET}\n`);
+    if (provider) process.stdout.write(`${DIM}LLM: ${provider}${RESET}\n`);
+    process.stdout.write(`${DIM}Stages: ${activeStages.map((s, i) => `${i + 1}.${AGENT_LABELS[s]}`).join(' → ')}${RESET}\n\n`);
   });
 
   on('pipeline:complete', (_runId) => {
     const elapsed = formatDuration(Date.now() - pipelineStart);
-    console.log(`\n${BOLD}${GREEN}✓ Pipeline complete${RESET} ${DIM}(${elapsed})${RESET}\n`);
+    process.stdout.write(`\n${BOLD}${GREEN}✓ Pipeline complete${RESET} ${DIM}(${elapsed})${RESET}\n\n`);
   });
 
   on('pipeline:failed', (_runId, error) => {
     const elapsed = formatDuration(Date.now() - pipelineStart);
-    console.log(`\n${BOLD}${RED}✗ Pipeline failed${RESET} ${DIM}(${elapsed})${RESET}`);
-    console.log(`  ${RED}${error}${RESET}\n`);
+    process.stdout.write(`\n${BOLD}${RED}✗ Pipeline failed${RESET} ${DIM}(${elapsed})${RESET}\n`);
+    process.stdout.write(`  ${RED}${error}${RESET}\n\n`);
   });
 
   // ── Stage ──
@@ -102,73 +102,73 @@ export function attachCLIProgress(eventBusInstance: EventBus): () => void {
     const label = AGENT_LABELS[stage];
     const desc = AGENT_DESC[stage];
     const total = activeStages.length;
-    console.log(`${BOLD}[${idx}/${total}] ${label}${RESET} ${DIM}— ${desc}${RESET}`);
+    process.stdout.write(`${BOLD}[${idx}/${total}] ${label}${RESET} ${DIM}— ${desc}${RESET}\n`);
   });
 
   on('stage:complete', (stage, _runId) => {
     const start = stageTimers.get(stage);
     const elapsed = start ? formatDuration(Date.now() - start) : '?';
-    console.log(`  ${GREEN}✓ done${RESET} ${DIM}(${elapsed})${RESET}\n`);
+    process.stdout.write(`  ${GREEN}✓ done${RESET} ${DIM}(${elapsed})${RESET}\n\n`);
   });
 
   on('stage:skipped', (stage, _runId) => {
     const idx = activeStages.indexOf(stage) + 1;
     const label = AGENT_LABELS[stage] ?? stage;
     const total = activeStages.length;
-    console.log(`${DIM}[${idx}/${total}] ${label} — ✓ cached${RESET}`);
+    process.stdout.write(`${DIM}[${idx}/${total}] ${label} — ✓ cached${RESET}\n`);
   });
 
   on('stage:failed', (stage, _runId, error) => {
-    console.log(`  ${RED}✗ failed: ${error}${RESET}`);
+    process.stdout.write(`  ${RED}✗ failed: ${error}${RESET}\n`);
   });
 
   on('stage:retry', (stage, _runId, attempt) => {
-    console.log(`  ${YELLOW}↻ retry #${attempt}${RESET}`);
+    process.stdout.write(`  ${YELLOW}↻ retry #${attempt}${RESET}\n`);
   });
 
   on('stage:rollback', (from, to, _runId) => {
-    console.log(`  ${RED}↩ rollback: ${AGENT_LABELS[from]} → ${AGENT_LABELS[to]}${RESET}`);
+    process.stdout.write(`  ${RED}↩ rollback: ${AGENT_LABELS[from]} → ${AGENT_LABELS[to]}${RESET}\n`);
   });
 
   on('stage:awaiting_human', (stage, _runId) => {
-    console.log(`  ${YELLOW}⏳ waiting for approval...${RESET}`);
-    console.log(`  ${DIM}   Review the artifacts above, then answer the prompt below.${RESET}`);
+    process.stdout.write(`  ${YELLOW}⏳ waiting for approval...${RESET}\n`);
+    process.stdout.write(`  ${DIM}   Review the artifacts above, then answer the prompt below.${RESET}\n`);
   });
 
   on('stage:approved', (_stage, _runId) => {
-    console.log(`  ${GREEN}✓ approved${RESET}`);
+    process.stdout.write(`  ${GREEN}✓ approved${RESET}\n`);
   });
 
   on('stage:rejected', (_stage, _runId) => {
-    console.log(`  ${RED}✗ rejected — re-running${RESET}`);
+    process.stdout.write(`  ${RED}✗ rejected — re-running${RESET}\n`);
   });
 
   // ── Agent ──
 
   on('agent:context', (stage, inputs) => {
     const inputList = inputs.length > 0 ? inputs.join(', ') : '(none)';
-    console.log(`  ${DIM}inputs: ${inputList}${RESET}`);
+    process.stdout.write(`  ${DIM}inputs: ${inputList}${RESET}\n`);
   });
 
   on('agent:thinking', (stage, promptLength) => {
-    console.log(`  ${MAGENTA}◆ thinking...${RESET} ${DIM}(prompt: ${formatBytes(promptLength)})${RESET}`);
+    process.stdout.write(`  ${MAGENTA}◆ thinking...${RESET} ${DIM}(prompt: ${formatBytes(promptLength)})${RESET}\n`);
   });
 
   on('agent:response', (stage, responseLength) => {
-    console.log(`  ${BLUE}◇ response received${RESET} ${DIM}(${formatBytes(responseLength)})${RESET}`);
+    process.stdout.write(`  ${BLUE}◇ response received${RESET} ${DIM}(${formatBytes(responseLength)})${RESET}\n`);
   });
 
   on('agent:progress', (_stage, message) => {
-    console.log(`  ${DIM}${message}${RESET}`);
+    process.stdout.write(`  ${DIM}${message}${RESET}\n`);
   });
 
   on('agent:clarification', (stage, question) => {
-    console.log(`  ${YELLOW}? clarification needed:${RESET} ${question}`);
+    process.stdout.write(`  ${YELLOW}? clarification needed:${RESET} ${question}\n`);
   });
 
   on('clarification:answered', (_stage, _question, answer, source) => {
     const sourceLabel = source === 'github' ? 'GitHub PR' : source;
-    console.log(`  ${CYAN}↳ 通过 ${sourceLabel} 回复: "${answer}"${RESET}`);
+    process.stdout.write(`  ${CYAN}↳ 通过 ${sourceLabel} 回复: "${answer}"${RESET}\n`);
   });
 
   // ── Agent Summary ──
@@ -176,13 +176,13 @@ export function attachCLIProgress(eventBusInstance: EventBus): () => void {
   on('agent:summary', (_stage, summary) => {
     // Display multi-line summaries with indentation
     for (const line of summary.split('\n')) {
-      console.log(`  ${DIM}→ ${line}${RESET}`);
+      process.stdout.write(`  ${DIM}→ ${line}${RESET}\n`);
     }
   });
 
   on('coder:fix-round', (round, totalTests, passedTests, approach) => {
     const failed = totalTests - passedTests;
-    console.log(`  ${YELLOW}↻ fix round ${round}:${RESET} ${passedTests}/${totalTests} passed, ${failed} failed — ${approach}`);
+    process.stdout.write(`  ${YELLOW}↻ fix round ${round}:${RESET} ${passedTests}/${totalTests} passed, ${failed} failed — ${approach}\n`);
   });
 
   // ── Artifacts ──
@@ -190,52 +190,52 @@ export function attachCLIProgress(eventBusInstance: EventBus): () => void {
   const presenter = new CLIArtifactPresenter();
 
   on('artifact:written', (stage, name, size) => {
-    console.log(`  ${CYAN}→${RESET} ${presenter.formatLink(name, size)}`);
+    process.stdout.write(`  ${CYAN}→${RESET} ${presenter.formatLink(name, size)}\n`);
   });
 
   on('manifest:written', (stage, name) => {
-    console.log(`  ${CYAN}→${RESET} ${name} ${DIM}(manifest)${RESET}`);
+    process.stdout.write(`  ${CYAN}→${RESET} ${name} ${DIM}(manifest)${RESET}\n`);
   });
 
   on('snapshot:created', (stage, _runId) => {
-    console.log(`  ${DIM}📸 snapshot saved${RESET}`);
+    process.stdout.write(`  ${DIM}📸 snapshot saved${RESET}\n`);
   });
 
   // ── Issues ──
 
   on('issue:created', (issueNumber, stage, _runId) => {
-    console.log(`  ${DIM}📋 issue #${issueNumber} created${RESET}`);
+    process.stdout.write(`  ${DIM}📋 issue #${issueNumber} created${RESET}\n`);
   });
 
   // ── Evolution ──
 
   on('evolution:analyzing', (_runId) => {
-    console.log(`\n${BOLD}${MAGENTA}◆ evolution: analyzing pipeline results...${RESET}`);
+    process.stdout.write(`\n${BOLD}${MAGENTA}◆ evolution: analyzing pipeline results...${RESET}\n`);
   });
 
   on('evolution:proposed', (proposalId, stage) => {
     const label = AGENT_LABELS[stage];
-    console.log(`  ${YELLOW}→ proposal: [${label}] ${proposalId}${RESET}`);
+    process.stdout.write(`  ${YELLOW}→ proposal: [${label}] ${proposalId}${RESET}\n`);
   });
 
   on('evolution:approved', (proposalId, stage) => {
     const label = AGENT_LABELS[stage];
-    console.log(`  ${GREEN}✓ approved: [${label}] ${proposalId}${RESET}`);
+    process.stdout.write(`  ${GREEN}✓ approved: [${label}] ${proposalId}${RESET}\n`);
   });
 
   on('evolution:rejected', (proposalId, stage) => {
     const label = AGENT_LABELS[stage];
-    console.log(`  ${RED}✗ rejected: [${label}] ${proposalId}${RESET}`);
+    process.stdout.write(`  ${RED}✗ rejected: [${label}] ${proposalId}${RESET}\n`);
   });
 
   on('evolution:proposals', (proposals) => {
     for (const p of proposals) {
-      console.log(`  ${YELLOW}→ ${p.type}: ${p.reason}${RESET} ${DIM}(${p.id})${RESET}`);
+      process.stdout.write(`  ${YELLOW}→ ${p.type}: ${p.reason}${RESET} ${DIM}(${p.id})${RESET}\n`);
     }
   });
 
   on('evolution:complete', (_runId, proposalCount) => {
-    console.log(`  ${DIM}evolution complete — ${proposalCount} proposal(s) processed${RESET}\n`);
+    process.stdout.write(`  ${DIM}evolution complete — ${proposalCount} proposal(s) processed${RESET}\n\n`);
   });
 
   // Return cleanup function
