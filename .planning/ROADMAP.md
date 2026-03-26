@@ -28,7 +28,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Zero `as any` type casts remain in test files -- all mocks use typed factory functions (`createTestContext()`, `createMockProvider()`)
   2. Resume flow has integration tests that exercise `resumeRun()`, `--from` stage reset, and artifact cleanup against real modules (not mocks)
   3. A canary integration test runs a full pipeline (all real modules except LLM, which uses a deterministic stub) and verifies artifacts land on disk
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 01-01-PLAN.md — Typed mock factories + eliminate all `as any` casts from test files
+- [ ] 01-02-PLAN.md — Resume flow integration tests (5 scenarios)
+- [ ] 01-03-PLAN.md — Full 13-stage canary E2E test + coverage baseline
 
 ### Phase 2: Foundation Layer
 **Goal**: The core building blocks for the rewrite exist and are proven -- artifact I/O is instance-scoped, errors are explicit, config is immutable, and a RunContext bundles everything per run
@@ -84,7 +88,7 @@ Note: Phase 4 depends on Phase 2 (not Phase 3), so it could theoretically overla
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Test Infrastructure Hardening | 0/TBD | Not started | - |
+| 1. Test Infrastructure Hardening | 0/3 | Planning complete | - |
 | 2. Foundation Layer | 0/TBD | Not started | - |
 | 3. Execution Engine | 0/TBD | Not started | - |
 | 4. Coder Decomposition | 0/TBD | Not started | - |
