@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
 import { buildContext } from '../context-manager.js';
 import type { AgentsConfig, Task } from '../types.js';
-import { writeArtifact, initArtifactsDir } from '../artifact.js';
-import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
+import { createTestArtifactStore, createMockLogger } from '../../__tests__/test-helpers.js';
+import type { ArtifactStore } from '../artifact-store.js';
+import type { Logger } from '../logger.js';
 
 const mockAgentsConfig: AgentsConfig = {
   agents: {
@@ -46,30 +48,33 @@ const mockAgentsConfig: AgentsConfig = {
 };
 
 describe('ContextManager', () => {
-  let tmpRoot: string;
+  let store: ArtifactStore;
+  let logger: Logger;
 
   beforeEach(() => {
-    tmpRoot = createTestMosaicDir();
-    initArtifactsDir('test-run');
+    store = createTestArtifactStore();
+    logger = createMockLogger();
   });
 
   afterEach(() => {
-    cleanupTestMosaicDir(tmpRoot);
+    if (store && fs.existsSync(store.runDir)) {
+      fs.rmSync(store.runDir, { recursive: true, force: true });
+    }
   });
 
   it('should include user_instruction for researcher', () => {
     const task: Task = { runId: 'run-1', stage: 'researcher', instruction: 'build a blog' };
-    const ctx = buildContext(mockAgentsConfig, task);
+    const ctx = buildContext(mockAgentsConfig, task, store, logger, true);
     expect(ctx.inputArtifacts.get('user_instruction')).toBe('build a blog');
     expect(ctx.inputArtifacts.size).toBe(1);
   });
 
   it('should only include contracted artifacts for ux_designer', () => {
-    writeArtifact('prd.md', 'PRD content');
-    writeArtifact('research.md', 'Research content — should NOT be visible');
+    store.write('prd.md', 'PRD content');
+    store.write('research.md', 'Research content — should NOT be visible');
 
     const task: Task = { runId: 'run-1', stage: 'ux_designer', instruction: 'test' };
-    const ctx = buildContext(mockAgentsConfig, task);
+    const ctx = buildContext(mockAgentsConfig, task, store, logger, true);
 
     expect(ctx.inputArtifacts.has('prd.md')).toBe(true);
     expect(ctx.inputArtifacts.has('research.md')).toBe(false);
@@ -77,7 +82,19 @@ describe('ContextManager', () => {
 
   it('should skip missing artifacts gracefully', () => {
     const task: Task = { runId: 'run-1', stage: 'api_designer', instruction: 'test' };
-    const ctx = buildContext(mockAgentsConfig, task);
+    const ctx = buildContext(mockAgentsConfig, task, store, logger, true);
     expect(ctx.inputArtifacts.size).toBe(0);
+  });
+
+  it('should throw when prompt file missing in non-dev mode', () => {
+    const task: Task = { runId: 'run-1', stage: 'researcher', instruction: 'test' };
+    expect(() => buildContext(mockAgentsConfig, task, store, logger, false)).toThrow('Required prompt file missing');
+  });
+
+  it('should warn when prompt file missing in dev mode', () => {
+    const task: Task = { runId: 'run-1', stage: 'researcher', instruction: 'test' };
+    const ctx = buildContext(mockAgentsConfig, task, store, logger, true);
+    expect(ctx.systemPrompt).toContain('You are the Researcher agent.');
+    expect(logger.pipeline).toHaveBeenCalledWith('warn', 'context:prompt-missing', expect.any(Object));
   });
 });

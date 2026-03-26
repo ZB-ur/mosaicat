@@ -11,6 +11,9 @@ import { vi } from 'vitest';
 import type { LLMProvider, LLMResponse } from '../core/llm-provider.js';
 import type { Logger } from '../core/logger.js';
 import type { PipelineConfig } from '../core/types.js';
+import type { RunContext } from '../core/run-context.js';
+import { ArtifactStore } from '../core/artifact-store.js';
+import { EventBus } from '../core/event-bus.js';
 import { setBaseDir, resetBaseDir } from '../core/artifact.js';
 
 /**
@@ -34,6 +37,14 @@ export function cleanupTestMosaicDir(tmpRoot: string): void {
   if (tmpRoot && fs.existsSync(tmpRoot)) {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
+}
+
+/**
+ * Create an isolated ArtifactStore backed by a temp directory.
+ */
+export function createTestArtifactStore(runId = 'test-run'): ArtifactStore {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mosaic-test-'));
+  return new ArtifactStore(tmpRoot, runId);
 }
 
 // --- Typed Mock Factories ---
@@ -73,8 +84,26 @@ export function createMockLogger(): Logger {
 }
 
 /**
+ * Create a RunContext with sensible test defaults.
+ * All fields can be overridden.
+ */
+export function createTestRunContext(overrides?: Partial<RunContext>): RunContext {
+  const store = overrides?.store ?? createTestArtifactStore();
+  return {
+    store,
+    logger: overrides?.logger ?? createMockLogger(),
+    provider: overrides?.provider ?? createMockProvider(),
+    eventBus: overrides?.eventBus ?? new EventBus(),
+    config: overrides?.config ?? createTestPipelineConfig(),
+    signal: overrides?.signal ?? new AbortController().signal,
+    devMode: overrides?.devMode ?? true,
+  };
+}
+
+/**
  * Create a test context with provider, logger, and pipeline config.
  * All fields have sensible defaults that can be overridden.
+ * @deprecated Use createTestRunContext() for new code.
  */
 export function createTestContext(overrides?: {
   provider?: LLMProvider;

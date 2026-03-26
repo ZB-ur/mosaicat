@@ -57,5 +57,11 @@ class EventBus {
   }
 }
 
+/**
+ * Legacy singleton — kept for non-agent callers (orchestrator, cli-progress, etc.).
+ * Agent layer now receives EventBus via RunContext. Will be removed in Plan 04.
+ * @deprecated Use RunContext.eventBus instead.
+ */
 export const eventBus = new EventBus();
+
 export { EventBus };

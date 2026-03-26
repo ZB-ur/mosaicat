@@ -27,6 +27,7 @@ import { generatePRBody } from './pr-body-generator.js';
 import { extractManifestSummary } from './manifest.js';
 import { IntentConsultantAgent } from '../agents/intent-consultant.js';
 import { artifactExists, readArtifact, writeArtifact, initArtifactsDir, getArtifactsDir } from './artifact.js';
+import { ArtifactStore } from './artifact-store.js';
 import { loadUserLLMConfig } from './llm-config-store.js';
 import { logRetry, classifyError } from './retry-log.js';
 import { RetryingProvider } from './retrying-provider.js';
@@ -435,7 +436,9 @@ export class Orchestrator {
       // Build context (artifact isolation)
       const agentConfig = this.agentsConfig.agents[stage];
       const task = { runId: run.id, stage, instruction: run.instruction, autonomy: agentConfig?.autonomy };
-      const context = buildContext(this.agentsConfig, task);
+      // Bridge: create ArtifactStore pointing at existing artifacts dir for backward compat
+      const bridgeStore = Object.assign(Object.create(ArtifactStore.prototype), { runDir: getArtifactsDir() }) as ArtifactStore;
+      const context = buildContext(this.agentsConfig, task, bridgeStore, logger, false);
 
       // Create and execute agent (with clarification handling)
       await this.executeAgent(run, stage, provider, logger, context);
