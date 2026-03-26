@@ -56,5 +56,12 @@ class EventBus {
   }
 }
 
+/**
+ * @deprecated Use RunContext.eventBus (instance-scoped) instead.
+ * This singleton remains only for backward compatibility with production code
+ * that has not yet been migrated to instance-based EventBus via RunContext.
+ * Will be removed once all consumers are migrated.
+ */
 export const eventBus = new EventBus();
+
 export { EventBus };
