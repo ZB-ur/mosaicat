@@ -6,6 +6,7 @@ import type { FixLoopRunner } from './fix-loop-runner.js';
 export interface PipelineLoopCallbacks {
   savePipelineState: (run: PipelineRun, fixLoopRound?: number) => void;
   onStageExhausted?: (stage: StageName, retryCount: number, error: string) => Promise<'retry' | 'skip' | 'abort'>;
+  onStageComplete?: (stage: StageName, run: PipelineRun) => Promise<void>;
 }
 
 /**
@@ -49,6 +50,9 @@ export class PipelineLoop {
         case 'done':
         case 'skipped':
           this.callbacks.savePipelineState(pipelineRun);
+          if (outcome.type === 'done' && this.callbacks.onStageComplete) {
+            await this.callbacks.onStageComplete(stage, pipelineRun);
+          }
           i++;
           break;
 

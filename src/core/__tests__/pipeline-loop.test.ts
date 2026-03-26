@@ -278,6 +278,46 @@ describe('PipelineLoop', () => {
     expect(fixLoopSaves[1][1]).toBe(2);
   });
 
+  it('calls onStageComplete callback after stage completes with done outcome', async () => {
+    const executor = createMockExecutor([
+      { type: 'done' },
+      { type: 'done' },
+      { type: 'done' },
+    ]);
+    const fixRunner = createMockFixRunner();
+    const onStageComplete = vi.fn().mockResolvedValue(undefined);
+    const callbacks = createCallbacks({ onStageComplete });
+
+    const loop = new PipelineLoop(executor, fixRunner, ctx, callbacks);
+    await loop.run(run, TEST_STAGES);
+
+    expect(onStageComplete).toHaveBeenCalledTimes(3);
+    expect(onStageComplete.mock.calls[0][0]).toBe('intent_consultant');
+    expect(onStageComplete.mock.calls[1][0]).toBe('researcher');
+    expect(onStageComplete.mock.calls[2][0]).toBe('product_owner');
+    // Second argument should be the run object
+    expect(onStageComplete.mock.calls[0][1]).toBe(run);
+  });
+
+  it('does not call onStageComplete for skipped stages', async () => {
+    const executor = createMockExecutor([
+      { type: 'skipped' },
+      { type: 'done' },
+      { type: 'done' },
+    ]);
+    const fixRunner = createMockFixRunner();
+    const onStageComplete = vi.fn().mockResolvedValue(undefined);
+    const callbacks = createCallbacks({ onStageComplete });
+
+    const loop = new PipelineLoop(executor, fixRunner, ctx, callbacks);
+    await loop.run(run, TEST_STAGES);
+
+    // Only called for 'done' outcomes, not 'skipped'
+    expect(onStageComplete).toHaveBeenCalledTimes(2);
+    expect(onStageComplete.mock.calls[0][0]).toBe('researcher');
+    expect(onStageComplete.mock.calls[1][0]).toBe('product_owner');
+  });
+
   it('handles failed with retriesExhausted and retry decision', async () => {
     const executor = createMockExecutor([
       { type: 'failed', error: 'boom', retriesExhausted: true },
