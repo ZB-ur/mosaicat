@@ -30,7 +30,7 @@
 
 - [ ] **EXEC-01**: Orchestrator 用 `while` 迭代循环 + `StageOutcome` 判别联合类型替代递归 `executeStage`
 - [ ] **EXEC-02**: 提取 Tester→Coder 修复循环为独立 `FixLoopRunner`，消除循环索引操作
-- [ ] **EXEC-03**: 实现 `StageExecutor`（单 stage 执行 + 重试 + 门控处理）和 `PipelineLoop`（stage 编排）
+- [x] **EXEC-03**: 实现 `StageExecutor`（单 stage 执行 + 重试 + 门控处理）和 `PipelineLoop`（stage 编排）
 - [x] **EXEC-04**: RetryingProvider 设有限重试上限（默认 20 次）+ 熔断器（5 次连续失败后 OPEN，30s HALF_OPEN）
 - [x] **EXEC-05**: 实现 `ShutdownCoordinator`：SIGINT/SIGTERM → 完成当前 stage artifact 写入后优雅退出
 
@@ -100,7 +100,7 @@
 | STATE-04 | Phase 2 | Complete |
 | EXEC-01 | Phase 3 | Pending |
 | EXEC-02 | Phase 3 | Pending |
-| EXEC-03 | Phase 3 | Pending |
+| EXEC-03 | Phase 3 | Complete |
 | EXEC-04 | Phase 3 | Complete |
 | EXEC-05 | Phase 3 | Complete |
 | CODER-01 | Phase 4 | Pending |
