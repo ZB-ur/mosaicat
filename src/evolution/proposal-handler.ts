@@ -21,7 +21,8 @@ export class ProposalHandler {
   }
 
   async processProposals(proposals: EvolutionProposal[]): Promise<void> {
-    const state = this.engine.loadState();
+    const stateResult = this.engine.loadState();
+    const state = stateResult.ok ? stateResult.value : { proposals: [], promptVersions: {}, cooldowns: {} };
 
     for (const proposal of proposals) {
       eventBus.emit('evolution:proposed', proposal.id, proposal.agentStage);
@@ -62,7 +63,7 @@ export class ProposalHandler {
       }
 
       // Update proposal in state
-      const idx = state.proposals.findIndex((p) => p.id === proposal.id);
+      const idx = state.proposals.findIndex((p: EvolutionProposal) => p.id === proposal.id);
       if (idx >= 0) {
         state.proposals[idx] = proposal;
       }
