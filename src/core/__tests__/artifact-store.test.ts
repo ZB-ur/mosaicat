@@ -87,14 +87,16 @@ describe('ArtifactStore', () => {
 
     it('returns most recent run ID', async () => {
       const base = makeTmpDir();
-      // Create two run dirs with a time gap
-      fs.mkdirSync(path.join(base, 'run-old'), { recursive: true });
-      // Ensure different mtime
-      const laterDir = path.join(base, 'run-new');
-      fs.mkdirSync(laterDir, { recursive: true });
-      // Touch the newer dir to ensure it has a later mtime
+      // Create two run dirs with explicit time separation
+      const oldDir = path.join(base, 'run-old');
+      const newDir = path.join(base, 'run-new');
+      fs.mkdirSync(oldDir, { recursive: true });
+      fs.mkdirSync(newDir, { recursive: true });
+      // Set run-old to 10 seconds ago, run-new to now
+      const past = new Date(Date.now() - 10000);
       const now = new Date();
-      fs.utimesSync(laterDir, now, now);
+      fs.utimesSync(oldDir, past, past);
+      fs.utimesSync(newDir, now, now);
 
       expect(ArtifactStore.findLatestRun(base)).toBe('run-new');
     });

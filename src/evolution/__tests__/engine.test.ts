@@ -47,11 +47,15 @@ describe('EvolutionEngine', () => {
     initArtifactsDir(runId);
     provider = new StubEvolutionProvider();
     logger = new Logger(runId, path.join(tmpRoot, 'logs'));
+    // Clean up CWD-relative evolution state to isolate tests
+    if (fs.existsSync(STATE_FILE)) fs.unlinkSync(STATE_FILE);
   });
 
   afterEach(async () => {
     await logger.close();
     cleanupTestMosaicDir(tmpRoot);
+    // Clean up any state file written during the test
+    if (fs.existsSync(STATE_FILE)) fs.unlinkSync(STATE_FILE);
   });
 
   it('returns empty array when no artifacts exist', async () => {
