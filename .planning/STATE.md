@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 05-02-PLAN.md
-last_updated: "2026-03-26T22:46:44.114Z"
+status: verifying
+stopped_at: Completed 05-03-PLAN.md
+last_updated: "2026-03-26T23:08:31.101Z"
 last_activity: 2026-03-26
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 16
-  completed_plans: 15
+  completed_phases: 2
+  total_plans: 12
+  completed_plans: 13
   percent: 0
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 
 Phase: 05 (orchestrator-facade) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-03-26
 
 Progress: [..........] 0%
@@ -65,6 +65,7 @@ Progress: [..........] 0%
 | Phase 04 P03 | 38min | 2 tasks | 4 files |
 | Phase 05 P01 | 2min | 2 tasks | 4 files |
 | Phase 05 P02 | 5min | 2 tasks | 11 files |
+| Phase 05 P03 | 17min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,8 @@ Recent decisions affecting current work:
 - [Phase 04]: OutputGenerator extracted to keep facade under 250-line target
 - [Phase 05]: Retained EventBus singleton with stronger deprecation -- 15+ production files still import it, migration not in any phase 05 plan
 - [Phase 05]: console.warn -> process.stderr.write; 3 extra files (snapshot, git-publisher, retrying-provider) fixed beyond plan scope
+- [Phase 05]: Extract git/issue operations to OrchestratorGitOps to meet 200-line facade target
+- [Phase 05]: onStageComplete callback fires only for done outcomes, not skipped -- skipped stages have no artifacts to commit
 
 ### Pending Todos
 
@@ -110,6 +113,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-26T22:46:44.111Z
-Stopped at: Completed 05-02-PLAN.md
+Last session: 2026-03-26T23:08:31.098Z
+Stopped at: Completed 05-03-PLAN.md
 Resume file: None

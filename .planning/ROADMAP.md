@@ -90,7 +90,7 @@ Plans:
 Plans:
 - [x] 05-01-PLAN.md — EventBus singleton removal + infrastructure console.warn cleanup
 - [x] 05-02-PLAN.md — CLI presentation layer console.log replacement with process.stdout/stderr.write
-- [ ] 05-03-PLAN.md — Orchestrator facade rewrite + PipelineLoopCallbacks extension
+- [x] 05-03-PLAN.md — Orchestrator facade rewrite + PipelineLoopCallbacks extension
 
 ## Progress
 
