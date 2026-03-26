@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: verifying
-stopped_at: Phase 2 context gathered
-last_updated: "2026-03-26T17:35:14.110Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-03-26T18:21:48.566Z"
 last_activity: 2026-03-26
 progress:
   total_phases: 5
@@ -55,6 +55,7 @@ Progress: [..........] 0%
 | Phase 01 P01 | 21min | 2 tasks | 8 files |
 | Phase 01 P02 | 5min | 1 tasks | 1 files |
 | Phase 01 P03 | 57min | 2 tasks | 5 files |
+| Phase 02 P02 | 19min | 2 tasks | 30 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,9 @@ Recent decisions affecting current work:
 - [Phase 01]: Used as-unknown-as-Logger cast in createMockLogger (Logger is a class with private fields)
 - [Phase 01]: Used process.chdir for resume test isolation (ARTIFACTS_BASE is relative, vitest sequential)
 - [Phase 01]: Stub agent classes for complex BaseAgent subclasses in E2E tests (Coder, Tester, SecurityAuditor, QALead)
+- [Phase 02]: eventBus singleton kept with @deprecated for non-agent callers -- bridge until Plan 04
+- [Phase 02]: manifest.ts uses function overloads for backward-compatible gradual migration
+- [Phase 02]: Bridge RunContext pattern using Object.create(ArtifactStore.prototype) for orchestrator
 
 ### Pending Todos
 
@@ -82,6 +86,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-26T17:35:14.106Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-foundation-layer/02-CONTEXT.md
+Last session: 2026-03-26T18:21:48.563Z
+Stopped at: Completed 02-02-PLAN.md
+Resume file: None
