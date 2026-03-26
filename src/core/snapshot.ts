@@ -56,7 +56,7 @@ function copyDirSync(src: string, dest: string): void {
         fs.copyFileSync(srcPath, destPath);
       }
     } catch (err) {
-      console.warn(`[snapshot] Failed to copy ${srcPath}: ${err instanceof Error ? err.message : String(err)}`);
+      process.stderr.write(`[snapshot] Failed to copy ${srcPath}: ${err instanceof Error ? err.message : String(err)}\n`);
     }
   }
 }

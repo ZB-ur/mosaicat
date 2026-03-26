@@ -125,7 +125,7 @@ export class RetryingProvider implements LLMProvider {
         const delay = Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1) + jitter);
 
         const error = err instanceof Error ? err : new Error(String(err));
-        console.warn(`[retry] attempt ${attempt}, waiting ${Math.round(delay)}ms: ${error.message}`);
+        process.stderr.write(`[retry] attempt ${attempt}, waiting ${Math.round(delay)}ms: ${error.message}\n`);
 
         // Log retry to persistent retry-log
         logRetry({

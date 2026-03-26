@@ -52,20 +52,20 @@ Example:
  * Analyzes retry-log data, generates skill proposals via LLM, and lets user approve/reject.
  */
 export async function runEvolve(): Promise<void> {
-  console.log('\n━━━ Mosaicat Evolve ━━━\n');
+  process.stdout.write('\n━━━ Mosaicat Evolve ━━━\n');
 
   // Load failure stats from retry-log
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const stats = getFailureStats(thirtyDaysAgo);
 
   if (stats.length === 0) {
-    console.log('No retry data found in .mosaic/retry-log.jsonl (last 30 days).');
-    console.log('Run some pipelines first — retry events will be logged automatically.\n');
+    process.stdout.write('No retry data found in .mosaic/retry-log.jsonl (last 30 days).\n');
+    process.stdout.write('Run some pipelines first — retry events will be logged automatically.\n\n');
     return;
   }
 
   // Display failure pattern table
-  console.log(`Analyzing retry-log.jsonl (last 30 days)...\n`);
+  process.stdout.write(`Analyzing retry-log.jsonl (last 30 days)...\n`);
   printFailureTable(stats);
 
   // Show sample errors for top patterns
@@ -73,9 +73,9 @@ export async function runEvolve(): Promise<void> {
   for (let i = 0; i < topPatterns.length; i++) {
     const stat = topPatterns[i];
     if (stat.sampleErrors.length > 0) {
-      console.log(`\nSample errors for #${i + 1} (${stat.errorCategory}):`);
+      process.stdout.write(`\nSample errors for #${i + 1} (${stat.errorCategory}):\n`);
       for (const err of stat.sampleErrors) {
-        console.log(`  • ${err.slice(0, 120)}`);
+        process.stdout.write(`  • ${err.slice(0, 120)}\n`);
       }
     }
   }
@@ -90,12 +90,12 @@ export async function runEvolve(): Promise<void> {
   });
 
   if (!shouldGenerate) {
-    console.log('\nExiting.\n');
+    process.stdout.write('\nExiting.\n');
     return;
   }
 
   // Generate proposals via LLM
-  console.log('\nGenerating proposals... (1 LLM call)\n');
+  process.stdout.write('\nGenerating proposals... (1 LLM call)\n');
 
   const pipelineConfig = yaml.load(
     fs.readFileSync('config/pipeline.yaml', 'utf-8'),
@@ -106,12 +106,12 @@ export async function runEvolve(): Promise<void> {
   const proposals = await generateProposals(provider, stats);
 
   if (proposals.length === 0) {
-    console.log('No proposals generated. The LLM found no actionable patterns.\n');
+    process.stdout.write('No proposals generated. The LLM found no actionable patterns.\n');
     await logger.close();
     return;
   }
 
-  console.log(`━━━ Proposals (${proposals.length}) ━━━\n`);
+  process.stdout.write(`━━━ Proposals (${proposals.length}) ━━━\n`);
 
   // Interactive review
   let approved = 0;
@@ -119,19 +119,19 @@ export async function runEvolve(): Promise<void> {
 
   for (let i = 0; i < proposals.length; i++) {
     const proposal = proposals[i];
-    console.log(`[${i + 1}/${proposals.length}] 📦 ${proposal.name}`);
-    console.log(`  Scope:   ${proposal.scope} → ${proposal.agents.join(', ')}`);
-    console.log(`  Trigger: ${proposal.trigger}`);
-    console.log(`  Evidence: ${proposal.evidence}`);
-    console.log(`  ┌${'─'.repeat(48)}┐`);
+    process.stdout.write(`[${i + 1}/${proposals.length}] 📦 ${proposal.name}\n`);
+    process.stdout.write(`  Scope:   ${proposal.scope} → ${proposal.agents.join(', ')}\n`);
+    process.stdout.write(`  Trigger: ${proposal.trigger}\n`);
+    process.stdout.write(`  Evidence: ${proposal.evidence}\n`);
+    process.stdout.write(`  ┌${'─'.repeat(48)}┐\n`);
     const contentLines = proposal.content.split('\n').slice(0, 5);
     for (const line of contentLines) {
-      console.log(`  │ ${line.padEnd(46).slice(0, 46)} │`);
+      process.stdout.write(`  │ ${line.padEnd(46).slice(0, 46)} │\n`);
     }
     if (proposal.content.split('\n').length > 5) {
-      console.log(`  │ ${'...'.padEnd(46)} │`);
+      process.stdout.write(`  │ ${'...'.padEnd(46)} │\n`);
     }
-    console.log(`  └${'─'.repeat(48)}┘`);
+    process.stdout.write(`  └${'─'.repeat(48)}┘\n`);
 
     const action = await select({
       message: 'Action:',
@@ -144,7 +144,7 @@ export async function runEvolve(): Promise<void> {
     });
 
     if (action === 'details') {
-      console.log('\n' + proposal.content + '\n');
+      process.stdout.write('\n' + proposal.content + '\n');
       const afterDetails = await select({
         message: 'After review:',
         choices: [
@@ -155,10 +155,10 @@ export async function runEvolve(): Promise<void> {
       if (afterDetails === 'approve') {
         writeSkill(proposal);
         approved++;
-        console.log(`✓ Wrote config/skills/builtin/${proposal.name}/SKILL.md\n`);
+        process.stdout.write(`✓ Wrote config/skills/builtin/${proposal.name}/SKILL.md\n`);
       } else {
         rejected++;
-        console.log(`✗ Rejected: ${proposal.name}\n`);
+        process.stdout.write(`✗ Rejected: ${proposal.name}\n`);
       }
     } else if (action === 'edit') {
       const edited = await input({
@@ -168,18 +168,18 @@ export async function runEvolve(): Promise<void> {
       proposal.content = edited || proposal.content;
       writeSkill(proposal);
       approved++;
-      console.log(`✓ Wrote config/skills/builtin/${proposal.name}/SKILL.md\n`);
+      process.stdout.write(`✓ Wrote config/skills/builtin/${proposal.name}/SKILL.md\n`);
     } else if (action === 'approve') {
       writeSkill(proposal);
       approved++;
-      console.log(`✓ Wrote config/skills/builtin/${proposal.name}/SKILL.md\n`);
+      process.stdout.write(`✓ Wrote config/skills/builtin/${proposal.name}/SKILL.md\n`);
     } else {
       rejected++;
-      console.log(`✗ Rejected: ${proposal.name}\n`);
+      process.stdout.write(`✗ Rejected: ${proposal.name}\n`);
     }
   }
 
-  console.log(`\nSummary: ${approved} skill(s) created, ${rejected} rejected\n`);
+  process.stdout.write(`\nSummary: ${approved} skill(s) created, ${rejected} rejected\n`);
   await logger.close();
 }
 
@@ -216,7 +216,7 @@ async function generateProposals(
         typeof (p as SkillProposal).content === 'string',
     );
   } catch (err) {
-    console.error(`LLM call failed: ${err instanceof Error ? err.message : String(err)}`);
+    process.stderr.write(`LLM call failed: ${err instanceof Error ? err.message : String(err)}\n`);
     return [];
   }
 }
@@ -251,10 +251,10 @@ function writeSkill(proposal: SkillProposal): void {
 
 function printFailureTable(stats: FailureStat[]): void {
   const rows = stats.slice(0, 10);
-  console.log('┌──────────────────────────────────────────────────────────┐');
-  console.log('│ Top Failure Patterns                                     │');
-  console.log('│                                                          │');
-  console.log('│ #  Stage          Category        Count  Avg Rds  Resolved│');
+  process.stdout.write('┌──────────────────────────────────────────────────────────┐\n');
+  process.stdout.write('│ Top Failure Patterns                                     │\n');
+  process.stdout.write('│                                                          │\n');
+  process.stdout.write('│ #  Stage          Category        Count  Avg Rds  Resolved│\n');
 
   for (let i = 0; i < rows.length; i++) {
     const s = rows[i];
@@ -264,8 +264,8 @@ function printFailureTable(stats: FailureStat[]): void {
     const count = String(s.count).padEnd(6);
     const avg = String(s.avgAttempts).padEnd(8);
     const resolved = `${Math.round(s.resolvedRate * 100)}%`.padEnd(5);
-    console.log(`│ ${num} ${stage} ${cat} ${count} ${avg} ${resolved}   │`);
+    process.stdout.write(`│ ${num} ${stage} ${cat} ${count} ${avg} ${resolved}   │\n`);
   }
 
-  console.log('└──────────────────────────────────────────────────────────┘');
+  process.stdout.write('└──────────────────────────────────────────────────────────┘\n');
 }

@@ -86,11 +86,11 @@ const PROVIDERS: ProviderChoice[] = [
 export async function runSetup(): Promise<void> {
   const existing = loadUserLLMConfig();
 
-  console.log('\n\x1b[1m\x1b[36m━━━ Mosaicat LLM 配置 ━━━\x1b[0m\n');
+  process.stdout.write('\n\x1b[1m\x1b[36m━━━ Mosaicat LLM 配置 ━━━\x1b[0m\n');
 
   if (existing) {
-    console.log(`\x1b[2m当前配置: ${existing.provider}\x1b[0m`);
-    console.log(`\x1b[2m配置文件: ${getConfigPath()}\x1b[0m\n`);
+    process.stdout.write(`\x1b[2m当前配置: ${existing.provider}\x1b[0m\n`);
+    process.stdout.write(`\x1b[2m配置文件: ${getConfigPath()}\x1b[0m\n\n`);
   }
 
   // Step 1: Select provider
@@ -108,7 +108,7 @@ export async function runSetup(): Promise<void> {
 
   // Step 2: API key (if needed)
   if (provider.needsKey) {
-    console.log(`\n\x1b[2m获取 API Key: ${provider.keyEnvHint}\x1b[0m`);
+    process.stdout.write(`\n\x1b[2m获取 API Key: ${provider.keyEnvHint}\x1b[0m\n`);
 
     const apiKey = await password({
       message: 'API Key:',
@@ -116,14 +116,14 @@ export async function runSetup(): Promise<void> {
     });
 
     if (!apiKey.trim()) {
-      console.log('\x1b[31m✗ API Key 不能为空\x1b[0m');
+      process.stdout.write('\x1b[31m✗ API Key 不能为空\x1b[0m\n');
       process.exit(1);
     }
     config.apiKey = apiKey.trim();
   }
 
   // Step 3: Test connection
-  console.log('\n\x1b[2m测试连接...\x1b[0m');
+  process.stdout.write('\n\x1b[2m测试连接...\x1b[0m\n');
   const ok = await testConnection(config, provider);
 
   if (!ok) {
@@ -135,15 +135,15 @@ export async function runSetup(): Promise<void> {
       ],
     });
     if (!proceed) {
-      console.log('已取消。');
+      process.stdout.write('已取消。\n');
       return;
     }
   }
 
   // Step 5: Save
   saveUserLLMConfig(config);
-  console.log(`\n\x1b[32m✓ 配置已保存到 ${getConfigPath()}\x1b[0m`);
-  console.log('\x1b[2m现在可以运行: mosaicat run "你的需求"\x1b[0m\n');
+  process.stdout.write(`\n\x1b[32m✓ 配置已保存到 ${getConfigPath()}\x1b[0m\n`);
+  process.stdout.write('\x1b[2m现在可以运行: mosaicat run "你的需求"\x1b[0m\n\n');
 }
 
 async function testConnection(config: UserLLMConfig, provider: ProviderChoice): Promise<boolean> {
@@ -152,7 +152,7 @@ async function testConnection(config: UserLLMConfig, provider: ProviderChoice): 
       // Claude CLI: just check if the command exists
       const { execSync } = await import('node:child_process');
       execSync('claude --version', { stdio: 'pipe' });
-      console.log('\x1b[32m✓ Claude CLI 可用\x1b[0m');
+      process.stdout.write('\x1b[32m✓ Claude CLI 可用\x1b[0m\n');
       return true;
     }
 
@@ -165,7 +165,7 @@ async function testConnection(config: UserLLMConfig, provider: ProviderChoice): 
         messages: [{ role: 'user', content: 'Say "ok"' }],
       });
       const text = msg.content.find(b => b.type === 'text');
-      console.log(`\x1b[32m✓ Anthropic API 连接成功 (${msg.model})\x1b[0m`);
+      process.stdout.write(`\x1b[32m✓ Anthropic API 连接成功 (${msg.model})\x1b[0m\n`);
       return !!text;
     }
 
@@ -187,16 +187,16 @@ async function testConnection(config: UserLLMConfig, provider: ProviderChoice): 
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      console.log(`\x1b[31m✗ API 返回 ${response.status}: ${text.slice(0, 200)}\x1b[0m`);
+      process.stdout.write(`\x1b[31m✗ API 返回 ${response.status}: ${text.slice(0, 200)}\x1b[0m\n`);
       return false;
     }
 
     const data = await response.json() as { model?: string };
-    console.log(`\x1b[32m✓ 连接成功 (${data.model ?? model})\x1b[0m`);
+    process.stdout.write(`\x1b[32m✓ 连接成功 (${data.model ?? model})\x1b[0m\n`);
     return true;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.log(`\x1b[31m✗ 连接失败: ${msg}\x1b[0m`);
+    process.stdout.write(`\x1b[31m✗ 连接失败: ${msg}\x1b[0m\n`);
     return false;
   }
 }
