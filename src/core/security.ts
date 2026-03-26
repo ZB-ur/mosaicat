@@ -1,5 +1,4 @@
 import type { PipelineConfig } from './types.js';
-import { getArtifactsDir } from './artifact.js';
 
 export enum TrustLevel {
   Initiator = 0,
@@ -59,6 +58,7 @@ export interface StageIssueParams {
   repoSlug?: string;  // "owner/repo"
   branch?: string;    // for raw.githubusercontent.com URLs
   prNumber?: number;
+  artifactsDir?: string;  // artifacts directory path for link generation
 }
 
 export function buildStageIssueTitle(params: StageIssueParams): string {
@@ -91,7 +91,7 @@ export function buildIssueBody(params: StageIssueParams): string {
   lines.push('');
   for (const o of params.outputs) {
     if (params.repoSlug && params.commitSha) {
-      const url = `https://github.com/${params.repoSlug}/blob/${params.commitSha}/${getArtifactsDir()}/${o}`;
+      const url = `https://github.com/${params.repoSlug}/blob/${params.commitSha}/${params.artifactsDir ?? ''}/${o}`;
       lines.push(`- [\`${o}\`](${url})`);
     } else {
       lines.push(`- \`${o}\``);
@@ -105,7 +105,7 @@ export function buildIssueBody(params: StageIssueParams): string {
     lines.push('');
     for (const file of params.screenshots) {
       const name = file.replace(/^screenshots\//, '').replace(/\.png$/, '');
-      const imgUrl = `https://raw.githubusercontent.com/${params.repoSlug}/${params.branch}/${getArtifactsDir()}/${file}`;
+      const imgUrl = `https://raw.githubusercontent.com/${params.repoSlug}/${params.branch}/${params.artifactsDir ?? ''}/${file}`;
       lines.push(`<details><summary>${name}</summary>`);
       lines.push('');
       lines.push(`![${name}](${imgUrl})`);

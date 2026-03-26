@@ -1,5 +1,5 @@
 import type { InteractionHandler } from '../core/interaction-handler.js';
-import { eventBus } from '../core/event-bus.js';
+import type { EventBus } from '../core/event-bus.js';
 import type { EvolutionProposal } from './types.js';
 import { applyPromptVersion } from './prompt-versioning.js';
 import { persistSkill } from './skill-manager.js';
@@ -10,14 +10,17 @@ import type { Logger } from '../core/logger.js';
 export class ProposalHandler {
   private handler: InteractionHandler;
   private engine: EvolutionEngine;
+  private eventBus?: EventBus;
 
   constructor(
     handler: InteractionHandler,
     provider: LLMProvider,
-    logger: Logger
+    logger: Logger,
+    eventBus?: EventBus,
   ) {
     this.handler = handler;
     this.engine = new EvolutionEngine(provider, logger);
+    this.eventBus = eventBus;
   }
 
   async processProposals(proposals: EvolutionProposal[]): Promise<void> {
@@ -25,14 +28,14 @@ export class ProposalHandler {
     const state = stateResult.ok ? stateResult.value : { proposals: [], promptVersions: {}, cooldowns: {} };
 
     for (const proposal of proposals) {
-      eventBus.emit('evolution:proposed', proposal.id, proposal.agentStage);
+      this.eventBus?.emit('evolution:proposed', proposal.id, proposal.agentStage);
 
       if (!this.handler.onEvolutionProposal) {
         // Handler doesn't support evolution — auto-reject
         proposal.status = 'rejected';
         proposal.resolvedAt = new Date().toISOString();
         proposal.rejectionReason = 'Handler does not support evolution proposals';
-        eventBus.emit('evolution:rejected', proposal.id, proposal.agentStage);
+        this.eventBus?.emit('evolution:rejected', proposal.id, proposal.agentStage);
         continue;
       }
 
@@ -53,13 +56,13 @@ export class ProposalHandler {
           persistSkill(proposal);
         }
 
-        eventBus.emit('evolution:approved', proposal.id, proposal.agentStage);
+        this.eventBus?.emit('evolution:approved', proposal.id, proposal.agentStage);
       } else {
         proposal.status = 'rejected';
         proposal.resolvedAt = new Date().toISOString();
         proposal.rejectionReason = result.reason;
 
-        eventBus.emit('evolution:rejected', proposal.id, proposal.agentStage);
+        this.eventBus?.emit('evolution:rejected', proposal.id, proposal.agentStage);
       }
 
       // Update proposal in state

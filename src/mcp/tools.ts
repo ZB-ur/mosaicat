@@ -11,7 +11,7 @@ import { EvolutionEngine } from '../evolution/engine.js';
 import { listPromptVersions, rollbackPrompt } from '../evolution/prompt-versioning.js';
 import { StubProvider } from '../core/llm-provider.js';
 import { Logger } from '../core/logger.js';
-import { getArtifactsDir } from '../core/artifact.js';
+import { ArtifactStore } from '../core/artifact-store.js';
 
 export function registerTools(server: McpServer, runManager: RunManager): void {
   server.tool(
@@ -100,9 +100,20 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
       artifact_name: z.string().optional().describe('Specific artifact file name to read (e.g., "prd.md", "components/AuthForm.tsx")'),
     },
     async ({ artifact_name }) => {
+      const latestRunId = ArtifactStore.findLatestRun('.mosaic/artifacts');
+      if (!latestRunId) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ artifacts: [], note: 'No artifacts directory found. Run a pipeline first.' }),
+          }],
+        };
+      }
+      const artifactsDir = path.join('.mosaic/artifacts', latestRunId);
+
       if (artifact_name) {
         // Read specific artifact
-        const filePath = path.join(getArtifactsDir(), artifact_name);
+        const filePath = path.join(artifactsDir, artifact_name);
         try {
           const content = fs.readFileSync(filePath, 'utf-8');
           return {
@@ -124,7 +135,7 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
 
       // List all artifacts
       try {
-        const files = listFilesRecursive(getArtifactsDir());
+        const files = listFilesRecursive(artifactsDir);
         return {
           content: [{
             type: 'text' as const,

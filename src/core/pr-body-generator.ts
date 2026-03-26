@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getArtifactsDir } from './artifact.js';
 
 interface PRBodyOptions {
   runId: string;
   owner: string;
   repo: string;
   branch: string;
+  artifactsDir: string;
 }
 
 function rawUrl(owner: string, repo: string, branch: string, filePath: string): string {
@@ -19,14 +19,14 @@ function previewUrl(owner: string, repo: string, branch: string, filePath: strin
 }
 
 export function generatePRBody(options: PRBodyOptions): string {
-  const { runId, owner, repo, branch } = options;
+  const { runId, owner, repo, branch, artifactsDir } = options;
   const sections: string[] = [];
 
   // Header
   sections.push(`## Mosaicat Pipeline Output\n\n**Run:** \`${runId}\``);
 
   // Component screenshots
-  const screenshotsDir = path.join(getArtifactsDir(), 'screenshots');
+  const screenshotsDir = path.join(artifactsDir, 'screenshots');
   if (fs.existsSync(screenshotsDir)) {
     const screenshots = fs.readdirSync(screenshotsDir).filter((f) => f.endsWith('.png'));
     if (screenshots.length > 0) {
@@ -41,7 +41,7 @@ export function generatePRBody(options: PRBodyOptions): string {
   }
 
   // Interactive preview links
-  const previewsDir = path.join(getArtifactsDir(), 'previews');
+  const previewsDir = path.join(artifactsDir, 'previews');
   if (fs.existsSync(previewsDir)) {
     const previews = fs.readdirSync(previewsDir).filter((f) => f.endsWith('.html'));
     if (previews.length > 0) {
@@ -55,13 +55,13 @@ export function generatePRBody(options: PRBodyOptions): string {
   }
 
   // Gallery link
-  if (fs.existsSync(path.join(getArtifactsDir(), 'gallery.html'))) {
+  if (fs.existsSync(path.join(artifactsDir, 'gallery.html'))) {
     const galleryUrl = previewUrl(owner, repo, branch, `docs/mosaicat/gallery.html`);
     sections.push(`### Gallery\n\n[View all components](${galleryUrl})`);
   }
 
   // Validation status
-  const validationPath = path.join(getArtifactsDir(), 'validation-report.md');
+  const validationPath = path.join(artifactsDir, 'validation-report.md');
   if (fs.existsSync(validationPath)) {
     const report = fs.readFileSync(validationPath, 'utf-8');
     const statusMatch = report.match(/- Status: (PASS|FAIL)/);

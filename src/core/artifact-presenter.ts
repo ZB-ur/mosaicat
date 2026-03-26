@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { getArtifactsDir } from './artifact.js';
 
 export interface ArtifactPresenter {
   /** Format a clickable link for a single artifact */
@@ -30,7 +29,7 @@ export class CLIArtifactPresenter implements ArtifactPresenter {
   }
 
   private get baseDir(): string {
-    return path.resolve(this.fixedBaseDir ?? getArtifactsDir());
+    return path.resolve(this.fixedBaseDir ?? '.');
   }
 
   formatLink(artifactName: string, size: number): string {
@@ -59,7 +58,7 @@ export class GitHubArtifactPresenter implements ArtifactPresenter {
     this.owner = owner;
     this.repo = repo;
     this.branch = branch;
-    this.artifactsPrefix = artifactsPrefix ?? getArtifactsDir();
+    this.artifactsPrefix = artifactsPrefix ?? '.';
   }
 
   formatLink(artifactName: string, size: number): string {

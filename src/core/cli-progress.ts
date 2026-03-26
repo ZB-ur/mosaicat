@@ -1,5 +1,5 @@
 import type { StageName } from './types.js';
-import { eventBus } from './event-bus.js';
+import type { EventBus } from './event-bus.js';
 import { CLIArtifactPresenter } from './artifact-presenter.js';
 
 const AGENT_LABELS: Record<StageName, string> = {
@@ -58,7 +58,7 @@ function formatDuration(ms: number): string {
   return `${min}m${sec}s`;
 }
 
-export function attachCLIProgress(): () => void {
+export function attachCLIProgress(eventBusInstance: EventBus): () => void {
   const stageTimers = new Map<StageName, number>();
   const pipelineStart = Date.now();
   let activeStages: readonly StageName[] = [];
@@ -69,7 +69,7 @@ export function attachCLIProgress(): () => void {
     event: E,
     handler: import('./event-bus.js').PipelineEvents[E]
   ) {
-    eventBus.on(event, handler);
+    eventBusInstance.on(event, handler);
     handlers.push([event, handler as any]);
   }
 
@@ -241,7 +241,7 @@ export function attachCLIProgress(): () => void {
   // Return cleanup function
   return () => {
     for (const [event, handler] of handlers) {
-      eventBus.off(event as any, handler);
+      eventBusInstance.off(event as any, handler);
     }
   };
 }

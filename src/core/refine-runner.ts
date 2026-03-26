@@ -1,45 +1,59 @@
 import { execSync } from 'node:child_process';
 import { input } from '@inquirer/prompts';
-import { initArtifactsDir, findLatestRun, artifactExists, readArtifact, getArtifactsDir } from './artifact.js';
+import { ArtifactStore } from './artifact-store.js';
 import { createProvider } from './provider-factory.js';
 import { Logger } from './logger.js';
+import { EventBus } from './event-bus.js';
 import { attachCLIProgress } from './cli-progress.js';
+import { createRunContext } from './run-context.js';
 import { WebPreviewStrategy, type PreviewStrategy } from './preview-strategy.js';
 import { RefineAgent } from '../agents/refine-agent.js';
 import { CodePlanSchema } from '../agents/code-plan-schema.js';
 import type { AgentContext, Task } from './types.js';
-import { ArtifactStore } from './artifact-store.js';
-import { eventBus } from './event-bus.js';
-import type { RunContext } from './run-context.js';
 
 /**
- * Run the refine loop: user feedback → diagnose → fix → verify → repeat.
+ * Run the refine loop: user feedback -> diagnose -> fix -> verify -> repeat.
  *
  * @param feedback - Initial user feedback
  * @param runId - Optional run ID; defaults to findLatestRun()
  */
 export async function runRefine(feedback: string, runId?: string): Promise<void> {
   // Resolve target run
-  const targetRun = runId ?? findLatestRun();
+  const targetRun = runId ?? ArtifactStore.findLatestRun('.mosaic/artifacts');
   if (!targetRun) {
     console.error('\x1b[31m[mosaicat] No previous run found. Run `mosaicat run` first.\x1b[0m');
     process.exit(1);
   }
 
-  // Point artifact system at the target run
-  initArtifactsDir(targetRun);
+  // Create store for the target run
+  const store = new ArtifactStore('.mosaic/artifacts', targetRun);
   console.log(`\x1b[2mRefining run: ${targetRun}\x1b[0m`);
   console.log(`\x1b[2mArtifacts: .mosaic/artifacts/${targetRun}/\x1b[0m`);
 
-  const detach = attachCLIProgress();
+  const refineEventBus = new EventBus();
+  const detach = attachCLIProgress(refineEventBus);
   const provider = createProvider();
   const logger = new Logger(`${targetRun}-refine`);
 
+  const ctx = createRunContext({
+    store,
+    logger,
+    provider,
+    eventBus: refineEventBus,
+    config: {
+      stages: {},
+      pipeline: { max_retries_per_stage: 3, snapshot: 'on_stage_complete' },
+      security: { initiator: 'refine', reject_policy: 'silent' },
+      github: { enabled: false, poll_interval_ms: 10000, poll_timeout_ms: 3600000, approve_keywords: ['/approve'], reject_keywords: ['/reject'] },
+    },
+    devMode: false,
+  });
+
   // Load code-plan for commands and smoke test config
   let previewStrategy: PreviewStrategy | undefined;
-  if (artifactExists('code-plan.json')) {
+  if (store.exists('code-plan.json')) {
     try {
-      const plan = CodePlanSchema.parse(JSON.parse(readArtifact('code-plan.json')));
+      const plan = CodePlanSchema.parse(JSON.parse(store.read('code-plan.json')));
       if (plan.smokeTest?.type === 'web' && plan.smokeTest.port) {
         previewStrategy = new WebPreviewStrategy({
           startCommand: plan.smokeTest.startCommand,
@@ -48,12 +62,12 @@ export async function runRefine(feedback: string, runId?: string): Promise<void>
         });
       }
     } catch {
-      // No valid code-plan — proceed without preview
+      // No valid code-plan -- proceed without preview
     }
   }
 
   // Start dev server if available
-  const codeDir = `${getArtifactsDir()}/code`;
+  const codeDir = `${store.getDir()}/code`;
   if (previewStrategy) {
     console.log('\x1b[2mStarting dev server...\x1b[0m');
     const result = await previewStrategy.start(codeDir);
@@ -73,18 +87,7 @@ export async function runRefine(feedback: string, runId?: string): Promise<void>
     // eslint-disable-next-line no-constant-condition
     while (true) {
       // Create agent with current feedback
-      // Bridge: create RunContext for RefineAgent
-      const bridgeStore = Object.assign(Object.create(ArtifactStore.prototype), { runDir: getArtifactsDir() }) as ArtifactStore;
-      const bridgeCtx: RunContext = {
-        store: bridgeStore,
-        logger,
-        provider,
-        eventBus,
-        config: { stages: {}, pipeline: { max_retries_per_stage: 3, snapshot: 'on_stage_complete' }, security: { initiator: 'refine', reject_policy: 'silent' }, github: { enabled: false, poll_interval_ms: 10000, poll_timeout_ms: 3600000, approve_keywords: ['/approve'], reject_keywords: ['/reject'] } },
-        signal: new AbortController().signal,
-        devMode: false,
-      };
-      const agent = new RefineAgent(bridgeCtx);
+      const agent = new RefineAgent(ctx);
       const context: AgentContext = {
         systemPrompt: '',
         task: {
@@ -98,9 +101,9 @@ export async function runRefine(feedback: string, runId?: string): Promise<void>
       await agent.execute(context);
 
       // Run verify + build
-      if (artifactExists('code-plan.json')) {
+      if (store.exists('code-plan.json')) {
         try {
-          const plan = CodePlanSchema.parse(JSON.parse(readArtifact('code-plan.json')));
+          const plan = CodePlanSchema.parse(JSON.parse(store.read('code-plan.json')));
           console.log(`\x1b[2mRunning verify: ${plan.commands.verifyCommand}\x1b[0m`);
           try {
             execSync(plan.commands.verifyCommand, { cwd: codeDir, timeout: 60_000, stdio: 'pipe' });
@@ -118,9 +121,9 @@ export async function runRefine(feedback: string, runId?: string): Promise<void>
           }
 
           // Run acceptance tests if they exist
-          if (artifactExists('test-plan.manifest.json')) {
+          if (store.exists('test-plan.manifest.json')) {
             try {
-              const testManifest = JSON.parse(readArtifact('test-plan.manifest.json'));
+              const testManifest = JSON.parse(store.read('test-plan.manifest.json'));
               const testCmd = testManifest.commands?.runCommand ?? 'npx vitest run tests/acceptance/';
               console.log(`\x1b[2mRunning acceptance tests: ${testCmd}\x1b[0m`);
               try {
@@ -131,7 +134,7 @@ export async function runRefine(feedback: string, runId?: string): Promise<void>
               }
             } catch { /* manifest parse error */ }
           }
-        } catch { /* plan parse error — skip verification */ }
+        } catch { /* plan parse error -- skip verification */ }
       }
 
       // Ask user for more feedback or done

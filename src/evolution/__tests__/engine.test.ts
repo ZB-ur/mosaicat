@@ -7,6 +7,9 @@ import { EvolutionEngine } from '../engine.js';
 import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
 import { initArtifactsDir, getArtifactsDir } from '../../core/artifact.js';
 
+const STATE_DIR = '.mosaic/evolution';
+const STATE_FILE = path.join(STATE_DIR, 'state.json');
+
 class StubEvolutionProvider implements LLMProvider {
   response: string = '[]';
 
@@ -295,7 +298,7 @@ describe('EvolutionEngine', () => {
     });
 
     it('parseCandidates returns Result.err for invalid JSON', async () => {
-      setupArtifacts(runId);
+      setupArtifacts(runId, tmpRoot);
       provider.response = 'not json {{{';
 
       const engine = new EvolutionEngine(provider, logger);
@@ -312,7 +315,7 @@ describe('EvolutionEngine', () => {
     });
 
     it('analyze still works when state file is corrupt (uses fallback)', async () => {
-      setupArtifacts(runId);
+      setupArtifacts(runId, tmpRoot);
       fs.mkdirSync(STATE_DIR, { recursive: true });
       fs.writeFileSync(STATE_FILE, 'CORRUPT');
 
