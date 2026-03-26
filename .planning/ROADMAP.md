@@ -86,7 +86,11 @@ Plans:
   1. Orchestrator is under 200 lines and its only job is creating RunContext and delegating to PipelineLoop -- no stage execution logic lives in the Orchestrator
   2. Zero `console.log` / `console.warn` / `console.error` calls remain in `src/` (excluding test files) -- all output routes through the Logger module
   3. EventBus is instantiated per run (not a singleton) and passed via RunContext -- concurrent runs (future) would not share events
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 05-01-PLAN.md — EventBus singleton removal + infrastructure console.warn cleanup
+- [ ] 05-02-PLAN.md — CLI presentation layer console.log replacement with process.stdout/stderr.write
+- [ ] 05-03-PLAN.md — Orchestrator facade rewrite + PipelineLoopCallbacks extension
 
 ## Progress
 
@@ -100,4 +104,4 @@ Note: Phase 4 depends on Phase 2 (not Phase 3), so it could theoretically overla
 | 2. Foundation Layer | 0/TBD | Not started | - |
 | 3. Execution Engine | 1/3 | In Progress|  |
 | 4. Coder Decomposition | 0/3 | Planning complete | - |
-| 5. Orchestrator Facade + Logging Cleanup | 0/TBD | Not started | - |
+| 5. Orchestrator Facade + Logging Cleanup | 0/3 | Planning complete | - |
