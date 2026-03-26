@@ -14,17 +14,17 @@
 
 ### Error Handling
 
-- [ ] **ERR-01**: 消灭 Evolution Engine 中 9 个 silent catch 块，替换为 `logger.warn()` + typed fallback
-- [ ] **ERR-02**: 消灭 Validator 中 7 个 silent catch 块，对损坏 manifest 返回显式 "unreadable" 状态
-- [ ] **ERR-03**: 实现自定义 `Result<T, E>` 类型（~50 行），用于新模块的错误返回
+- [x] **ERR-01**: 消灭 Evolution Engine 中 9 个 silent catch 块，替换为 `logger.warn()` + typed fallback
+- [x] **ERR-02**: 消灭 Validator 中 7 个 silent catch 块，对损坏 manifest 返回显式 "unreadable" 状态
+- [x] **ERR-03**: 实现自定义 `Result<T, E>` 类型（~50 行），用于新模块的错误返回
 - [ ] **ERR-04**: Context Manager 在 prompt 文件缺失时 fail-fast（生产模式）或 log warning（开发模式）
 
 ### State Management
 
-- [ ] **STATE-01**: 实现 `ArtifactStore` 类替代 `artifact.ts` 全局可变状态 `currentRunDir`，按 run 实例化
+- [x] **STATE-01**: 实现 `ArtifactStore` 类替代 `artifact.ts` 全局可变状态 `currentRunDir`，按 run 实例化
 - [ ] **STATE-02**: ArtifactStore 提供 bridge pattern 兼容层，使保留模块（BaseAgent 等）无需修改即可工作
-- [ ] **STATE-03**: Config 在执行前通过 `structuredClone` + `Object.freeze` 冻结，消除可变 config 注入问题
-- [ ] **STATE-04**: 实现 `RunContext` 对象，聚合 ArtifactStore/Logger/Provider/EventBus/Config/AbortSignal
+- [x] **STATE-03**: Config 在执行前通过 `structuredClone` + `Object.freeze` 冻结，消除可变 config 注入问题
+- [x] **STATE-04**: 实现 `RunContext` 对象，聚合 ArtifactStore/Logger/Provider/EventBus/Config/AbortSignal
 
 ### Execution Engine
 
@@ -50,7 +50,7 @@
 
 ### Security
 
-- [ ] **SEC-01**: SecurityAuditor 排除 `.env` 文件内容扫描，只检查存在性
+- [x] **SEC-01**: SecurityAuditor 排除 `.env` 文件内容扫描，只检查存在性
 
 ## v2 Requirements
 
@@ -90,14 +90,14 @@
 | TEST-02 | Phase 1 | Complete |
 | TEST-03 | Phase 1 | Complete |
 | TEST-04 | Phase 4 | Pending |
-| ERR-01 | Phase 2 | Pending |
-| ERR-02 | Phase 2 | Pending |
-| ERR-03 | Phase 2 | Pending |
+| ERR-01 | Phase 2 | Complete |
+| ERR-02 | Phase 2 | Complete |
+| ERR-03 | Phase 2 | Complete |
 | ERR-04 | Phase 2 | Pending |
-| STATE-01 | Phase 2 | Pending |
+| STATE-01 | Phase 2 | Complete |
 | STATE-02 | Phase 2 | Pending |
-| STATE-03 | Phase 2 | Pending |
-| STATE-04 | Phase 2 | Pending |
+| STATE-03 | Phase 2 | Complete |
+| STATE-04 | Phase 2 | Complete |
 | EXEC-01 | Phase 3 | Pending |
 | EXEC-02 | Phase 3 | Pending |
 | EXEC-03 | Phase 3 | Pending |
@@ -111,7 +111,7 @@
 | ORCH-01 | Phase 5 | Pending |
 | ORCH-02 | Phase 5 | Pending |
 | ORCH-03 | Phase 5 | Pending |
-| SEC-01 | Phase 2 | Pending |
+| SEC-01 | Phase 2 | Complete |
 
 **Coverage:**
 - v1 requirements: 26 total
