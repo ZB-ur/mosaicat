@@ -3,8 +3,6 @@ import { execSync } from 'node:child_process';
 import type { AgentContext } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
 import type { OutputSpec } from '../core/prompt-assembler.js';
-import { eventBus } from '../core/event-bus.js';
-import { readArtifact, artifactExists, getArtifactsDir } from '../core/artifact.js';
 
 interface TestSuite {
   module: string;
@@ -33,21 +31,21 @@ export class TesterAgent extends BaseAgent {
   protected async run(context: AgentContext): Promise<void> {
     // Read test plan manifest for commands and suite info
     const planManifestRaw = context.inputArtifacts.get('test-plan.manifest.json')
-      ?? (artifactExists('test-plan.manifest.json') ? readArtifact('test-plan.manifest.json') : '{}');
+      ?? (this.ctx.store.exists('test-plan.manifest.json') ? this.ctx.store.read('test-plan.manifest.json') : '{}');
     const planManifest = JSON.parse(planManifestRaw);
 
     const suites: TestSuite[] = planManifest.test_suites ?? [];
-    const codeDir = `${getArtifactsDir()}/code`;
+    const codeDir = `${this.ctx.store.getDir()}/code`;
 
     // Step 1: Install test dependencies
     const setupCommand = planManifest.commands?.setupCommand;
     if (setupCommand) {
-      eventBus.emit('agent:progress', this.stage, `installing test dependencies`);
+      this.ctx.eventBus.emit('agent:progress', this.stage, `installing test dependencies`);
       this.runTestSetup(setupCommand, codeDir);
     }
 
     // Step 2: Execute acceptance tests
-    eventBus.emit('agent:progress', this.stage, `executing acceptance tests`);
+    this.ctx.eventBus.emit('agent:progress', this.stage, `executing acceptance tests`);
     const runCommand = planManifest.commands?.runCommand ?? 'npx vitest run tests/acceptance/';
     const testResult = this.runTests(runCommand, codeDir);
 
@@ -57,11 +55,11 @@ export class TesterAgent extends BaseAgent {
     // Emit summary
     const total = testResult.passed + testResult.failed + testResult.skipped;
     const verdict = testResult.failed === 0 && testResult.success ? 'pass' : 'fail';
-    eventBus.emit('agent:summary', this.stage,
+    this.ctx.eventBus.emit('agent:summary', this.stage,
       `${total} tests: ${testResult.passed} passed, ${testResult.failed} failed — ${verdict.toUpperCase()}`);
   }
 
-  // ─── Test Execution ───────────────────────────────────────
+  // --- Test Execution ---
 
   private runTestSetup(setupCommand: string, codeDir: string): void {
     try {
@@ -94,7 +92,6 @@ export class TesterAgent extends BaseAgent {
       const output = `${error.stdout ?? ''}\n${error.stderr ?? ''}`.trim();
       const counts = this.parseTestCounts(output);
       // If tests ran but some failed, we have counts
-      const hasResults = counts.passed > 0 || counts.failed > 0;
       return { success: false, output, ...counts };
     }
   }
@@ -113,7 +110,7 @@ export class TesterAgent extends BaseAgent {
     return { passed, failed, skipped };
   }
 
-  // ─── Report Generation ────────────────────────────────────
+  // --- Report Generation ---
 
   private generateReport(
     testResult: { success: boolean; output: string; passed: number; failed: number; skipped: number },

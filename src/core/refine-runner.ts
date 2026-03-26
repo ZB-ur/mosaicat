@@ -8,6 +8,9 @@ import { WebPreviewStrategy, type PreviewStrategy } from './preview-strategy.js'
 import { RefineAgent } from '../agents/refine-agent.js';
 import { CodePlanSchema } from '../agents/code-plan-schema.js';
 import type { AgentContext, Task } from './types.js';
+import { ArtifactStore } from './artifact-store.js';
+import { eventBus } from './event-bus.js';
+import type { RunContext } from './run-context.js';
 
 /**
  * Run the refine loop: user feedback → diagnose → fix → verify → repeat.
@@ -70,7 +73,18 @@ export async function runRefine(feedback: string, runId?: string): Promise<void>
     // eslint-disable-next-line no-constant-condition
     while (true) {
       // Create agent with current feedback
-      const agent = new RefineAgent(provider, logger);
+      // Bridge: create RunContext for RefineAgent
+      const bridgeStore = Object.assign(Object.create(ArtifactStore.prototype), { runDir: getArtifactsDir() }) as ArtifactStore;
+      const bridgeCtx: RunContext = {
+        store: bridgeStore,
+        logger,
+        provider,
+        eventBus,
+        config: { stages: {}, pipeline: { max_retries_per_stage: 3, snapshot: 'on_stage_complete' }, security: { initiator: 'refine', reject_policy: 'silent' }, github: { enabled: false, poll_interval_ms: 10000, poll_timeout_ms: 3600000, approve_keywords: ['/approve'], reject_keywords: ['/reject'] } },
+        signal: new AbortController().signal,
+        devMode: false,
+      };
+      const agent = new RefineAgent(bridgeCtx);
       const context: AgentContext = {
         systemPrompt: '',
         task: {

@@ -3,8 +3,6 @@ import { execSync } from 'node:child_process';
 import type { AgentContext } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
 import type { OutputSpec } from '../core/prompt-assembler.js';
-import { eventBus } from '../core/event-bus.js';
-import { getArtifactsDir } from '../core/artifact.js';
 
 const AUDITOR_PROMPT_PATH = '.claude/agents/mosaic/security-auditor.md';
 
@@ -39,7 +37,7 @@ export class SecurityAuditorAgent extends BaseAgent {
 
   protected async run(context: AgentContext): Promise<void> {
     const autonomy = context.task.autonomy;
-    const codeDir = `${getArtifactsDir()}/code`;
+    const codeDir = `${this.ctx.store.getDir()}/code`;
 
     // Phase 1: Programmatic scanning
     this.logger.agent(this.stage, 'info', 'auditor:scan-start', {});
@@ -186,7 +184,7 @@ export class SecurityAuditorAgent extends BaseAgent {
       highRiskFiles: highRiskFiles.length,
       promptLength: userPrompt.length,
     });
-    eventBus.emit('agent:thinking', this.stage, userPrompt.length);
+    this.ctx.eventBus.emit('agent:thinking', this.stage, userPrompt.length);
 
     const response = await this.provider.call(userPrompt, {
       systemPrompt: auditorPrompt,
@@ -212,7 +210,7 @@ export class SecurityAuditorAgent extends BaseAgent {
       },
     });
 
-    eventBus.emit('agent:response', this.stage, response.content.length);
+    this.ctx.eventBus.emit('agent:response', this.stage, response.content.length);
 
     try {
       const parsed = JSON.parse(response.content);

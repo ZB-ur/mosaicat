@@ -4,9 +4,7 @@ import type { AgentContext } from '../core/types.js';
 import { ClarificationNeeded } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
 import type { OutputSpec } from '../core/prompt-assembler.js';
-import { eventBus } from '../core/event-bus.js';
 import type { ReviewComment } from '../core/types.js';
-import { readArtifact, artifactExists, getArtifactsDir } from '../core/artifact.js';
 import { UIPlanSchema, type UIPlan, type UIPlanComponent } from './ui-plan-schema.js';
 import { trimApiSpec, extractSchemasOnly } from './ui-api-trimmer.js';
 
@@ -42,9 +40,9 @@ export class UIDesignerAgent extends BaseAgent {
       let plan: UIPlan;
       let builtComponents: Map<string, string>;
 
-      if (artifactExists('ui-plan.json')) {
+      if (this.ctx.store.exists('ui-plan.json')) {
         // Plan exists from prior attempt — reuse it, only rebuild missing components
-        plan = UIPlanSchema.parse(JSON.parse(readArtifact('ui-plan.json')));
+        plan = UIPlanSchema.parse(JSON.parse(this.ctx.store.read('ui-plan.json')));
         builtComponents = this.loadExistingComponents(plan);
         const missing = plan.components.filter(c => !builtComponents.has(c.name));
         this.logger.agent(this.stage, 'info', 'retry:reuse-plan', {
@@ -71,10 +69,10 @@ export class UIDesignerAgent extends BaseAgent {
     reviewComments?: ReviewComment[],
   ): Promise<void> {
     // Load existing plan from disk
-    if (!artifactExists('ui-plan.json')) {
+    if (!this.ctx.store.exists('ui-plan.json')) {
       throw new Error('Cannot partial retry: ui-plan.json not found on disk');
     }
-    const planJson = readArtifact('ui-plan.json');
+    const planJson = this.ctx.store.read('ui-plan.json');
     const plan = UIPlanSchema.parse(JSON.parse(planJson));
 
     this.logger.agent(this.stage, 'info', 'partial-retry:start', {
@@ -129,7 +127,7 @@ export class UIDesignerAgent extends BaseAgent {
           promptLength: userPrompt.length,
           isRetry: true,
         });
-        eventBus.emit('agent:thinking', this.stage, userPrompt.length);
+        this.ctx.eventBus.emit('agent:thinking', this.stage, userPrompt.length);
 
         try {
           const response = await this.provider.call(userPrompt, { systemPrompt: builderPrompt });
@@ -151,7 +149,7 @@ export class UIDesignerAgent extends BaseAgent {
           promptLength: userPrompt.length,
           isRetry: true,
         });
-        eventBus.emit('agent:thinking', this.stage, userPrompt.length);
+        this.ctx.eventBus.emit('agent:thinking', this.stage, userPrompt.length);
 
         try {
           const response = await this.provider.call(userPrompt, { systemPrompt: builderPrompt });
@@ -201,8 +199,8 @@ export class UIDesignerAgent extends BaseAgent {
   private loadExistingComponents(plan: UIPlan): Map<string, string> {
     const builtComponents = new Map<string, string>();
     for (const comp of plan.components) {
-      if (artifactExists(comp.file)) {
-        builtComponents.set(comp.name, readArtifact(comp.file));
+      if (this.ctx.store.exists(comp.file)) {
+        builtComponents.set(comp.name, this.ctx.store.read(comp.file));
       }
     }
     return builtComponents;
@@ -285,7 +283,7 @@ export class UIDesignerAgent extends BaseAgent {
     this.logger.agent(this.stage, 'info', 'planner:call', {
       promptLength: userPrompt.length,
     });
-    eventBus.emit('agent:thinking', this.stage, userPrompt.length);
+    this.ctx.eventBus.emit('agent:thinking', this.stage, userPrompt.length);
 
     const response = await this.provider.call(userPrompt, {
       systemPrompt: plannerPrompt,
@@ -295,7 +293,7 @@ export class UIDesignerAgent extends BaseAgent {
     this.logger.agent(this.stage, 'info', 'planner:response', {
       responseLength: raw.length,
     });
-    eventBus.emit('agent:response', this.stage, raw.length);
+    this.ctx.eventBus.emit('agent:response', this.stage, raw.length);
 
     // Check for clarification
     const clarificationMatch = raw.match(
@@ -307,7 +305,7 @@ export class UIDesignerAgent extends BaseAgent {
       try {
         const parsed = JSON.parse(content);
         if (parsed.question && parsed.options) {
-          eventBus.emit('agent:clarification', this.stage, parsed.question);
+          this.ctx.eventBus.emit('agent:clarification', this.stage, parsed.question);
           throw new ClarificationNeeded(
             parsed.question,
             parsed.options,
@@ -320,7 +318,7 @@ export class UIDesignerAgent extends BaseAgent {
         if (err instanceof ClarificationNeeded) throw err;
       }
       // Fallback: plain text clarification
-      eventBus.emit('agent:clarification', this.stage, content);
+      this.ctx.eventBus.emit('agent:clarification', this.stage, content);
       throw new ClarificationNeeded(content);
     }
 
@@ -527,7 +525,7 @@ export class UIDesignerAgent extends BaseAgent {
         component: comp.name,
         promptLength: userPrompt.length,
       });
-      eventBus.emit('agent:thinking', this.stage, userPrompt.length);
+      this.ctx.eventBus.emit('agent:thinking', this.stage, userPrompt.length);
 
       const response = await this.provider.call(userPrompt, { systemPrompt: builderPrompt });
       this.extractAndWriteArtifacts(response.content, [comp], builtComponents, previewFiles);
@@ -558,7 +556,7 @@ export class UIDesignerAgent extends BaseAgent {
       batchSize: batch.length,
       promptLength: userPrompt.length,
     });
-    eventBus.emit('agent:thinking', this.stage, userPrompt.length);
+    this.ctx.eventBus.emit('agent:thinking', this.stage, userPrompt.length);
 
     const response = await this.provider.call(userPrompt, { systemPrompt: builderPrompt });
     const written = this.extractAndWriteArtifacts(response.content, batch, builtComponents, previewFiles);
@@ -793,14 +791,14 @@ ${outputLines.join('\n\n')}`);
   private async renderPreviewsAndGallery(previewFiles: string[]): Promise<void> {
     try {
       const { renderPreviewScreenshots, generateGallery } = await import('../core/screenshot-renderer.js');
-      const results = await renderPreviewScreenshots(previewFiles, getArtifactsDir());
+      const results = await renderPreviewScreenshots(previewFiles, this.ctx.store.getDir());
       this.logger.agent(this.stage, 'info', 'screenshots:rendered', {
         count: results.length,
         files: results.map((r) => r.screenshotPath),
       });
 
       if (results.length > 0) {
-        const galleryPath = generateGallery(results, getArtifactsDir());
+        const galleryPath = generateGallery(results, this.ctx.store.getDir());
         this.logger.agent(this.stage, 'info', 'gallery:generated', {
           path: galleryPath,
         });

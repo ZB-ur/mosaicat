@@ -16,6 +16,7 @@ import { buildContext } from './context-manager.js';
 import { createSnapshot } from './snapshot.js';
 import { eventBus } from './event-bus.js';
 import { Logger } from './logger.js';
+import type { RunContext } from './run-context.js';
 import type { InteractionHandler } from './interaction-handler.js';
 import { GitHubInteractionHandler } from './github-interaction-handler.js';
 import { CLIInteractionHandler } from './interaction-handler.js';
@@ -749,7 +750,18 @@ export class Orchestrator {
     // Pass handler to agents that support interactive retry (Coder).
     // In auto-approve mode, pass undefined so they auto-skip after retries.
     const agentHandler = run.autoApprove ? undefined : this.handler;
-    const agent = createAgent(stage, provider, logger, agentConfig?.autonomy, agentHandler);
+    // Bridge: create RunContext from orchestrator's existing dependencies
+    const bridgeStore = Object.assign(Object.create(ArtifactStore.prototype), { runDir: getArtifactsDir() }) as ArtifactStore;
+    const bridgeCtx: RunContext = {
+      store: bridgeStore,
+      logger,
+      provider,
+      eventBus,
+      config: this.pipelineConfig,
+      signal: new AbortController().signal,
+      devMode: false,
+    };
+    const agent = createAgent(stage, bridgeCtx, agentConfig?.autonomy, agentHandler);
 
     try {
       await agent.execute(context);
@@ -801,7 +813,7 @@ export class Orchestrator {
       transitionStage(run, stage, 'running');
 
       // Re-run agent with augmented context
-      const retryAgent = createAgent(stage, provider, logger, agentConfig?.autonomy, agentHandler);
+      const retryAgent = createAgent(stage, bridgeCtx, agentConfig?.autonomy, agentHandler);
       await retryAgent.execute(context);
     }
   }
@@ -921,10 +933,20 @@ export class Orchestrator {
 
     // Use 'researcher' as placeholder StageName — IntentConsultant is not a pipeline stage yet
     const placeholderStage = 'researcher' as StageName;
+    // Bridge: create RunContext for IntentConsultant
+    const bridgeStore = Object.assign(Object.create(ArtifactStore.prototype), { runDir: getArtifactsDir() }) as ArtifactStore;
+    const bridgeCtx: RunContext = {
+      store: bridgeStore,
+      logger,
+      provider,
+      eventBus,
+      config: this.pipelineConfig,
+      signal: new AbortController().signal,
+      devMode: false,
+    };
     const agent = new IntentConsultantAgent(
       placeholderStage,
-      provider,
-      logger,
+      bridgeCtx,
       cliHandler,
     );
 

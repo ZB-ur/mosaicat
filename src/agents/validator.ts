@@ -2,8 +2,6 @@ import type { AgentContext } from '../core/types.js';
 import { ClarificationNeeded } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
 import { assemblePrompt, type OutputSpec } from '../core/prompt-assembler.js';
-import { eventBus } from '../core/event-bus.js';
-import { artifactExists } from '../core/artifact.js';
 import {
   readManifest,
   type PrdManifest,
@@ -35,7 +33,7 @@ export class ValidatorAgent extends BaseAgent {
     this.logger.agent(this.stage, 'info', 'llm:call', {
       promptLength: prompt.length,
     });
-    eventBus.emit('agent:thinking', this.stage, prompt.length);
+    this.ctx.eventBus.emit('agent:thinking', this.stage, prompt.length);
 
     const response = await this.provider.call(prompt, {
       systemPrompt: context.systemPrompt,
@@ -45,7 +43,7 @@ export class ValidatorAgent extends BaseAgent {
     this.logger.agent(this.stage, 'info', 'llm:response', {
       responseLength: raw.length,
     });
-    eventBus.emit('agent:response', this.stage, raw.length);
+    this.ctx.eventBus.emit('agent:response', this.stage, raw.length);
 
     // Check for clarification (shouldn't happen for validator, but handle defensively)
     const clarificationMatch = raw.match(
@@ -89,17 +87,17 @@ export class ValidatorAgent extends BaseAgent {
     const missing: string[] = [];
 
     try {
-      const manifest = readManifest<ComponentsManifest>('components.manifest.json');
+      const manifest = readManifest<ComponentsManifest>(this.ctx.store, 'components.manifest.json');
 
       for (const comp of manifest.components) {
-        if (!artifactExists(comp.file)) missing.push(comp.file);
+        if (!this.ctx.store.exists(comp.file)) missing.push(comp.file);
       }
       for (const screenshot of manifest.screenshots) {
-        if (!artifactExists(screenshot)) missing.push(screenshot);
+        if (!this.ctx.store.exists(screenshot)) missing.push(screenshot);
       }
       if (manifest.previews) {
         for (const preview of manifest.previews) {
-          if (!artifactExists(preview)) missing.push(preview);
+          if (!this.ctx.store.exists(preview)) missing.push(preview);
         }
       }
     } catch {
@@ -118,7 +116,7 @@ export class ValidatorAgent extends BaseAgent {
     let allFeatureIds: string[] = [];
 
     try {
-      const prd = readManifest<PrdManifest>('prd.manifest.json');
+      const prd = readManifest<PrdManifest>(this.ctx.store, 'prd.manifest.json');
       allFeatureIds = prd.features.map((f) => f.id);
       details.push(`PRD defines ${allFeatureIds.length} features: ${allFeatureIds.join(', ')}`);
     } catch {
@@ -131,7 +129,7 @@ export class ValidatorAgent extends BaseAgent {
 
     const checkLayer = (manifestName: string, label: string, extractIds: (data: unknown) => Set<string>) => {
       try {
-        const data = readManifest(manifestName);
+        const data = readManifest(this.ctx.store, manifestName);
         const covered = extractIds(data);
         const missing = allFeatureIds.filter((id) => !covered.has(id));
         if (missing.length > 0) {
@@ -169,14 +167,14 @@ export class ValidatorAgent extends BaseAgent {
   private checkTechSpecFeatureCoverage(): CheckResult {
     let allFeatureIds: string[] = [];
     try {
-      const prd = readManifest<PrdManifest>('prd.manifest.json');
+      const prd = readManifest<PrdManifest>(this.ctx.store, 'prd.manifest.json');
       allFeatureIds = prd.features.map((f) => f.id);
     } catch {
       return { name: 'Check 7: Tech-Spec Feature Coverage', passed: true, details: 'prd.manifest.json unreadable — skipped (warning)' };
     }
 
     try {
-      const techSpec = readManifest<TechSpecManifest>('tech-spec.manifest.json');
+      const techSpec = readManifest<TechSpecManifest>(this.ctx.store, 'tech-spec.manifest.json');
       const covered = new Set<string>();
       for (const mod of techSpec.modules) {
         for (const fid of mod.covers_features) covered.add(fid);
@@ -194,14 +192,14 @@ export class ValidatorAgent extends BaseAgent {
   private checkCodeTaskCoverage(): CheckResult {
     let allTaskIds: string[] = [];
     try {
-      const techSpec = readManifest<TechSpecManifest>('tech-spec.manifest.json');
+      const techSpec = readManifest<TechSpecManifest>(this.ctx.store, 'tech-spec.manifest.json');
       allTaskIds = techSpec.implementation_tasks.map((t) => t.id);
     } catch {
       return { name: 'Check 8: Code Task Coverage', passed: true, details: 'tech-spec.manifest.json unreadable — skipped (warning, stage may be skipped)' };
     }
 
     try {
-      const code = readManifest<CodeManifest>('code.manifest.json');
+      const code = readManifest<CodeManifest>(this.ctx.store, 'code.manifest.json');
       const coveredTasks = new Set(code.covers_tasks);
       const missing = allTaskIds.filter((id) => !coveredTasks.has(id));
       if (missing.length > 0) {

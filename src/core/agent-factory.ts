@@ -1,6 +1,5 @@
 import type { StageName, AgentAutonomyConfig } from './types.js';
-import type { LLMProvider } from './llm-provider.js';
-import type { Logger } from './logger.js';
+import type { RunContext } from './run-context.js';
 import type { InteractionHandler } from './interaction-handler.js';
 import { BaseAgent, StubAgent } from './agent.js';
 import { StubProvider } from './llm-provider.js';
@@ -20,7 +19,7 @@ import {
   SecurityAuditorAgent,
 } from '../agents/index.js';
 
-type AgentConstructor = new (stage: StageName, provider: LLMProvider, logger: Logger) => BaseAgent;
+type AgentConstructor = new (stage: StageName, ctx: RunContext) => BaseAgent;
 
 const AGENT_MAP: Partial<Record<StageName, AgentConstructor>> = {
   researcher: ResearcherAgent,
@@ -50,27 +49,26 @@ function registerHooks(agent: BaseAgent, stage: StageName): void {
 
 export function createAgent(
   stage: StageName,
-  provider: LLMProvider,
-  logger: Logger,
+  ctx: RunContext,
   _autonomy?: AgentAutonomyConfig,
   interactionHandler?: InteractionHandler,
 ): BaseAgent {
   // Use StubAgent when provider is StubProvider (Phase 1 compatibility)
-  if (provider instanceof StubProvider) {
-    return new StubAgent(stage, provider, logger);
+  if (ctx.provider instanceof StubProvider) {
+    return new StubAgent(stage, ctx);
   }
 
   let agent: BaseAgent;
 
   // Coder needs InteractionHandler for retry confirmation
   if (stage === 'coder') {
-    agent = new CoderAgent(stage, provider, logger, interactionHandler);
+    agent = new CoderAgent(stage, ctx, interactionHandler);
   } else {
     const AgentClass = AGENT_MAP[stage];
     if (!AgentClass) {
       throw new Error(`No agent implementation registered for stage: ${stage}`);
     }
-    agent = new AgentClass(stage, provider, logger);
+    agent = new AgentClass(stage, ctx);
   }
 
   // Register quality hooks for this stage

@@ -3,8 +3,6 @@ import type { AgentContext } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
 import type { OutputSpec } from '../core/prompt-assembler.js';
 import { assemblePrompt } from '../core/prompt-assembler.js';
-import { eventBus } from '../core/event-bus.js';
-import { getArtifactsDir } from '../core/artifact.js';
 
 const QA_LEAD_PROMPT_PATH = '.claude/agents/mosaic/qa-lead.md';
 
@@ -36,7 +34,7 @@ export class QALeadAgent extends BaseAgent {
 
     // Ensure code/tests/acceptance directory exists
     // Tests live inside the project directory (code/) so vitest and imports resolve naturally
-    const artifactsDir = getArtifactsDir();
+    const artifactsDir = this.ctx.store.getDir();
     const codeDir = `${artifactsDir}/code`;
     const testsDir = `${codeDir}/tests/acceptance`;
     fs.mkdirSync(testsDir, { recursive: true });
@@ -82,7 +80,7 @@ Tests live inside the project directory (code/). Import paths are relative to th
       promptLength: toolPrompt.length,
       expectedArtifacts: spec.artifacts,
     });
-    eventBus.emit('agent:thinking', this.stage, toolPrompt.length);
+    this.ctx.eventBus.emit('agent:thinking', this.stage, toolPrompt.length);
 
     const response = await this.provider.call(toolPrompt, {
       systemPrompt: context.systemPrompt,
@@ -95,7 +93,7 @@ Tests live inside the project directory (code/). Import paths are relative to th
     this.logger.agent(this.stage, 'info', 'llm:response', {
       responseLength: raw.length,
     });
-    eventBus.emit('agent:response', this.stage, raw.length);
+    this.ctx.eventBus.emit('agent:response', this.stage, raw.length);
 
     // Parse structured JSON response
     let parsed: { artifact?: string; manifest?: Record<string, unknown> };
@@ -127,7 +125,7 @@ Tests live inside the project directory (code/). Import paths are relative to th
 
     // Count test files written for summary
     const testFiles = this.countTestFiles(artifactsDir);
-    eventBus.emit('agent:summary', this.stage, `${testFiles} acceptance test files generated`);
+    this.ctx.eventBus.emit('agent:summary', this.stage, `${testFiles} acceptance test files generated`);
   }
 
   private countTestFiles(artifactsDir: string): number {
