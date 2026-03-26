@@ -20,7 +20,7 @@ export interface RetryLogEntry {
   timestamp: string;
   runId: string;
   stage: StageName;
-  source: 'orchestrator' | 'stage-executor' | 'tester-coder-loop' | 'coder-module-fix' | 'coder-acceptance-fix' | 'llm-retry';
+  source: 'orchestrator' | 'stage-executor' | 'fix-loop-runner' | 'tester-coder-loop' | 'coder-module-fix' | 'coder-acceptance-fix' | 'llm-retry';
   attempt: number;
   errorCategory: ErrorCategory;
   errorMessage: string;
