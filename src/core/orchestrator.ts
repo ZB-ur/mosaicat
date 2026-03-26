@@ -9,14 +9,15 @@ import {
   getPreviousStage,
   resetStageForResume,
 } from './pipeline.js';
-import type { LLMProvider } from './llm-provider.js';
 import { createProvider } from './provider-factory.js';
 import { createAgent } from './agent-factory.js';
 import { buildContext } from './context-manager.js';
 import { createSnapshot } from './snapshot.js';
-import { eventBus } from './event-bus.js';
+import { EventBus } from './event-bus.js';
 import { Logger } from './logger.js';
 import type { RunContext } from './run-context.js';
+import { createRunContext } from './run-context.js';
+import { ArtifactStore } from './artifact-store.js';
 import type { InteractionHandler } from './interaction-handler.js';
 import { GitHubInteractionHandler } from './github-interaction-handler.js';
 import { CLIInteractionHandler } from './interaction-handler.js';
@@ -27,8 +28,6 @@ import { GitPublisher } from './git-publisher.js';
 import { generatePRBody } from './pr-body-generator.js';
 import { extractManifestSummary } from './manifest.js';
 import { IntentConsultantAgent } from '../agents/intent-consultant.js';
-import { artifactExists, readArtifact, writeArtifact, initArtifactsDir, getArtifactsDir } from './artifact.js';
-import { ArtifactStore } from './artifact-store.js';
 import { loadUserLLMConfig } from './llm-config-store.js';
 import { logRetry, classifyError } from './retry-log.js';
 import { RetryingProvider } from './retrying-provider.js';
@@ -66,8 +65,17 @@ export class Orchestrator {
   private publisher?: GitPublisher;
   private stageIssues = new Map<string, number>();
   private stageMetrics = new Map<StageName, StageMetrics>();
+  private evolutionEnabled: boolean;
+  private devMode: boolean;
+  private currentCtx?: RunContext;
+  /** Shared EventBus for this orchestrator's lifetime. Subscribe before calling run(). */
+  readonly eventBus: EventBus;
 
-  constructor(handler?: InteractionHandler, adapter?: GitPlatformAdapter) {
+  constructor(
+    handler?: InteractionHandler,
+    adapter?: GitPlatformAdapter,
+    options?: { enableEvolution?: boolean; devMode?: boolean },
+  ) {
     this.pipelineConfig = yaml.load(
       fs.readFileSync('config/pipeline.yaml', 'utf-8')
     ) as PipelineConfig;
@@ -76,6 +84,9 @@ export class Orchestrator {
     ) as AgentsConfig;
     this.handler = handler ?? new CLIInteractionHandler();
     this.adapter = adapter;
+    this.evolutionEnabled = options?.enableEvolution ?? false;
+    this.devMode = options?.devMode ?? false;
+    this.eventBus = new EventBus();
   }
 
   async run(instruction: string, autoApprove = false, profile?: PipelineProfile): Promise<PipelineRun> {
@@ -85,14 +96,23 @@ export class Orchestrator {
     const stageList = this.resolveStageList(profile);
 
     const pipelineRun = createPipelineRun(runId, instruction, autoApprove, stageList);
-    const artifactsDir = initArtifactsDir(runId);
+    const store = new ArtifactStore('.mosaic/artifacts', runId);
     const logger = new Logger(runId);
     const provider = createProvider(this.pipelineConfig);
+    const ctx = createRunContext({
+      store,
+      logger,
+      provider,
+      eventBus: this.eventBus,
+      config: this.pipelineConfig,
+      devMode: this.devMode,
+    });
+    this.currentCtx = ctx;
     const userLLMConfig = loadUserLLMConfig();
     const providerName = userLLMConfig?.provider ?? this.pipelineConfig.llm?.default ?? 'claude-cli';
 
-    logger.pipeline('info', 'pipeline:start', { runId, instruction, profile: profile ?? 'default', artifactsDir, provider: providerName });
-    eventBus.emit('pipeline:start', runId, stageList, providerName);
+    logger.pipeline('info', 'pipeline:start', { runId, instruction, profile: profile ?? 'default', artifactsDir: store.getDir(), provider: providerName });
+    ctx.eventBus.emit('pipeline:start', runId, stageList, providerName);
 
     // Initialize GitPublisher for GitHub mode
     if (this.adapter) {
@@ -110,7 +130,7 @@ export class Orchestrator {
 
     try {
       // Intent Consultant: multi-turn dialogue before pipeline
-      await this.runIntentConsultant(pipelineRun, provider, logger);
+      await this.runIntentConsultant(pipelineRun);
 
       // Filter stage list: skip intent_consultant (handled above)
       const pipelineStages = stageList.filter((s) => s !== 'intent_consultant');
@@ -122,14 +142,14 @@ export class Orchestrator {
       const resolvedProfile = profile ?? 'full';
       for (let i = 0; i < pipelineStages.length; i++) {
         const stage = pipelineStages[i];
-        await this.executeStage(pipelineRun, stage, provider, logger);
+        await this.executeStage(pipelineRun, stage);
 
         // Save state after each successful stage for resume support
         this.savePipelineState(pipelineRun, resolvedProfile, testerCoderFixCount);
 
         // Progressive Tester → Coder fix loop
         if (stage === 'tester' && testerCoderFixCount < MAX_FIX_ROUNDS) {
-          const shouldRetry = this.checkTesterVerdict(logger);
+          const shouldRetry = this.checkTesterVerdict();
           if (shouldRetry) {
             testerCoderFixCount++;
             const round = testerCoderFixCount;
@@ -148,7 +168,7 @@ export class Orchestrator {
               approach,
               historyLength: attemptHistory.length,
             });
-            eventBus.emit('coder:fix-round', round, 0, 0, approach);
+            ctx.eventBus.emit('coder:fix-round', round, 0, 0, approach);
 
             // Log to retry-log
             logRetry({
@@ -164,7 +184,7 @@ export class Orchestrator {
 
             // Record failure history for cumulative context
             try {
-              const failureData = readArtifact('test-report.manifest.json');
+              const failureData = ctx.store.read('test-report.manifest.json');
               attemptHistory.push({ round, failures: failureData, approach });
             } catch { /* non-fatal */ }
 
@@ -185,7 +205,7 @@ export class Orchestrator {
 
       // Log final fix loop summary if any rounds occurred
       if (testerCoderFixCount > 0) {
-        const finalVerdict = this.checkTesterVerdict(logger) ? 'fail' : 'pass';
+        const finalVerdict = this.checkTesterVerdict() ? 'fail' : 'pass';
         logger.pipeline('info', 'tester-coder-loop:complete', {
           totalRounds: testerCoderFixCount,
           finalVerdict,
@@ -193,8 +213,8 @@ export class Orchestrator {
       }
 
       // Post-run evolution analysis
-      if (this.pipelineConfig.evolution?.enabled) {
-        await this.runEvolution(runId, provider, logger);
+      if (this.evolutionEnabled) {
+        await this.runEvolution(runId);
       }
 
       pipelineRun.completedAt = new Date().toISOString();
@@ -207,25 +227,25 @@ export class Orchestrator {
           const { owner, repo } = this.getRepoContext();
           const branch = this.publisher.getBranch() ?? '';
           const prBody = (owner && repo && branch)
-            ? generatePRBody({ runId, owner, repo, branch })
+            ? generatePRBody({ runId, owner, repo, branch, artifactsDir: ctx.store.getDir() })
             : `## Pipeline Complete\n\nRun: ${runId}`;
           await this.publisher.publish(prBody);
         } catch (err) {
-          logger.pipeline('warn', 'git-publisher:publish-failed', {
+          ctx.logger.pipeline('warn', 'git-publisher:publish-failed', {
             error: err instanceof Error ? err.message : String(err),
           });
         }
       }
 
-      logger.pipeline('info', 'pipeline:complete', { runId });
-      eventBus.emit('pipeline:complete', runId);
+      ctx.logger.pipeline('info', 'pipeline:complete', { runId });
+      ctx.eventBus.emit('pipeline:complete', runId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.pipeline('error', 'pipeline:failed', { runId, error: message });
-      eventBus.emit('pipeline:failed', runId, message);
+      ctx.logger.pipeline('error', 'pipeline:failed', { runId, error: message });
+      ctx.eventBus.emit('pipeline:failed', runId, message);
       throw err;
     } finally {
-      await logger.close();
+      await ctx.logger.close();
     }
 
     return pipelineRun;
@@ -241,7 +261,7 @@ export class Orchestrator {
       throw new Error('No resumable run found. Specify --run <runId> or ensure a pipeline-state.json exists.');
     }
 
-    initArtifactsDir(resolvedRunId);
+    const store = new ArtifactStore('.mosaic/artifacts', resolvedRunId);
     const state = loadResumeState(resolvedRunId);
 
     // If --from specified, reset that stage and all downstream before validation
@@ -257,6 +277,15 @@ export class Orchestrator {
 
     const logger = new Logger(resolvedRunId);
     const provider = createProvider(this.pipelineConfig);
+    const ctx = createRunContext({
+      store,
+      logger,
+      provider,
+      eventBus: this.eventBus,
+      config: this.pipelineConfig,
+      devMode: this.devMode,
+    });
+    this.currentCtx = ctx;
     const userLLMConfig = loadUserLLMConfig();
     const providerName = userLLMConfig?.provider ?? this.pipelineConfig.llm?.default ?? 'claude-cli';
 
@@ -279,14 +308,14 @@ export class Orchestrator {
       }
     }
 
-    eventBus.emit('pipeline:start', resolvedRunId, stageList, providerName);
+    ctx.eventBus.emit('pipeline:start', resolvedRunId, stageList, providerName);
 
     const pipelineStages = stageList.filter((s) => s !== 'intent_consultant');
     let testerCoderFixCount = validated.fixLoopRound ?? 0;
 
     try {
       // Intent Consultant: skip if brief exists (it should, since state was saved)
-      await this.runIntentConsultant(pipelineRun, provider, logger);
+      await this.runIntentConsultant(pipelineRun);
 
       const MAX_FIX_ROUNDS = 5;
       const REPLAN_THRESHOLD = 3;
@@ -294,14 +323,14 @@ export class Orchestrator {
 
       for (let i = 0; i < pipelineStages.length; i++) {
         const stage = pipelineStages[i];
-        await this.executeStage(pipelineRun, stage, provider, logger);
+        await this.executeStage(pipelineRun, stage);
 
         // Save state after each successful stage
         this.savePipelineState(pipelineRun, validated.profile, testerCoderFixCount);
 
         // Progressive Tester → Coder fix loop (same as run())
         if (stage === 'tester' && testerCoderFixCount < MAX_FIX_ROUNDS) {
-          const shouldRetry = this.checkTesterVerdict(logger);
+          const shouldRetry = this.checkTesterVerdict();
           if (shouldRetry) {
             testerCoderFixCount++;
             const round = testerCoderFixCount;
@@ -316,7 +345,7 @@ export class Orchestrator {
             }
 
             logger.pipeline('info', 'tester-coder-loop:start', { round, approach, historyLength: attemptHistory.length });
-            eventBus.emit('coder:fix-round', round, 0, 0, approach);
+            ctx.eventBus.emit('coder:fix-round', round, 0, 0, approach);
 
             logRetry({
               timestamp: new Date().toISOString(),
@@ -330,7 +359,7 @@ export class Orchestrator {
             });
 
             try {
-              const failureData = readArtifact('test-report.manifest.json');
+              const failureData = ctx.store.read('test-report.manifest.json');
               attemptHistory.push({ round, failures: failureData, approach });
             } catch { /* non-fatal */ }
 
@@ -347,24 +376,24 @@ export class Orchestrator {
       }
 
       if (testerCoderFixCount > 0) {
-        const finalVerdict = this.checkTesterVerdict(logger) ? 'fail' : 'pass';
+        const finalVerdict = this.checkTesterVerdict() ? 'fail' : 'pass';
         logger.pipeline('info', 'tester-coder-loop:complete', { totalRounds: testerCoderFixCount, finalVerdict });
       }
 
       pipelineRun.completedAt = new Date().toISOString();
       this.savePipelineState(pipelineRun, validated.profile, testerCoderFixCount);
 
-      logger.pipeline('info', 'pipeline:complete', { runId: resolvedRunId });
-      eventBus.emit('pipeline:complete', resolvedRunId);
+      ctx.logger.pipeline('info', 'pipeline:complete', { runId: resolvedRunId });
+      ctx.eventBus.emit('pipeline:complete', resolvedRunId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.pipeline('error', 'pipeline:failed', { runId: resolvedRunId, error: message });
-      eventBus.emit('pipeline:failed', resolvedRunId, message);
+      ctx.logger.pipeline('error', 'pipeline:failed', { runId: resolvedRunId, error: message });
+      ctx.eventBus.emit('pipeline:failed', resolvedRunId, message);
       // Save state even on failure so next resume picks up where we left off
       this.savePipelineState(pipelineRun, validated.profile, testerCoderFixCount ?? 0);
       throw err;
     } finally {
-      await logger.close();
+      await ctx.logger.close();
     }
 
     return pipelineRun;
@@ -375,7 +404,7 @@ export class Orchestrator {
    */
   private savePipelineState(run: PipelineRun, profile: string, fixLoopRound?: number): void {
     try {
-      writeArtifact('pipeline-state.json', JSON.stringify({
+      this.currentCtx!.store.write('pipeline-state.json', JSON.stringify({
         id: run.id,
         instruction: run.instruction,
         stages: run.stages,
@@ -401,13 +430,12 @@ export class Orchestrator {
   private async executeStage(
     run: PipelineRun,
     stage: StageName,
-    provider: LLMProvider,
-    logger: Logger
   ): Promise<void> {
+    const ctx = this.currentCtx!;
     // Skip stages that are already done (resume scenario)
     if (run.stages[stage]?.state === 'done') {
-      logger.pipeline('info', 'stage:skipped-resume', { stage });
-      eventBus.emit('stage:skipped', stage, run.id);
+      ctx.logger.pipeline('info', 'stage:skipped-resume', { stage });
+      ctx.eventBus.emit('stage:skipped', stage, run.id);
       return;
     }
 
@@ -416,12 +444,12 @@ export class Orchestrator {
 
     run.currentStage = stage;
     transitionStage(run, stage, 'running');
-    logger.pipeline('info', 'stage:start', { stage });
-    eventBus.emit('stage:start', stage, run.id);
+    ctx.logger.pipeline('info', 'stage:start', { stage });
+    ctx.eventBus.emit('stage:start', stage, run.id);
 
     // Update retry context on provider (if wrapped with RetryingProvider)
-    if (provider instanceof RetryingProvider) {
-      provider.setContext(run.id, stage);
+    if (ctx.provider instanceof RetryingProvider) {
+      ctx.provider.setContext(run.id, stage);
     }
 
     // Initialize metrics for this stage (only on first entry, not retries)
@@ -437,15 +465,13 @@ export class Orchestrator {
       // Build context (artifact isolation)
       const agentConfig = this.agentsConfig.agents[stage];
       const task = { runId: run.id, stage, instruction: run.instruction, autonomy: agentConfig?.autonomy };
-      // Bridge: create ArtifactStore pointing at existing artifacts dir for backward compat
-      const bridgeStore = Object.assign(Object.create(ArtifactStore.prototype), { runDir: getArtifactsDir() }) as ArtifactStore;
-      const context = buildContext(this.agentsConfig, task, bridgeStore, logger, false);
+      const context = buildContext(this.agentsConfig, task, ctx.store, ctx.logger, ctx.devMode);
 
       // Create and execute agent (with clarification handling)
-      await this.executeAgent(run, stage, provider, logger, context);
+      await this.executeAgent(run, stage, context);
 
       // Commit stage artifacts before gate check (so reviewers can see them)
-      await this.commitStageArtifacts(stage, run.id, logger);
+      await this.commitStageArtifacts(stage, run.id);
 
       // Record commit SHA
       const metrics = this.stageMetrics.get(stage);
@@ -454,7 +480,7 @@ export class Orchestrator {
       }
 
       // Post preview comment for stages with visual outputs (before gate check)
-      await this.postPreviewComment(stage, run.id, logger);
+      await this.postPreviewComment(stage, run.id);
 
       // Gate check
       if (shouldAutoApprove(run, stageConfig)) {
@@ -462,14 +488,14 @@ export class Orchestrator {
       } else {
         // Manual gate
         transitionStage(run, stage, 'awaiting_human');
-        eventBus.emit('stage:awaiting_human', stage, run.id);
-        logger.pipeline('info', 'stage:awaiting_human', { stage });
+        ctx.eventBus.emit('stage:awaiting_human', stage, run.id);
+        ctx.logger.pipeline('info', 'stage:awaiting_human', { stage });
 
         const gateResult = await this.handler.onManualGate(stage, run.id);
 
         if (gateResult.approved) {
           transitionStage(run, stage, 'approved');
-          eventBus.emit('stage:approved', stage, run.id);
+          ctx.eventBus.emit('stage:approved', stage, run.id);
           transitionStage(run, stage, 'done');
         } else {
           // Track rejection in metrics
@@ -480,8 +506,8 @@ export class Orchestrator {
           }
 
           transitionStage(run, stage, 'rejected');
-          eventBus.emit('stage:rejected', stage, run.id);
-          logger.pipeline('info', 'stage:rejected', {
+          ctx.eventBus.emit('stage:rejected', stage, run.id);
+          ctx.logger.pipeline('info', 'stage:rejected', {
             stage,
             feedback: gateResult.feedback,
             retryComponents: gateResult.retryComponents,
@@ -516,17 +542,17 @@ export class Orchestrator {
           }
           stageStatus.retryCount++;
           transitionStage(run, stage, 'idle');
-          return this.executeStage(run, stage, provider, logger);
+          return this.executeStage(run, stage);
         }
       }
 
       // Snapshot (non-blocking — must not fail the pipeline)
       try {
         const issueNumbers = Object.fromEntries(this.stageIssues);
-        createSnapshot(stage, run.id, issueNumbers);
-        eventBus.emit('snapshot:created', stage, run.id);
+        createSnapshot(stage, run.id, issueNumbers, ctx.store.getDir());
+        ctx.eventBus.emit('snapshot:created', stage, run.id);
       } catch (snapErr) {
-        logger.pipeline('warn', 'snapshot:failed', {
+        ctx.logger.pipeline('warn', 'snapshot:failed', {
           stage,
           error: snapErr instanceof Error ? snapErr.message : String(snapErr),
         });
@@ -536,14 +562,14 @@ export class Orchestrator {
       try {
         await this.createStageIssue(stage, run);
       } catch (issueErr) {
-        logger.pipeline('warn', 'stage-issue:failed', {
+        ctx.logger.pipeline('warn', 'stage-issue:failed', {
           stage,
           error: issueErr instanceof Error ? issueErr.message : String(issueErr),
         });
       }
 
-      logger.pipeline('info', 'stage:complete', { stage });
-      eventBus.emit('stage:complete', stage, run.id);
+      ctx.logger.pipeline('info', 'stage:complete', { stage });
+      ctx.eventBus.emit('stage:complete', stage, run.id);
 
       // Stage-level evolution removed — use `mosaicat evolve` instead
     } catch (err) {
@@ -566,14 +592,14 @@ export class Orchestrator {
         });
         transitionStage(run, stage, 'failed');
         transitionStage(run, stage, 'idle');
-        logger.pipeline('warn', 'stage:retry', { stage, retry: stageStatus.retryCount });
-        eventBus.emit('stage:retry', stage, run.id, stageStatus.retryCount);
-        return this.executeStage(run, stage, provider, logger);
+        ctx.logger.pipeline('warn', 'stage:retry', { stage, retry: stageStatus.retryCount });
+        ctx.eventBus.emit('stage:retry', stage, run.id, stageStatus.retryCount);
+        return this.executeStage(run, stage);
       }
 
       // Mark stage as failed
       transitionStage(run, stage, 'failed');
-      eventBus.emit('stage:failed', stage, run.id, message);
+      ctx.eventBus.emit('stage:failed', stage, run.id, message);
 
       // Automatic retries exhausted — ask user what to do (if not auto-approve)
       if (!run.autoApprove) {
@@ -581,12 +607,12 @@ export class Orchestrator {
         if (decision === 'retry') {
           stageStatus.retryCount = 0; // reset counter for a fresh round
           transitionStage(run, stage, 'idle');
-          logger.pipeline('info', 'stage:manual-retry', { stage });
-          eventBus.emit('stage:retry', stage, run.id, 0);
-          return this.executeStage(run, stage, provider, logger);
+          ctx.logger.pipeline('info', 'stage:manual-retry', { stage });
+          ctx.eventBus.emit('stage:retry', stage, run.id, 0);
+          return this.executeStage(run, stage);
         }
         if (decision === 'skip') {
-          logger.pipeline('warn', 'stage:skipped', { stage, reason: 'user chose to skip after failure' });
+          ctx.logger.pipeline('warn', 'stage:skipped', { stage, reason: 'user chose to skip after failure' });
           transitionStage(run, stage, 'skipped');
           return;
         }
@@ -596,8 +622,8 @@ export class Orchestrator {
       // Rollback to previous stage
       const prev = getPreviousStage(run, stage);
       if (prev) {
-        logger.pipeline('warn', 'stage:rollback', { from: stage, to: prev });
-        eventBus.emit('stage:rollback', stage, prev, run.id);
+        ctx.logger.pipeline('warn', 'stage:rollback', { from: stage, to: prev });
+        ctx.eventBus.emit('stage:rollback', stage, prev, run.id);
         await this.closeRolledBackIssues(stage, run.id);
       }
 
@@ -605,13 +631,14 @@ export class Orchestrator {
     }
   }
 
-  private async commitStageArtifacts(stage: StageName, runId: string, logger: Logger): Promise<void> {
+  private async commitStageArtifacts(stage: StageName, runId: string): Promise<void> {
+    const ctx = this.currentCtx!;
     if (!this.publisher) return;
     try {
       const agentConfig = this.agentsConfig.agents[stage]!;
-      const files = (agentConfig.outputs ?? []).map((o: string) => `${getArtifactsDir()}/${o}`);
+      const files = (agentConfig.outputs ?? []).map((o: string) => `${ctx.store.getDir()}/${o}`);
       const issueNumber = this.stageIssues.get(`${runId}:${stage}`);
-      await this.publisher.commitStage(stage, files, issueNumber, getArtifactsDir());
+      await this.publisher.commitStage(stage, files, issueNumber, ctx.store.getDir());
 
       // Notify handler about PR (created lazily after first commit)
       const pr = this.publisher.getPR();
@@ -619,7 +646,7 @@ export class Orchestrator {
         this.handler.setPR(pr.number);
       }
     } catch (err) {
-      logger.pipeline('warn', 'git-publisher:commit-failed', {
+      ctx.logger.pipeline('warn', 'git-publisher:commit-failed', {
         stage,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -630,7 +657,8 @@ export class Orchestrator {
    * Post a PR comment with embedded screenshots and preview links for visual stages.
    * Called after commitStageArtifacts, before gate check, so reviewers can see the output.
    */
-  private async postPreviewComment(stage: StageName, _runId: string, logger: Logger): Promise<void> {
+  private async postPreviewComment(stage: StageName, _runId: string): Promise<void> {
+    const ctx = this.currentCtx!;
     if (!this.adapter || !this.publisher) return;
     const pr = this.publisher.getPR();
     if (!pr) return;
@@ -646,7 +674,7 @@ export class Orchestrator {
       const lines: string[] = ['## 🎨 UIDesigner — Component Preview', ''];
 
       // Screenshots (mapped to docs/mosaicat/screenshots/ in repo)
-      const screenshotsDir = `${getArtifactsDir()}/screenshots`;
+      const screenshotsDir = `${ctx.store.getDir()}/screenshots`;
       const screenshots = this.safeReadDir(screenshotsDir).filter(f => f.endsWith('.png'));
       if (screenshots.length > 0) {
         lines.push('### Screenshots');
@@ -664,7 +692,7 @@ export class Orchestrator {
       }
 
       // Interactive preview links (mapped to docs/mosaicat/previews/ in repo)
-      const previewsDir = `${getArtifactsDir()}/previews`;
+      const previewsDir = `${ctx.store.getDir()}/previews`;
       const previews = this.safeReadDir(previewsDir).filter(f => f.endsWith('.html'));
       if (previews.length > 0) {
         lines.push('### Interactive Previews');
@@ -679,7 +707,7 @@ export class Orchestrator {
       }
 
       // Gallery link (mapped to docs/mosaicat/gallery.html in repo)
-      if (fs.existsSync(`${getArtifactsDir()}/gallery.html`)) {
+      if (fs.existsSync(`${ctx.store.getDir()}/gallery.html`)) {
         const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/docs/mosaicat/gallery.html`;
         const galleryUrl = `https://htmlpreview.github.io/?${rawUrl}`;
         lines.push(`### [View Gallery](${galleryUrl})`);
@@ -690,7 +718,7 @@ export class Orchestrator {
         await this.adapter.addComment(pr.number, lines.join('\n'));
       }
     } catch (err) {
-      logger.pipeline('warn', 'preview-comment:failed', {
+      ctx.logger.pipeline('warn', 'preview-comment:failed', {
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -742,26 +770,14 @@ export class Orchestrator {
   private async executeAgent(
     run: PipelineRun,
     stage: StageName,
-    provider: LLMProvider,
-    logger: Logger,
     context: AgentContext
   ): Promise<void> {
+    const ctx = this.currentCtx!;
     const agentConfig = this.agentsConfig.agents[stage];
     // Pass handler to agents that support interactive retry (Coder).
     // In auto-approve mode, pass undefined so they auto-skip after retries.
     const agentHandler = run.autoApprove ? undefined : this.handler;
-    // Bridge: create RunContext from orchestrator's existing dependencies
-    const bridgeStore = Object.assign(Object.create(ArtifactStore.prototype), { runDir: getArtifactsDir() }) as ArtifactStore;
-    const bridgeCtx: RunContext = {
-      store: bridgeStore,
-      logger,
-      provider,
-      eventBus,
-      config: this.pipelineConfig,
-      signal: new AbortController().signal,
-      devMode: false,
-    };
-    const agent = createAgent(stage, bridgeCtx, agentConfig?.autonomy, agentHandler);
+    const agent = createAgent(stage, ctx, agentConfig?.autonomy, agentHandler);
 
     try {
       await agent.execute(context);
@@ -781,19 +797,19 @@ export class Orchestrator {
       if (clMetrics) clMetrics.hadClarification = true;
 
       transitionStage(run, stage, 'awaiting_clarification');
-      logger.pipeline('info', 'stage:clarification', { stage, question: err.question });
+      ctx.logger.pipeline('info', 'stage:clarification', { stage, question: err.question });
 
       let answer: string;
       if (run.autoApprove) {
         // Auto-select: last option (convention: default/fallback) or generic default
         const lastOption = err.options?.[err.options.length - 1];
         answer = lastOption?.label ?? 'default';
-        logger.pipeline('info', 'stage:clarification-auto', {
+        ctx.logger.pipeline('info', 'stage:clarification-auto', {
           stage,
           answer,
           reason: 'auto-approve mode',
         });
-        eventBus.emit('clarification:answered', stage, err.question, answer, 'auto-approve');
+        ctx.eventBus.emit('clarification:answered', stage, err.question, answer, 'auto-approve');
       } else {
         answer = await this.handler.onClarification(
           stage, err.question, run.id, err.options, err.allowCustom,
@@ -813,7 +829,7 @@ export class Orchestrator {
       transitionStage(run, stage, 'running');
 
       // Re-run agent with augmented context
-      const retryAgent = createAgent(stage, bridgeCtx, agentConfig?.autonomy, agentHandler);
+      const retryAgent = createAgent(stage, ctx, agentConfig?.autonomy, agentHandler);
       await retryAgent.execute(context);
     }
   }
@@ -827,7 +843,7 @@ export class Orchestrator {
 
     // Extract manifest summary from disk (zero LLM cost)
     const manifestName = (agentConfig.outputs ?? []).find((o: string) => o.endsWith('.manifest.json'));
-    const manifestSummary = manifestName ? extractManifestSummary(manifestName) : [];
+    const manifestSummary = manifestName ? extractManifestSummary(this.currentCtx!.store, manifestName) : [];
 
     // GitHub context for links
     const { owner, repo } = this.getRepoContext();
@@ -856,6 +872,7 @@ export class Orchestrator {
       repoSlug,
       branch,
       prNumber,
+      artifactsDir: this.currentCtx!.store.getDir(),
     };
 
     const issue = await this.adapter.createIssue({
@@ -865,11 +882,11 @@ export class Orchestrator {
     });
 
     this.stageIssues.set(`${run.id}:${stage}`, issue.number);
-    eventBus.emit('issue:created', issue.number, stage, run.id);
+    this.currentCtx!.eventBus.emit('issue:created', issue.number, stage, run.id);
   }
 
   private collectScreenshots(): string[] {
-    const dir = `${getArtifactsDir()}/screenshots`;
+    const dir = `${this.currentCtx!.store.getDir()}/screenshots`;
     try {
       return fs.readdirSync(dir)
         .filter((f: string) => f.endsWith('.png'))
@@ -887,7 +904,7 @@ export class Orchestrator {
 
     await this.adapter.addLabels(issueNumber, ['status:rolled-back']);
     await this.adapter.closeIssue(issueNumber);
-    eventBus.emit('issue:closed', issueNumber, stage, runId);
+    this.currentCtx!.eventBus.emit('issue:closed', issueNumber, stage, runId);
   }
 
   private async createSummaryIssue(runId: string, instruction: string): Promise<void> {
@@ -915,17 +932,16 @@ export class Orchestrator {
 
   private async runIntentConsultant(
     run: PipelineRun,
-    provider: LLMProvider,
-    logger: Logger
   ): Promise<void> {
+    const ctx = this.currentCtx!;
     // Skip if intent-brief.json already exists (resume / retry scenario)
-    if (artifactExists('intent-brief.json')) {
-      logger.pipeline('info', 'intent-consultant:skipped', { reason: 'brief already exists' });
+    if (ctx.store.exists('intent-brief.json')) {
+      ctx.logger.pipeline('info', 'intent-consultant:skipped', { reason: 'brief already exists' });
       return;
     }
 
-    logger.pipeline('info', 'intent-consultant:start', { runId: run.id });
-    eventBus.emit('stage:start', 'intent_consultant', run.id);
+    ctx.logger.pipeline('info', 'intent-consultant:start', { runId: run.id });
+    ctx.eventBus.emit('stage:start', 'intent_consultant', run.id);
 
     // Intent Consultant always uses CLI interaction (multi-turn dialogue needs terminal,
     // not GitHub Issue polling). GitHub mode kicks in after the brief is produced.
@@ -933,20 +949,9 @@ export class Orchestrator {
 
     // Use 'researcher' as placeholder StageName — IntentConsultant is not a pipeline stage yet
     const placeholderStage = 'researcher' as StageName;
-    // Bridge: create RunContext for IntentConsultant
-    const bridgeStore = Object.assign(Object.create(ArtifactStore.prototype), { runDir: getArtifactsDir() }) as ArtifactStore;
-    const bridgeCtx: RunContext = {
-      store: bridgeStore,
-      logger,
-      provider,
-      eventBus,
-      config: this.pipelineConfig,
-      signal: new AbortController().signal,
-      devMode: false,
-    };
     const agent = new IntentConsultantAgent(
       placeholderStage,
-      bridgeCtx,
+      ctx,
       cliHandler,
     );
 
@@ -957,36 +962,27 @@ export class Orchestrator {
     };
 
     await agent.execute(context);
-    logger.pipeline('info', 'intent-consultant:complete', { runId: run.id });
-  }
-
-  enableEvolution(): void {
-    if (!this.pipelineConfig.evolution) {
-      this.pipelineConfig.evolution = { enabled: true, cooldown_hours: 24 };
-    } else {
-      this.pipelineConfig.evolution.enabled = true;
-    }
+    ctx.logger.pipeline('info', 'intent-consultant:complete', { runId: run.id });
   }
 
   private async runStageEvolution(
     runId: string,
     stage: StageName,
-    provider: LLMProvider,
-    logger: Logger,
   ): Promise<void> {
+    const ctx = this.currentCtx!;
     try {
       const { EvolutionEngine } = await import('../evolution/engine.js');
       const { ProposalHandler } = await import('../evolution/proposal-handler.js');
 
-      const engine = new EvolutionEngine(provider, logger);
+      const engine = new EvolutionEngine(ctx.provider, ctx.logger);
       const proposals = await engine.analyzeStage(runId, stage);
 
       if (proposals.length > 0) {
-        const handler = new ProposalHandler(this.handler, provider, logger);
+        const handler = new ProposalHandler(this.handler, ctx.provider, ctx.logger, ctx.eventBus);
         await handler.processProposals(proposals);
       }
     } catch (err) {
-      logger.pipeline('error', 'evolution:stage-error', {
+      ctx.logger.pipeline('error', 'evolution:stage-error', {
         stage,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -996,28 +992,27 @@ export class Orchestrator {
 
   private async runEvolution(
     runId: string,
-    provider: LLMProvider,
-    logger: Logger
   ): Promise<void> {
+    const ctx = this.currentCtx!;
     try {
-      eventBus.emit('evolution:analyzing', runId);
-      logger.pipeline('info', 'evolution:start', { runId });
+      ctx.eventBus.emit('evolution:analyzing', runId);
+      ctx.logger.pipeline('info', 'evolution:start', { runId });
 
       const { EvolutionEngine } = await import('../evolution/engine.js');
       const { ProposalHandler } = await import('../evolution/proposal-handler.js');
 
-      const engine = new EvolutionEngine(provider, logger);
+      const engine = new EvolutionEngine(ctx.provider, ctx.logger);
       const proposals = await engine.analyze(runId);
 
       if (proposals.length > 0) {
-        const handler = new ProposalHandler(this.handler, provider, logger);
+        const handler = new ProposalHandler(this.handler, ctx.provider, ctx.logger, ctx.eventBus);
         await handler.processProposals(proposals);
       }
 
-      eventBus.emit('evolution:complete', runId, proposals.length);
-      logger.pipeline('info', 'evolution:complete', { runId, proposalCount: proposals.length });
+      ctx.eventBus.emit('evolution:complete', runId, proposals.length);
+      ctx.logger.pipeline('info', 'evolution:complete', { runId, proposalCount: proposals.length });
     } catch (err) {
-      logger.pipeline('error', 'evolution:error', {
+      ctx.logger.pipeline('error', 'evolution:error', {
         error: err instanceof Error ? err.message : String(err),
       });
       // Evolution errors don't fail the pipeline
@@ -1027,12 +1022,13 @@ export class Orchestrator {
   /**
    * Check if tester verdict is 'fail' — triggers Coder fix loop.
    */
-  private checkTesterVerdict(logger: Logger): boolean {
+  private checkTesterVerdict(): boolean {
+    const ctx = this.currentCtx!;
     try {
-      if (!artifactExists('test-report.manifest.json')) return false;
-      const manifest = JSON.parse(readArtifact('test-report.manifest.json'));
+      if (!ctx.store.exists('test-report.manifest.json')) return false;
+      const manifest = JSON.parse(ctx.store.read('test-report.manifest.json'));
       if (manifest.verdict === 'fail') {
-        logger.pipeline('info', 'tester-coder-loop:verdict-fail', {
+        ctx.logger.pipeline('info', 'tester-coder-loop:verdict-fail', {
           failed: manifest.failed,
           total: manifest.total,
         });
@@ -1051,9 +1047,10 @@ export class Orchestrator {
   private injectTestFailuresForCoder(
     attemptHistory?: Array<{ round: number; failures: string; approach: string }>,
   ): void {
+    const ctx = this.currentCtx!;
     try {
-      if (!artifactExists('test-report.manifest.json')) return;
-      const manifest = readArtifact('test-report.manifest.json');
+      if (!ctx.store.exists('test-report.manifest.json')) return;
+      const manifest = ctx.store.read('test-report.manifest.json');
 
       // Build cumulative context with attempt history
       let failureContext = manifest;
@@ -1070,7 +1067,7 @@ export class Orchestrator {
         agentConfig.inputs.push('test_failures');
       }
       // Write test failures as an artifact the coder can read
-      writeArtifact('test_failures', failureContext);
+      ctx.store.write('test_failures', failureContext);
     } catch {
       // Non-fatal
     }
@@ -1079,4 +1076,5 @@ export class Orchestrator {
   getStageIssues(): Map<string, number> {
     return new Map(this.stageIssues);
   }
+
 }

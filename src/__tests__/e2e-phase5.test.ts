@@ -162,8 +162,7 @@ describe('Phase 5 E2E: Self-Evolution', () => {
     sharedProvider = provider;
 
     const handler = new AutoApproveEvolutionHandler();
-    const orchestrator = new Orchestrator(handler);
-    orchestrator.enableEvolution();
+    const orchestrator = new Orchestrator(handler, undefined, { enableEvolution: true });
 
     const result = await orchestrator.run('test evolution', true);
 
@@ -203,8 +202,7 @@ describe('Phase 5 E2E: Self-Evolution', () => {
     sharedProvider = provider;
 
     const handler = new AutoApproveEvolutionHandler();
-    const orchestrator = new Orchestrator(handler);
-    orchestrator.enableEvolution();
+    const orchestrator = new Orchestrator(handler, undefined, { enableEvolution: true });
 
     await orchestrator.run('test skills', true);
 
@@ -270,8 +268,7 @@ describe('Phase 5 E2E: Self-Evolution', () => {
     sharedProvider = provider;
 
     const handler = new AutoApproveEvolutionHandler();
-    const orchestrator = new Orchestrator(handler);
-    orchestrator.enableEvolution();
+    const orchestrator = new Orchestrator(handler, undefined, { enableEvolution: true });
 
     await orchestrator.run('test rollback', true);
 
@@ -303,8 +300,7 @@ describe('Phase 5 E2E: Self-Evolution', () => {
 
     const handler = new AutoApproveEvolutionHandler();
     handler.defaultApproval = { approved: false, reason: 'Too aggressive' };
-    const orchestrator = new Orchestrator(handler);
-    orchestrator.enableEvolution();
+    const orchestrator = new Orchestrator(handler, undefined, { enableEvolution: true });
 
     await orchestrator.run('test rejection', true);
 
@@ -322,8 +318,7 @@ describe('Phase 5 E2E: Self-Evolution', () => {
     sharedProvider = provider;
 
     const handler = new AutoApproveEvolutionHandler();
-    const orchestrator = new Orchestrator(handler);
-    orchestrator.enableEvolution();
+    const orchestrator = new Orchestrator(handler, undefined, { enableEvolution: true });
 
     const result = await orchestrator.run('test no proposals', true);
 

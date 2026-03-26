@@ -80,10 +80,10 @@ if (command === 'login') {
   const fromIdx = args.indexOf('--from');
   const fromStage = fromIdx >= 0 ? args[fromIdx + 1] : undefined;
 
-  const detach = attachCLIProgress();
+  const orchestrator = new Orchestrator();
+  const detach = attachCLIProgress(orchestrator.eventBus);
 
   const startResume = async () => {
-    const orchestrator = new Orchestrator();
     const fromLabel = fromStage ? ` from ${fromStage}` : '';
     console.log(`[mosaicat] Resuming${runId ? ` run ${runId}` : ' latest run'}${fromLabel}...`);
 
@@ -112,9 +112,6 @@ if (command === 'login') {
   const profileIdx = args.indexOf('--profile');
   const profileArg = profileIdx >= 0 ? args[profileIdx + 1] as import('./core/types.js').PipelineProfile | undefined : undefined;
 
-  // Attach rich CLI progress output
-  const detach = attachCLIProgress();
-
   const startRun = async () => {
     let orchestrator: Orchestrator;
 
@@ -132,17 +129,19 @@ if (command === 'login') {
 
         const securityConfig = loadSecurityConfig(pipelineConfig, authConfig.userLogin);
         const handler = new GitHubInteractionHandler(adapter, pipelineConfig.github, securityConfig);
-        orchestrator = new Orchestrator(handler, adapter);
+        orchestrator = new Orchestrator(handler, adapter, { enableEvolution: useEvolve });
       } catch (err) {
         console.error(`\x1b[31m[mosaicat] GitHub auth failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
         process.exit(1);
       }
     } else {
-      orchestrator = new Orchestrator();
+      orchestrator = new Orchestrator(undefined, undefined, { enableEvolution: useEvolve });
     }
 
+    // Attach rich CLI progress output
+    const detach = attachCLIProgress(orchestrator.eventBus);
+
     if (useEvolve) {
-      orchestrator.enableEvolution();
       console.log('[mosaicat] Evolution mode enabled — proposals after pipeline completes');
     }
 
@@ -160,7 +159,6 @@ if (command === 'login') {
 
   startRun().catch((err) => {
     console.error(`\n\x1b[31m[mosaicat] Pipeline failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
-    detach();
     process.exit(1);
   });
 } else {
