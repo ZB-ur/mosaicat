@@ -30,7 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A canary integration test runs a full pipeline (all real modules except LLM, which uses a deterministic stub) and verifies artifacts land on disk
 **Plans:** 3 plans
 Plans:
-- [ ] 01-01-PLAN.md — Typed mock factories + eliminate all `as any` casts from test files
+- [x] 01-01-PLAN.md — Typed mock factories + eliminate all `as any` casts from test files
 - [ ] 01-02-PLAN.md — Resume flow integration tests (5 scenarios)
 - [ ] 01-03-PLAN.md — Full 13-stage canary E2E test + coverage baseline
 
