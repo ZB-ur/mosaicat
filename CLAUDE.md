@@ -222,3 +222,305 @@ config/agents.yaml               # Agent 编排配置（输入/输出契约）
 
 - PostToolUse hook 自动记录，无需手动干预
 - 日志位于 `.mosaic/logs/sessions/`
+
+<!-- GSD:project-start source:PROJECT.md -->
+## Project
+
+**Mosaicat v2 — Core Engine Rewrite**
+
+Mosaicat 是一个 AI 多 Agent 流水线系统：用户给一条指令，经过最多 13 个 Agent 串行处理，产出从需求文档到设计稿到 API 规范到完整代码的交付物。当前版本（v1）功能完整但积累了显著的架构债务和代码质量问题。本次重写聚焦核心引擎层和 Agent 实现层，保留稳定接口和领域资产。
+
+**Core Value:** Pipeline 引擎的可靠性和可维护性 — 每个 Agent 的输入输出契约必须被严格执行，错误必须可见，状态必须可追踪。
+
+### Constraints
+
+- **Tech stack**: 保持 TypeScript / Node.js / ESM，不引入新语言或运行时
+- **Compatibility**: 重写后的模块必须与保留模块的接口完全兼容（`types.ts` 是契约）
+- **Testing**: 每个重写模块必须有对应的单元测试，关键路径（resume、build loop）必须有集成测试
+- **Incremental**: 渐进式重写，每个 phase 交付后系统必须可运行
+<!-- GSD:project-end -->
+
+<!-- GSD:stack-start source:codebase/STACK.md -->
+## Technology Stack
+
+## Languages
+- TypeScript 5.9.3 - All source code (`src/`, `backend/src/`)
+- YAML - Pipeline and agent configuration (`config/pipeline.yaml`, `config/agents.yaml`)
+- Markdown - Agent prompt definitions (`.claude/agents/mosaic/*.md`)
+## Runtime
+- Node.js (ES2022 target, ESM modules via `"type": "module"`)
+- Cloudflare Workers - Backend only (`backend/`)
+- npm
+- Lockfile: `package-lock.json` (present)
+- Backend has separate `backend/package-lock.json`
+## Frameworks
+- `@modelcontextprotocol/sdk` ^1.27.1 - MCP server implementation (`src/mcp/server.ts`)
+- `@anthropic-ai/sdk` ^0.78.0 - Direct Anthropic API calls (`src/providers/anthropic-sdk.ts`)
+- Hono ^4.7.0 - Backend HTTP framework (`backend/src/index.ts`)
+- Vitest ^4.1.0 - Test runner and assertions (`vitest.config.ts`)
+- Playwright ^1.58.2 - Browser automation for component screenshots (`src/core/screenshot-renderer.ts`)
+- TypeScript ^5.9.3 - Compilation (`tsc`)
+- tsx ^4.21.0 - Direct TS execution for dev (`tsx src/index.ts`)
+- Wrangler ^4.14.0 - Cloudflare Workers dev/deploy (backend only)
+## Key Dependencies
+- `zod` ^4.3.6 - Schema validation for all artifacts and manifests
+- `p-queue` ^9.1.0 - Serial queue for Claude CLI calls (`src/providers/claude-cli.ts`)
+- `@octokit/rest` ^22.0.1 - GitHub API client (`src/adapters/github.ts`)
+- `@octokit/auth-app` ^8.2.0 - GitHub App authentication
+- `eventemitter3` ^5.0.4 - Event bus for pipeline events (`src/core/event-bus.ts`)
+- `js-yaml` ^4.1.1 - YAML config parsing (`config/*.yaml`)
+- `@inquirer/prompts` ^8.3.2 - CLI interactive prompts
+- `better-sqlite3` ^12.8.0 - SQLite database (local data storage)
+## TypeScript Configuration
+- `strict: true` - Full strict mode enabled
+- `target: ES2022` - Modern JS output
+- `module: NodeNext` / `moduleResolution: NodeNext` - Native ESM
+- `declaration: true`, `declarationMap: true`, `sourceMap: true` - Full type output
+- Root: `src/` -> Output: `dist/`
+## Build & Run Commands
+## LLM Provider Architecture
+| Provider | File | Purpose |
+|----------|------|---------|
+| `ClaudeCLIProvider` | `src/providers/claude-cli.ts` | Spawns `claude -p` CLI with tool use support |
+| `AnthropicSDKProvider` | `src/providers/anthropic-sdk.ts` | Direct Anthropic Messages API via SDK |
+| `OpenAICompatibleProvider` | `src/providers/openai-compatible.ts` | Generic OpenAI-compatible endpoint (GPT-4o, Qwen, DeepSeek, Gemini, etc.) |
+## Configuration Files
+- `config/pipeline.yaml` - Stage definitions, profiles, gate settings, LLM provider pool
+- `config/agents.yaml` - Agent input/output contracts, allowed tools, prompt file paths
+- `config/mcp-servers.yaml` - MCP server configuration (currently uses built-in tools only)
+- `tsconfig.json` - Main project compiler config
+- `backend/tsconfig.json` - Backend-specific compiler config
+- `vitest.config.ts` - Sequential test execution (`fileParallelism: false`)
+## Platform Requirements
+- Node.js (ES2022+ compatible, likely v18+)
+- Claude CLI installed (for default `claude-cli` provider)
+- Playwright browsers (auto-installed, for screenshot rendering)
+- Cloudflare Workers runtime
+- Wrangler CLI for deployment
+- GitHub App credentials as Wrangler secrets
+<!-- GSD:stack-end -->
+
+<!-- GSD:conventions-start source:CONVENTIONS.md -->
+## Conventions
+
+## Naming Patterns
+- Source files: `kebab-case.ts` (e.g., `src/core/event-bus.ts`, `src/core/llm-provider.ts`, `src/agents/ui-designer.ts`)
+- Test files: `kebab-case.test.ts` co-located in `__tests__/` subdirectories (e.g., `src/core/__tests__/pipeline.test.ts`)
+- Schema files: `kebab-case-schema.ts` (e.g., `src/agents/code-plan-schema.ts`, `src/agents/ui-plan-schema.ts`)
+- Config files: `kebab-case.yaml` (e.g., `config/pipeline.yaml`, `config/agents.yaml`)
+- PascalCase: `BaseAgent`, `Orchestrator`, `EventBus`, `CoderAgent`, `UIDesignerAgent`
+- Agent classes end with `Agent`: `ResearcherAgent`, `ValidatorAgent`, `TechLeadAgent`
+- Provider classes end with `Provider`: `AnthropicSDKProvider`, `StubProvider`, `RetryingProvider`
+- camelCase: `createPipelineRun()`, `transitionStage()`, `buildContext()`, `assemblePrompt()`
+- Factory functions use `create` prefix: `createAgent()`, `createProvider()`, `createSnapshot()`
+- Boolean getters use `should`/`is`/`has`: `shouldAutoApprove()`, `isTrustedActor()`, `artifactExists()`
+- Builder/assembler functions use `build`/`assemble`: `buildContext()`, `buildIssueBody()`, `assemblePrompt()`
+- camelCase for locals and parameters: `runId`, `stageConfig`, `inputArtifacts`
+- UPPER_SNAKE_CASE for module-level constants: `DEFAULT_STAGES`, `STAGE_NAMES`, `AUTO_FIX_RETRIES`, `PLANNER_BUDGET_USD`
+- PascalCase for interfaces and type aliases: `PipelineRun`, `AgentContext`, `StageConfig`, `LLMCallOptions`
+- Interfaces do NOT use `I` prefix: `LLMProvider` not `ILLMProvider`
+- Zod schemas use PascalCase + `Schema` suffix: `PrdManifestSchema`, `CodePlanSchema`, `IntentBriefSchema`
+- Corresponding types extracted via `z.infer<>` or manually defined interfaces
+- snake_case strings: `'intent_consultant'`, `'product_owner'`, `'ux_designer'`, `'api_designer'`
+- Defined as const tuple in `src/core/types.ts`: `STAGE_NAMES`
+## Code Style
+- No Prettier or ESLint config at project root (none detected)
+- Indentation: 2 spaces (consistent across all files)
+- Single quotes for strings
+- Trailing commas in multi-line arrays/objects
+- Semicolons required
+- `strict: true` in `tsconfig.json`
+- Target: ES2022, Module: NodeNext, ModuleResolution: NodeNext
+- `declaration: true`, `declarationMap: true`, `sourceMap: true`
+- No ESLint or Biome configuration at project level
+- Code quality enforced via TypeScript strict mode + `tsc` compilation
+- Git hooks enforce commit message format and workflow rules
+## Import Organization
+- Always use `node:` prefix for Node built-ins: `'node:fs'`, `'node:path'`, `'node:os'`
+- Always use `.js` extension on relative imports (required by NodeNext module resolution)
+- Use `type` keyword for type-only imports: `import type { StageName } from './types.js'`
+- Separate `import type` from value imports even from the same module
+- None. All imports use relative paths with `.js` extension.
+## Error Handling
+- Custom error classes extend `Error` with a `name` property:
+- `ClarificationNeeded` extends `Error` as a signal class (thrown, caught by orchestrator): `src/core/types.ts`
+- Error messages use template literals with descriptive context
+- `instanceof Error` check before accessing `.message`: `err instanceof Error ? err.message : String(err)`
+- Try/catch with re-throw pattern in `BaseAgent.execute()`: catch, log, then re-throw
+## Logging
+- All logging goes through `Logger` class, never `console.log` in production code
+- Two log channels: `logger.pipeline(level, event, data?)` and `logger.agent(stage, level, event, data?)`
+- Log levels: `'info' | 'warn' | 'error' | 'debug'`
+- Event names use `namespace:action` format: `'agent:start'`, `'llm:call'`, `'hook:mandatory-failed'`
+- Data parameter is always `Record<string, unknown>` (optional)
+## Comments
+- JSDoc `/** */` on exported classes, interfaces, and key functions
+- Inline comments for non-obvious logic (e.g., `// Fallback: if JSON parsing fails...`)
+- Section dividers with `// --- Section Name ---` pattern in type definition files
+- Chinese comments used for domain descriptions in orchestrator (e.g., `'意图深挖'`)
+- Used on exported functions and classes: `/** Append an entry to run-memory.md */`
+- Not universally applied to every function; primarily on public API surfaces
+## Function Design
+- Use interfaces/types for complex parameter groups: `AgentContext`, `LLMCallOptions`
+- Optional parameters use `?` suffix, not `| undefined`
+- Unused parameters prefixed with `_`: `_prompt`, `_options`, `_outputSpec`
+- Async functions return `Promise<void>` when they produce side effects (write artifacts)
+- Factory functions return concrete types
+- Functions that may fail throw errors (no Result/Either pattern)
+## Module Design
+- Named exports preferred over default exports
+- One primary class/function per file
+- Re-export barrel files exist: `src/agents/index.ts`
+- `src/agents/index.ts` re-exports all agent classes
+- Not used in other directories (core, evolution, etc.)
+- `eventBus` exported as module-level singleton from `src/core/event-bus.ts`
+- `baseDir`/`currentRunDir` as module-level state in `src/core/artifact.ts`
+## Zod Schema Conventions
+- All manifest data validated with Zod at write time
+- Schemas defined adjacent to the I/O functions that use them
+- Schema names: `{Entity}Schema` (e.g., `FeatureSchema`, `CodePlanSchema`)
+- Type extraction: `z.infer<typeof Schema>` for derived types
+## Event Bus Conventions
+- Format: `namespace:action` — `'stage:start'`, `'agent:thinking'`, `'pipeline:complete'`
+- Typed via `PipelineEvents` interface with explicit callback signatures
+- Emit via `eventBus.emit('event', ...args)`, subscribe via `eventBus.on('event', handler)`
+## Agent Implementation Pattern
+- `BaseAgent` (abstract) -> `LLMAgent` (abstract, structured output) -> Simple agents
+- `BaseAgent` (abstract) -> Complex agents (`UIDesignerAgent`, `CoderAgent`, `ValidatorAgent`)
+<!-- GSD:conventions-end -->
+
+<!-- GSD:architecture-start source:ARCHITECTURE.md -->
+## Architecture
+
+## Pattern Overview
+- Sequential multi-agent pipeline where each stage produces disk artifacts consumed by downstream stages
+- Strict artifact isolation: agents only see contracted inputs defined in `config/agents.yaml`, never pipeline history
+- Event-driven progress reporting via a typed EventBus singleton
+- Dual interaction modes: CLI (interactive terminal) and MCP (programmatic via Model Context Protocol)
+- Self-evolution subsystem that analyzes pipeline runs and proposes prompt/skill improvements
+## Layers
+- Purpose: Parse commands and bootstrap the Orchestrator
+- Location: `src/index.ts`
+- Contains: Command parsing (`run`, `resume`, `refine`, `evolve`, `login`, `logout`, `setup`), CLI flag handling, progress display attachment
+- Depends on: `core/orchestrator.ts`, `core/cli-progress.ts`, `auth/*`
+- Used by: End users via `mosaicat` CLI
+- Purpose: Expose pipeline as MCP tools for programmatic access
+- Location: `src/mcp-entry.ts`, `src/mcp/server.ts`, `src/mcp/tools.ts`
+- Contains: MCP server setup, tool registration (mosaic_run, mosaic_status, mosaic_approve, mosaic_reject, mosaic_clarify, mosaic_artifacts, etc.)
+- Depends on: `core/run-manager.ts`, `core/orchestrator.ts`
+- Used by: MCP clients (e.g., Claude Desktop)
+- Purpose: Sequence agents through pipeline stages, handle gates/retries/evolution
+- Location: `src/core/orchestrator.ts`
+- Contains: `Orchestrator` class — the main coordination engine
+- Depends on: `core/pipeline.ts` (state machine), `core/agent-factory.ts`, `core/context-manager.ts`, `core/event-bus.ts`, `core/artifact.ts`, `core/interaction-handler.ts`, `evolution/engine.ts`, `core/git-publisher.ts`
+- Used by: CLI entry, MCP RunManager
+- Purpose: Manage pipeline run state transitions with validation
+- Location: `src/core/pipeline.ts`
+- Contains: `createPipelineRun()`, `transitionStage()`, `shouldAutoApprove()`, `getNextStage()`, `getPreviousStage()`, `resetStageForResume()`
+- Depends on: `core/types.ts`
+- Used by: Orchestrator exclusively
+- Key invariant: State transitions are validated against a whitelist (`VALID_TRANSITIONS`). Invalid transitions throw.
+- Purpose: Implement per-stage logic — call LLM, parse output, write artifacts
+- Location: `src/agents/*.ts`, `src/core/agent.ts`, `src/agents/llm-agent.ts`
+- Contains: `BaseAgent` (abstract base with hook support), `LLMAgent` (structured JSON output via LLM), specialized agents (Coder, UIDesigner, IntentConsultant, etc.)
+- Depends on: `core/llm-provider.ts`, `core/artifact.ts`, `core/manifest.ts`, `core/prompt-assembler.ts`
+- Used by: Orchestrator via `core/agent-factory.ts`
+- Purpose: Abstract LLM calls behind a uniform interface
+- Location: `src/core/llm-provider.ts` (interface), `src/core/provider-factory.ts`, `src/providers/*.ts`
+- Contains: `LLMProvider` interface, `ClaudeCLIProvider`, `AnthropicSDKProvider`, `OpenAICompatibleProvider`, `RetryingProvider` (decorator), `StubProvider` (testing)
+- Depends on: External SDKs (`@anthropic-ai/sdk`, Claude CLI, OpenAI-compatible APIs)
+- Used by: Agent layer
+- Purpose: Read/write pipeline artifacts to disk
+- Location: `src/core/artifact.ts`
+- Contains: `writeArtifact()`, `readArtifact()`, `artifactExists()`, `initArtifactsDir()`, `findLatestRun()`, `loadFromRun()`
+- Depends on: Node.js `fs`
+- Used by: BaseAgent, ContextManager, Orchestrator, Resume module
+- Key invariant: All artifacts scoped under `.mosaic/artifacts/{runId}/`
+- Purpose: Build `AgentContext` from config + disk artifacts + skills
+- Location: `src/core/context-manager.ts`
+- Contains: `buildContext()` — loads system prompt from `.claude/agents/mosaic/{agent}.md`, injects constitution, loads contracted input artifacts, appends approved skills
+- Depends on: `core/artifact.ts`, `evolution/skill-manager.ts`, `config/agents.yaml`
+- Used by: Orchestrator
+- Purpose: Handle human-in-the-loop gates and clarifications
+- Location: `src/core/interaction-handler.ts`, `src/core/github-interaction-handler.ts`
+- Contains: `InteractionHandler` interface, `CLIInteractionHandler` (terminal prompts), `DeferredInteractionHandler` (MCP async), `GitHubInteractionHandler` (PR-based approvals)
+- Depends on: `@inquirer/prompts` (CLI mode), `adapters/github.ts` (GitHub mode)
+- Used by: Orchestrator
+- Purpose: Publish pipeline artifacts as GitHub PRs via API
+- Location: `src/core/git-publisher.ts`, `src/core/pr-body-generator.ts`
+- Contains: `GitPublisher` — creates branch, commits stage artifacts via Git Data API, publishes PR
+- Depends on: `adapters/types.ts` (`GitPlatformAdapter` interface)
+- Used by: Orchestrator (optional, GitHub mode only)
+- Purpose: Analyze pipeline runs and propose prompt/skill improvements
+- Location: `src/evolution/engine.ts`, `src/evolution/skill-manager.ts`, `src/evolution/prompt-versioning.ts`, `src/evolution/proposal-handler.ts`
+- Contains: `EvolutionEngine` (LLM-based analysis), `SkillManager` (SKILL.md loading with trigger matching), prompt versioning (backup + rollback)
+- Depends on: `core/llm-provider.ts`, `core/artifact.ts`
+- Used by: Orchestrator (post-stage and post-run)
+- Purpose: GitHub OAuth + token management for GitHub App mode
+- Location: `src/auth/*.ts`
+- Contains: `resolveGitHubAuth()`, `oauthDeviceFlow()`, `TokenService`, `AuthStore`
+- Depends on: Backend at `api.mosaicat.dev` (Cloudflare Worker)
+- Used by: CLI entry, RunManager
+## Data Flow
+```
+```
+- Pipeline state is a `PipelineRun` object with per-stage `StageStatus` (`idle` → `running` → `done`)
+- State is persisted to `pipeline-state.json` after each stage for crash recovery
+- Resume restores state, resets interrupted stages to `idle`, validates outputs exist on disk
+- `--from <stage>` flag allows targeted reset of specific stage + all downstream
+- `eventBus` (singleton `EventBus` in `core/event-bus.ts`) emits typed events at every lifecycle point
+- `cli-progress.ts` subscribes to events for terminal progress display
+- MCP tools subscribe for async status tracking
+- Events are fire-and-forget, no return values
+## Key Abstractions
+- Purpose: Template method pattern for agent execution
+- Files: `src/core/agent.ts`, `src/agents/llm-agent.ts`
+- Pattern: `BaseAgent.execute()` runs pre-hooks → `run()` (abstract) → post-hooks. `LLMAgent` implements `run()` with structured JSON output via LLM. Agents override `getOutputSpec()` to declare artifacts/manifest.
+- Purpose: Uniform interface for LLM calls across providers
+- Files: `src/core/llm-provider.ts`, `src/providers/claude-cli.ts`, `src/providers/anthropic-sdk.ts`, `src/providers/openai-compatible.ts`
+- Pattern: Strategy pattern. `RetryingProvider` wraps any provider as a decorator for automatic retries with exponential backoff.
+- Purpose: Decouple human interaction from pipeline logic
+- Files: `src/core/interaction-handler.ts`, `src/core/github-interaction-handler.ts`
+- Pattern: Strategy pattern with three implementations: CLI (terminal prompts), Deferred (MCP async), GitHub (PR review comments)
+- Purpose: Abstract Git platform operations (currently GitHub only)
+- Files: `src/adapters/types.ts`, `src/adapters/github.ts`
+- Pattern: Adapter pattern for future multi-platform support
+- Purpose: Enforce valid stage transitions
+- Files: `src/core/pipeline.ts`, `src/core/types.ts`
+- Pattern: Finite state machine with explicit transition whitelist. States: `idle` → `running` → `awaiting_clarification`/`awaiting_human`/`done`/`failed`
+## Entry Points
+- Triggers: `npx mosaicat run|resume|refine|evolve|login|logout|setup`
+- Responsibilities: Parse args, resolve auth, create Orchestrator, attach CLI progress, run pipeline
+- Triggers: MCP client connects via stdio transport
+- Responsibilities: Start MCP server, register tools, create RunManager
+- Triggers: Called by CLI or RunManager
+- Responsibilities: Pipeline execution loop, stage sequencing, gate handling, retry logic, Tester-Coder fix loop, evolution, Git publishing, state persistence
+## Error Handling
+- `ClarificationNeeded` exception class signals an agent needs user input — caught by Orchestrator, routed to InteractionHandler
+- `HookFailedError` signals a mandatory hook failed — stage fails immediately
+- Stage failures increment `retryCount`, reset to `idle` for retry up to `stageConfig.retry_max`
+- Tester-Coder fix loop: progressive strategy — rounds 1-2 direct-fix, round 3 replan-failed-modules, rounds 4-5 full-history-fix
+- `RetryingProvider` (`src/core/retrying-provider.ts`) handles transient LLM errors with exponential backoff
+- Pipeline state saved on failure for resume
+## Cross-Cutting Concerns
+<!-- GSD:architecture-end -->
+
+<!-- GSD:workflow-start source:GSD defaults -->
+## GSD Workflow Enforcement
+
+Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+
+Use these entry points:
+- `/gsd:quick` for small fixes, doc updates, and ad-hoc tasks
+- `/gsd:debug` for investigation and bug fixing
+- `/gsd:execute-phase` for planned phase work
+
+Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
+<!-- GSD:workflow-end -->
+
+<!-- GSD:profile-start -->
+## Developer Profile
+
+> Profile not yet configured. Run `/gsd:profile-user` to generate your developer profile.
+> This section is managed by `generate-claude-profile` -- do not edit manually.
+<!-- GSD:profile-end -->
