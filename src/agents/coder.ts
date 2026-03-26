@@ -1,11 +1,8 @@
 import type { AgentContext, StageName } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
-import type { LLMProvider } from '../core/llm-provider.js';
-import type { Logger } from '../core/logger.js';
 import type { InteractionHandler } from '../core/interaction-handler.js';
 import type { OutputSpec } from '../core/prompt-assembler.js';
-import { eventBus } from '../core/event-bus.js';
-import { writeArtifact, readArtifact, artifactExists, getArtifactsDir } from '../core/artifact.js';
+import type { RunContext } from '../core/run-context.js';
 import { logRetry, classifyError } from '../core/retry-log.js';
 import { CoderPlanner } from './coder/coder-planner.js';
 import { CoderBuilder } from './coder/coder-builder.js';
@@ -31,11 +28,10 @@ export class CoderAgent extends BaseAgent {
 
   constructor(
     stage: StageName,
-    provider: LLMProvider,
-    logger: Logger,
+    ctx: RunContext,
     interactionHandler?: InteractionHandler,
   ) {
-    super(stage, provider, logger);
+    super(stage, ctx);
     this.interactionHandler = interactionHandler;
   }
 
@@ -46,13 +42,14 @@ export class CoderAgent extends BaseAgent {
     };
   }
 
-  /** Bridge module-level artifact functions to ArtifactIO interface for sub-modules. */
+  /** Bridge ArtifactStore to ArtifactIO interface for sub-modules. */
   private createArtifactIO(): ArtifactIO {
+    const store = this.ctx.store;
     return {
-      write: writeArtifact,
-      read: readArtifact,
-      exists: artifactExists,
-      getDir: getArtifactsDir,
+      write: (name: string, content: string) => store.write(name, content),
+      read: (name: string) => store.read(name),
+      exists: (name: string) => store.exists(name),
+      getDir: () => store.getDir(),
     };
   }
 
@@ -67,13 +64,13 @@ export class CoderAgent extends BaseAgent {
       provider: this.provider,
       artifacts,
       logger: this.logger,
-      eventBus,
+      eventBus: this.ctx.eventBus,
     };
 
     const planner = new CoderPlanner(deps);
     const builder = new CoderBuilder(deps);
     const verifier = new BuildVerifier({ ...deps, interactionHandler: this.interactionHandler });
-    const smoker = new SmokeRunner({ stage: this.stage, artifacts, logger: this.logger, eventBus });
+    const smoker = new SmokeRunner({ stage: this.stage, artifacts, logger: this.logger, eventBus: this.ctx.eventBus });
 
     // Step 1: Get or create code plan
     const plan = planner.loadExistingPlan() ?? await planner.createPlan(context);
@@ -83,22 +80,22 @@ export class CoderAgent extends BaseAgent {
       this.logger.agent(this.stage, 'info', 'skeleton:reuse', {
         message: 'All skeleton files exist on disk -- skipping skeleton phase',
       });
-      eventBus.emit('agent:progress', this.stage, 'skeleton: reusing existing files (retry scenario)');
+      this.ctx.eventBus.emit('agent:progress', this.stage, 'skeleton: reusing existing files (retry scenario)');
     } else {
       await builder.runSkeleton(context, plan);
     }
 
     // Step 3: Setup (npm install)
-    eventBus.emit('agent:progress', this.stage, `running: ${plan.commands.setupCommand}`);
+    this.ctx.eventBus.emit('agent:progress', this.stage, `running: ${plan.commands.setupCommand}`);
     verifier.runSetupCommand(plan);
 
     // Step 4: Verify skeleton
-    eventBus.emit('agent:progress', this.stage, `verifying skeleton: ${plan.commands.verifyCommand}`);
+    this.ctx.eventBus.emit('agent:progress', this.stage, `verifying skeleton: ${plan.commands.verifyCommand}`);
     const skeletonVerify = verifier.runVerifyCommand(plan);
     if (skeletonVerify.success) {
-      eventBus.emit('agent:progress', this.stage, 'skeleton: tsc passed');
+      this.ctx.eventBus.emit('agent:progress', this.stage, 'skeleton: tsc passed');
     } else {
-      eventBus.emit('agent:progress', this.stage, 'skeleton: tsc failed -- attempting fix...');
+      this.ctx.eventBus.emit('agent:progress', this.stage, 'skeleton: tsc failed -- attempting fix...');
       this.logger.agent(this.stage, 'warn', 'skeleton:verify-failed', {
         errors: skeletonVerify.errors.slice(0, 1000),
       });
@@ -121,9 +118,9 @@ export class CoderAgent extends BaseAgent {
       // Build scaffold first if in the implement list
       const scaffoldModule = modulesToImplement.find(m => m.priority === 0);
       if (scaffoldModule) {
-        eventBus.emit('agent:progress', this.stage, `[scaffold] implementing ${scaffoldModule.files.length} files...`);
+        this.ctx.eventBus.emit('agent:progress', this.stage, `[scaffold] implementing ${scaffoldModule.files.length} files...`);
         await builder.implementModule(context, plan, scaffoldModule, perModuleBudget);
-        eventBus.emit('agent:progress', this.stage, `[scaffold] running: ${plan.commands.setupCommand}`);
+        this.ctx.eventBus.emit('agent:progress', this.stage, `[scaffold] running: ${plan.commands.setupCommand}`);
         verifier.runSetupCommand(plan);
       }
 
@@ -134,28 +131,28 @@ export class CoderAgent extends BaseAgent {
 
       for (let mi = 0; mi < nonScaffold.length; mi++) {
         const mod = nonScaffold[mi];
-        eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] implementing "${mod.name}" -- ${mod.files.length} files`);
+        this.ctx.eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] implementing "${mod.name}" -- ${mod.files.length} files`);
         await builder.implementModule(context, plan, mod, perModuleBudget);
 
         // Verify after each module
-        eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] verifying: ${plan.commands.verifyCommand}`);
+        this.ctx.eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] verifying: ${plan.commands.verifyCommand}`);
         const verifyResult = verifier.runVerifyCommand(plan);
         if (verifyResult.success) {
-          eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] verify passed`);
+          this.ctx.eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] verify passed`);
         } else {
-          eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] verify failed -- attempting fix...`);
+          this.ctx.eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] verify failed -- attempting fix...`);
           let fixed = false;
           let lastErrors = verifyResult.errors;
           for (let retry = 1; ; retry++) {
             if (retry > AUTO_FIX_RETRIES) {
               const shouldContinue = await verifier.askUserToRetry(mod.name, retry - 1, lastErrors);
               if (!shouldContinue) {
-                eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] user chose to skip -- continuing`);
+                this.ctx.eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] user chose to skip -- continuing`);
                 break;
               }
             }
 
-            eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] fix attempt ${retry}...`);
+            this.ctx.eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] fix attempt ${retry}...`);
             this.logger.agent(this.stage, 'warn', 'implement:verify-failed', {
               module: mod.name,
               retry,
@@ -180,7 +177,7 @@ export class CoderAgent extends BaseAgent {
 
             const retryResult = verifier.runVerifyCommand(plan);
             if (retryResult.success) {
-              eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] fix succeeded (attempt ${retry})`);
+              this.ctx.eventBus.emit('agent:progress', this.stage, `[${mi + 1}/${nonScaffold.length}] fix succeeded (attempt ${retry})`);
               fixed = true;
               break;
             }
@@ -197,12 +194,12 @@ export class CoderAgent extends BaseAgent {
     }
 
     // Step 6: Final build
-    eventBus.emit('agent:progress', this.stage, `running final build: ${plan.commands.buildCommand}`);
+    this.ctx.eventBus.emit('agent:progress', this.stage, `running final build: ${plan.commands.buildCommand}`);
     const buildResult = verifier.runBuildCommand(plan);
     if (buildResult.success) {
-      eventBus.emit('agent:progress', this.stage, 'build passed');
+      this.ctx.eventBus.emit('agent:progress', this.stage, 'build passed');
     } else {
-      eventBus.emit('agent:progress', this.stage, 'build failed -- attempting fix...');
+      this.ctx.eventBus.emit('agent:progress', this.stage, 'build failed -- attempting fix...');
       this.logger.agent(this.stage, 'warn', 'build:failed', {
         errors: buildResult.errors.slice(0, 1000),
       });

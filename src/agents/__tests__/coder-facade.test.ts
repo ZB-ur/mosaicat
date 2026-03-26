@@ -5,6 +5,9 @@ import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-pr
 import type { Logger } from '../../core/logger.js';
 import type { InteractionHandler } from '../../core/interaction-handler.js';
 import type { AgentContext, StageName, Task } from '../../core/types.js';
+import type { RunContext } from '../../core/run-context.js';
+import { EventBus } from '../../core/event-bus.js';
+import { createTestArtifactStore } from '../../__tests__/test-helpers.js';
 
 // Mock sub-modules before importing CoderAgent
 const mockCreatePlan = vi.fn();
@@ -89,13 +92,17 @@ vi.mock('../../core/artifact.js', () => ({
   getArtifactsDir: vi.fn().mockReturnValue('/tmp/test-artifacts'),
 }));
 
-vi.mock('../../core/event-bus.js', () => ({
-  eventBus: {
-    emit: vi.fn(),
-    on: vi.fn(),
-    off: vi.fn(),
-  },
-}));
+vi.mock('../../core/event-bus.js', () => {
+  class MockEventBus {
+    emit = vi.fn();
+    on = vi.fn();
+    off = vi.fn();
+  }
+  return {
+    eventBus: new MockEventBus(),
+    EventBus: MockEventBus,
+  };
+});
 
 vi.mock('../../core/manifest.js', () => ({
   writeManifest: vi.fn(),
@@ -120,7 +127,23 @@ function createMockLogger(): Logger {
   return {
     pipeline: vi.fn(),
     agent: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined),
   } as unknown as Logger;
+}
+
+function createMockRunContext(): RunContext {
+  const provider = createMockProvider();
+  const logger = createMockLogger();
+  const store = createTestArtifactStore();
+  const eventBus = new EventBus();
+  return {
+    store,
+    logger,
+    provider,
+    eventBus,
+    config: {} as any,
+    signal: new AbortController().signal,
+  };
 }
 
 function createMockContext(): AgentContext {
@@ -198,7 +221,7 @@ describe('CoderAgent Facade', () => {
   });
 
   it('constructs with (stage, provider, logger) -- no interactionHandler', () => {
-    const agent = new CoderAgent('coder', createMockProvider(), createMockLogger());
+    const agent = new CoderAgent('coder', createMockRunContext());
     expect(agent).toBeDefined();
     expect(agent.stage).toBe('coder');
   });
@@ -208,12 +231,12 @@ describe('CoderAgent Facade', () => {
       onClarification: vi.fn(),
       onGateReview: vi.fn(),
     } as unknown as InteractionHandler;
-    const agent = new CoderAgent('coder', createMockProvider(), createMockLogger(), handler);
+    const agent = new CoderAgent('coder', createMockRunContext(), handler);
     expect(agent).toBeDefined();
   });
 
   it('creates and uses all 4 sub-module instances on run()', async () => {
-    const agent = new CoderAgent('coder', createMockProvider(), createMockLogger());
+    const agent = new CoderAgent('coder', createMockRunContext());
     const context = createMockContext();
     await agent.execute(context);
 
@@ -225,7 +248,7 @@ describe('CoderAgent Facade', () => {
   });
 
   it('calls planner.loadExistingPlan() first', async () => {
-    const agent = new CoderAgent('coder', createMockProvider(), createMockLogger());
+    const agent = new CoderAgent('coder', createMockRunContext());
     const context = createMockContext();
     await agent.execute(context);
 
@@ -234,7 +257,7 @@ describe('CoderAgent Facade', () => {
 
   it('calls planner.createPlan() when no existing plan', async () => {
     mockLoadExistingPlan.mockReturnValue(null);
-    const agent = new CoderAgent('coder', createMockProvider(), createMockLogger());
+    const agent = new CoderAgent('coder', createMockRunContext());
     const context = createMockContext();
     await agent.execute(context);
 
@@ -244,7 +267,7 @@ describe('CoderAgent Facade', () => {
 
   it('skips createPlan when loadExistingPlan returns a plan', async () => {
     mockLoadExistingPlan.mockReturnValue(MOCK_PLAN);
-    const agent = new CoderAgent('coder', createMockProvider(), createMockLogger());
+    const agent = new CoderAgent('coder', createMockRunContext());
     const context = createMockContext();
     await agent.execute(context);
 
@@ -253,7 +276,7 @@ describe('CoderAgent Facade', () => {
 
   it('calls builder.runSkeleton() when skeleton not complete', async () => {
     mockIsSkeletonComplete.mockReturnValue(false);
-    const agent = new CoderAgent('coder', createMockProvider(), createMockLogger());
+    const agent = new CoderAgent('coder', createMockRunContext());
     const context = createMockContext();
     await agent.execute(context);
 
@@ -262,7 +285,7 @@ describe('CoderAgent Facade', () => {
 
   it('skips skeleton when builder.isSkeletonComplete() returns true', async () => {
     mockIsSkeletonComplete.mockReturnValue(true);
-    const agent = new CoderAgent('coder', createMockProvider(), createMockLogger());
+    const agent = new CoderAgent('coder', createMockRunContext());
     const context = createMockContext();
     await agent.execute(context);
 
@@ -270,7 +293,7 @@ describe('CoderAgent Facade', () => {
   });
 
   it('calls verifier.runSetupCommand()', async () => {
-    const agent = new CoderAgent('coder', createMockProvider(), createMockLogger());
+    const agent = new CoderAgent('coder', createMockRunContext());
     const context = createMockContext();
     await agent.execute(context);
 
@@ -278,7 +301,7 @@ describe('CoderAgent Facade', () => {
   });
 
   it('calls verifier.runVerifyCommand() for skeleton check', async () => {
-    const agent = new CoderAgent('coder', createMockProvider(), createMockLogger());
+    const agent = new CoderAgent('coder', createMockRunContext());
     const context = createMockContext();
     await agent.execute(context);
 
@@ -286,7 +309,7 @@ describe('CoderAgent Facade', () => {
   });
 
   it('calls verifier.runBuildCommand() for final build', async () => {
-    const agent = new CoderAgent('coder', createMockProvider(), createMockLogger());
+    const agent = new CoderAgent('coder', createMockRunContext());
     const context = createMockContext();
     await agent.execute(context);
 
@@ -294,7 +317,7 @@ describe('CoderAgent Facade', () => {
   });
 
   it('calls smoker.runSmokeTest()', async () => {
-    const agent = new CoderAgent('coder', createMockProvider(), createMockLogger());
+    const agent = new CoderAgent('coder', createMockRunContext());
     const context = createMockContext();
     await agent.execute(context);
 
@@ -302,7 +325,7 @@ describe('CoderAgent Facade', () => {
   });
 
   it('calls verifier.runAcceptanceTests()', async () => {
-    const agent = new CoderAgent('coder', createMockProvider(), createMockLogger());
+    const agent = new CoderAgent('coder', createMockRunContext());
     const context = createMockContext();
     await agent.execute(context);
 
@@ -310,7 +333,7 @@ describe('CoderAgent Facade', () => {
   });
 
   it('calls verifier.analyzeBuildArtifacts()', async () => {
-    const agent = new CoderAgent('coder', createMockProvider(), createMockLogger());
+    const agent = new CoderAgent('coder', createMockRunContext());
     const context = createMockContext();
     await agent.execute(context);
 
