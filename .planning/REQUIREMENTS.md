@@ -99,7 +99,7 @@
 | STATE-03 | Phase 2 | Complete |
 | STATE-04 | Phase 2 | Complete |
 | EXEC-01 | Phase 6 (gap closure) | Pending |
-| EXEC-02 | Phase 6 (gap closure) | Pending |
+| EXEC-02 | Phase 6 (gap closure) | Complete |
 | EXEC-03 | Phase 3 | Complete |
 | EXEC-04 | Phase 3 | Complete |
 | EXEC-05 | Phase 6 (gap closure) | Pending |

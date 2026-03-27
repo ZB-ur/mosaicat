@@ -104,7 +104,7 @@ Plans:
   4. `PipelineEvents` interface declares `stage:skipped` event -- zero TypeScript errors on event emit/subscribe
 **Plans:** 2 plans
 Plans:
-- [ ] 06-01-PLAN.md — FixLoopRunner verdict path fix + PipelineEvents stage:skipped type declaration
+- [x] 06-01-PLAN.md — FixLoopRunner verdict path fix + PipelineEvents stage:skipped type declaration
 - [ ] 06-02-PLAN.md — OutputGenerator ArtifactIO refactor + ShutdownCoordinator wiring in index.ts
 
 ## Progress
