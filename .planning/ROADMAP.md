@@ -102,7 +102,10 @@ Plans:
   2. `ShutdownCoordinator` is instantiated in `index.ts` and its `AbortController` is passed to `createRunContext()` -- SIGINT completes current stage then exits
   3. `OutputGenerator` accepts `ArtifactIO` via constructor instead of importing legacy `getArtifactsDir()`/`readArtifact()` globals -- README and manifest use correct run-scoped paths
   4. `PipelineEvents` interface declares `stage:skipped` event -- zero TypeScript errors on event emit/subscribe
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 06-01-PLAN.md — FixLoopRunner verdict path fix + PipelineEvents stage:skipped type declaration
+- [ ] 06-02-PLAN.md — OutputGenerator ArtifactIO refactor + ShutdownCoordinator wiring in index.ts
 
 ## Progress
 
