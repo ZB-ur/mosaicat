@@ -150,18 +150,14 @@ function createMockRunContext(): RunContext {
 function createMockContext(): AgentContext {
   const task: Task = {
     runId: 'test-run-1',
-    systemPrompt: '',
-    userPrompt: '',
-    inputArtifactNames: [],
-    outputArtifactName: '',
-    outputManifestName: '',
-    autonomy: { max_budget_usd: 5, auto_approve: true, max_retries: 3 },
+    stage: 'coder',
+    instruction: 'test instruction',
+    autonomy: { max_budget_usd: 5 },
   };
   return {
     task,
     inputArtifacts: new Map(),
     systemPrompt: '',
-    skills: [],
   };
 }
 
