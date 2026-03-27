@@ -92,6 +92,18 @@ Plans:
 - [x] 05-02-PLAN.md — CLI presentation layer console.log replacement with process.stdout/stderr.write
 - [x] 05-03-PLAN.md — Orchestrator facade rewrite + PipelineLoopCallbacks extension
 
+### Phase 6: Integration Wiring Fixes
+**Goal**: All Phase 2-5 modules are correctly wired together -- fix loop triggers on test failures, graceful shutdown works on SIGINT, OutputGenerator uses instance-scoped artifact paths, and all TypeScript event types are declared
+**Depends on**: Phase 5
+**Requirements**: EXEC-01, EXEC-02, EXEC-05
+**Gap Closure**: Closes gaps from v1.0 milestone audit
+**Success Criteria** (what must be TRUE):
+  1. `FixLoopRunner.checkTesterFailed()` reads `manifest?.verdict` (not `quality_assessment?.verdict`) -- fix loop triggers when tester reports failures
+  2. `ShutdownCoordinator` is instantiated in `index.ts` and its `AbortController` is passed to `createRunContext()` -- SIGINT completes current stage then exits
+  3. `OutputGenerator` accepts `ArtifactIO` via constructor instead of importing legacy `getArtifactsDir()`/`readArtifact()` globals -- README and manifest use correct run-scoped paths
+  4. `PipelineEvents` interface declares `stage:skipped` event -- zero TypeScript errors on event emit/subscribe
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
