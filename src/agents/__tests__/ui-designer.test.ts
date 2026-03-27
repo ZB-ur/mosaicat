@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-provider.js';
 import type { AgentContext } from '../../core/types.js';
 import { ClarificationNeeded } from '../../core/types.js';
-import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
+import { createTestMosaicDir, cleanupTestMosaicDir, createTestRunContext } from '../../__tests__/test-helpers.js';
 import { UIDesignerAgent } from '../ui-designer.js';
 import { Logger } from '../../core/logger.js';
 
@@ -95,7 +95,7 @@ describe('UIDesignerAgent', () => {
   it('should make 1 planner call + N builder calls', async () => {
     const provider = new MockUIProvider();
     const logger = new Logger('test');
-    const agent = new UIDesignerAgent('ui_designer', provider, logger);
+    const agent = new UIDesignerAgent('ui_designer', createTestRunContext({ provider, logger }));
 
     await agent.execute(makeContext());
     await logger.close();
@@ -114,7 +114,7 @@ describe('UIDesignerAgent', () => {
   it('should write ui-plan.json, component files, and previews', async () => {
     const provider = new MockUIProvider();
     const logger = new Logger('test');
-    const agent = new UIDesignerAgent('ui_designer', provider, logger);
+    const agent = new UIDesignerAgent('ui_designer', createTestRunContext({ provider, logger }));
 
     await agent.execute(makeContext());
     await logger.close();
@@ -129,7 +129,7 @@ describe('UIDesignerAgent', () => {
   it('should programmatically generate manifest', async () => {
     const provider = new MockUIProvider();
     const logger = new Logger('test');
-    const agent = new UIDesignerAgent('ui_designer', provider, logger);
+    const agent = new UIDesignerAgent('ui_designer', createTestRunContext({ provider, logger }));
 
     await agent.execute(makeContext());
     await logger.close();
@@ -148,7 +148,7 @@ describe('UIDesignerAgent', () => {
     const provider = new MockUIProvider();
     provider.failOnBuilder = 1; // Fail on first builder call (CompA)
     const logger = new Logger('test');
-    const agent = new UIDesignerAgent('ui_designer', provider, logger);
+    const agent = new UIDesignerAgent('ui_designer', createTestRunContext({ provider, logger }));
 
     await agent.execute(makeContext());
     await logger.close();
@@ -169,7 +169,7 @@ describe('UIDesignerAgent', () => {
   it('should pass sibling context to later builder calls', async () => {
     const provider = new MockUIProvider();
     const logger = new Logger('test');
-    const agent = new UIDesignerAgent('ui_designer', provider, logger);
+    const agent = new UIDesignerAgent('ui_designer', createTestRunContext({ provider, logger }));
 
     await agent.execute(makeContext());
     await logger.close();
@@ -197,7 +197,7 @@ describe('UIDesignerAgent', () => {
     };
 
     const logger = new Logger('test');
-    const agent = new UIDesignerAgent('ui_designer', provider, logger);
+    const agent = new UIDesignerAgent('ui_designer', createTestRunContext({ provider, logger }));
 
     await expect(agent.execute(makeContext())).rejects.toThrow(ClarificationNeeded);
     await logger.close();

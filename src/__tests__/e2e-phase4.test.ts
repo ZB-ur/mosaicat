@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
+import type { Logger } from '../core/logger.js';
 import { createTestMosaicDir, cleanupTestMosaicDir } from './test-helpers.js';
 import { DEFAULT_STAGES } from '../core/types.js';
 import type { GitPlatformAdapter, CreateIssueParams, IssueComment, IssueDetails, PRRef, GitRef, GitBlob, GitTreeEntry, GitTree, GitCommit } from '../adapters/types.js';
@@ -203,9 +204,9 @@ vi.mock('../core/agent-factory.js', async () => {
   } as const;
 
   return {
-    createAgent: (stage: keyof typeof AGENT_MAP, provider: unknown, logger: unknown) => {
+    createAgent: (stage: keyof typeof AGENT_MAP, ctx: import('../core/run-context.js').RunContext) => {
       const AgentClass = AGENT_MAP[stage];
-      return new AgentClass(stage, provider as any, logger as any);
+      return new AgentClass(stage, ctx);
     },
   };
 });

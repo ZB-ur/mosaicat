@@ -5,7 +5,7 @@ import { CLIInteractionHandler } from './interaction-handler.js';
 import type { GitPlatformAdapter, PRReview } from '../adapters/types.js';
 import type { SecurityConfig } from './security.js';
 import { isTrustedActor } from './security.js';
-import { eventBus } from './event-bus.js';
+import type { EventBus } from './event-bus.js';
 
 export class GitHubInteractionHandler implements InteractionHandler {
   private adapter: GitPlatformAdapter;
@@ -14,17 +14,20 @@ export class GitHubInteractionHandler implements InteractionHandler {
   private prNumber: number | null = null;
   private lastReviewCount = 0; // track how many reviews we've seen
   private cliHandler: CLIInteractionHandler;
+  private eventBus?: EventBus;
 
   constructor(
     adapter: GitPlatformAdapter,
     githubConfig: GitHubConfig,
     securityConfig: SecurityConfig,
     cliHandler?: CLIInteractionHandler,
+    eventBus?: EventBus,
   ) {
     this.adapter = adapter;
     this.githubConfig = githubConfig;
     this.securityConfig = securityConfig;
     this.cliHandler = cliHandler ?? new CLIInteractionHandler();
+    this.eventBus = eventBus;
   }
 
   /** Set the PR number for review-based approvals (called by Orchestrator after PR is created) */
@@ -118,7 +121,7 @@ export class GitHubInteractionHandler implements InteractionHandler {
 
     // Poll for a reply comment (not a review)
     const answer = await this.pollForCommentReply(this.prNumber);
-    eventBus.emit('clarification:answered', stage, question, answer, 'github');
+    this.eventBus?.emit('clarification:answered', stage, question, answer, 'github');
     return answer;
   }
 

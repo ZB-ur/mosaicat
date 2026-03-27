@@ -1,15 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { StageName } from './types.js';
-import { getArtifactsDir } from './artifact.js';
 
 const SNAPSHOTS_DIR = '.mosaic/snapshots';
 
-export function createSnapshot(stage: StageName, runId: string, issueNumbers?: Record<string, number>): string {
+export function createSnapshot(stage: StageName, runId: string, issueNumbers?: Record<string, number>, artifactsDir?: string): string {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const snapshotDir = path.join(SNAPSHOTS_DIR, `${timestamp}_${stage}`);
   const artifactsSnapshot = path.join(snapshotDir, 'artifacts');
-  const artifactsDir = getArtifactsDir();
+  if (!artifactsDir) {
+    throw new Error('artifactsDir is required for createSnapshot');
+  }
 
   fs.mkdirSync(artifactsSnapshot, { recursive: true });
 
@@ -55,7 +56,7 @@ function copyDirSync(src: string, dest: string): void {
         fs.copyFileSync(srcPath, destPath);
       }
     } catch (err) {
-      console.warn(`[snapshot] Failed to copy ${srcPath}: ${err instanceof Error ? err.message : String(err)}`);
+      process.stderr.write(`[snapshot] Failed to copy ${srcPath}: ${err instanceof Error ? err.message : String(err)}\n`);
     }
   }
 }

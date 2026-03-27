@@ -1,9 +1,8 @@
 import type { AgentContext, StageName } from './types.js';
 import type { LLMProvider } from './llm-provider.js';
 import type { Logger } from './logger.js';
-import { writeArtifact, readArtifact, artifactExists } from './artifact.js';
+import type { RunContext } from './run-context.js';
 import { writeManifest } from './manifest.js';
-import { eventBus } from './event-bus.js';
 
 // --- Agent Hook Interfaces ---
 
@@ -32,17 +31,20 @@ export class HookFailedError extends Error {
 }
 
 export abstract class BaseAgent {
-  protected provider: LLMProvider;
-  protected logger: Logger;
+  protected readonly ctx: RunContext;
   readonly stage: StageName;
   protected preRunHooks: PreRunHook[] = [];
   protected postRunHooks: PostRunHook[] = [];
   private lastOutput = '';
 
-  constructor(stage: StageName, provider: LLMProvider, logger: Logger) {
+  /** Convenience getter — forwards to ctx.provider */
+  protected get provider(): LLMProvider { return this.ctx.provider; }
+  /** Convenience getter — forwards to ctx.logger */
+  protected get logger(): Logger { return this.ctx.logger; }
+
+  constructor(stage: StageName, ctx: RunContext) {
     this.stage = stage;
-    this.provider = provider;
-    this.logger = logger;
+    this.ctx = ctx;
   }
 
   /** Register a pre-run hook */
@@ -58,7 +60,7 @@ export abstract class BaseAgent {
   async execute(context: AgentContext): Promise<void> {
     const inputs = Array.from(context.inputArtifacts.keys());
     this.logger.agent(this.stage, 'info', 'agent:start', { inputs });
-    eventBus.emit('agent:context', this.stage, inputs);
+    this.ctx.eventBus.emit('agent:context', this.stage, inputs);
 
     // 1. Run pre-run hooks
     for (const hook of this.preRunHooks) {
@@ -102,26 +104,26 @@ export abstract class BaseAgent {
     const memoryFile = 'run-memory.md';
     let existing = '';
     try {
-      if (artifactExists(memoryFile)) {
-        existing = readArtifact(memoryFile);
+      if (this.ctx.store.exists(memoryFile)) {
+        existing = this.ctx.store.read(memoryFile);
       }
     } catch { /* first entry */ }
     const header = `### ${this.stage} (${new Date().toISOString()})`;
     const updated = existing ? `${existing}\n\n${header}\n${entry}` : `# Run Memory\n\n${header}\n${entry}`;
-    writeArtifact(memoryFile, updated);
+    this.ctx.store.write(memoryFile, updated);
   }
 
   protected writeOutput(name: string, content: string): void {
-    writeArtifact(name, content);
+    this.ctx.store.write(name, content);
     this.lastOutput = content;
     this.logger.agent(this.stage, 'info', 'artifact:written', { name });
-    eventBus.emit('artifact:written', this.stage, name, content.length);
+    this.ctx.eventBus.emit('artifact:written', this.stage, name, content.length);
   }
 
   protected writeOutputManifest(name: string, data: unknown): void {
-    writeManifest(name, data);
+    writeManifest(this.ctx.store, name, data);
     this.logger.agent(this.stage, 'info', 'manifest:written', { name });
-    eventBus.emit('manifest:written', this.stage, name);
+    this.ctx.eventBus.emit('manifest:written', this.stage, name);
   }
 }
 

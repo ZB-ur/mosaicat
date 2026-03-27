@@ -7,6 +7,7 @@ import type { PipelineConfig } from './core/types.js';
 import { resolveGitHubAuth } from './auth/resolve-auth.js';
 import { oauthDeviceFlow } from './auth/oauth-device-flow.js';
 import { saveCachedAuth, clearCachedAuth } from './auth/auth-store.js';
+import { ShutdownCoordinator } from './core/shutdown-coordinator.js';
 import fs from 'node:fs';
 import yaml from 'js-yaml';
 
@@ -15,7 +16,7 @@ const command = args[0];
 
 if (command === 'login') {
   // ── OAuth Device Flow login ──
-  console.log('[mosaicat] Starting GitHub login...');
+  process.stdout.write('[mosaicat] Starting GitHub login...\n');
 
   const LOGIN_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
   const loginTimeout = new Promise<never>((_, reject) => {
@@ -29,36 +30,36 @@ if (command === 'login') {
   Promise.race([
     oauthDeviceFlow({
       onUserCode: (userCode, verificationUri) => {
-        console.log(`\n! Paste this code in your browser: \x1b[1m${userCode}\x1b[0m`);
-        console.log(`  → ${verificationUri}\n`);
-        console.log('Waiting for authorization...');
+        process.stdout.write(`\n! Paste this code in your browser: \x1b[1m${userCode}\x1b[0m\n`);
+        process.stdout.write(`  → ${verificationUri}\n\n`);
+        process.stdout.write('Waiting for authorization...\n');
       },
     }),
     loginTimeout,
   ])
     .then(({ accessToken, userLogin }) => {
       saveCachedAuth({ userToken: accessToken, userLogin });
-      console.log(`\x1b[32m✓\x1b[0m Logged in as \x1b[1m@${userLogin}\x1b[0m`);
+      process.stdout.write(`\x1b[32m✓\x1b[0m Logged in as \x1b[1m@${userLogin}\x1b[0m\n`);
     })
     .catch((err) => {
-      console.error(`\x1b[31m[mosaicat] Login failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
+      process.stderr.write(`\x1b[31m[mosaicat] Login failed: ${err instanceof Error ? err.message : err}\x1b[0m\n`);
       process.exit(1);
     });
 } else if (command === 'logout') {
   // ── Clear cached auth ──
   clearCachedAuth();
-  console.log('\x1b[32m✓\x1b[0m Logged out.');
+  process.stdout.write('\x1b[32m✓\x1b[0m Logged out.\n');
 } else if (command === 'setup') {
   // ── Interactive LLM provider setup ──
   import('./core/llm-setup.js').then(({ runSetup }) => runSetup()).catch((err) => {
-    console.error(`\x1b[31m[mosaicat] Setup failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
+    process.stderr.write(`\x1b[31m[mosaicat] Setup failed: ${err instanceof Error ? err.message : err}\x1b[0m\n`);
     process.exit(1);
   });
 } else if (command === 'refine') {
   const feedback = args[1];
   if (!feedback) {
-    console.error('Usage: mosaicat refine <feedback> [--run <runId>]');
-    console.error('  Example: mosaicat refine "clicking start game does nothing"');
+    process.stderr.write('Usage: mosaicat refine <feedback> [--run <runId>]\n');
+    process.stderr.write('  Example: mosaicat refine "clicking start game does nothing"\n');
     process.exit(1);
   }
 
@@ -66,12 +67,12 @@ if (command === 'login') {
   const runId = runIdx >= 0 ? args[runIdx + 1] : undefined;
 
   import('./core/refine-runner.js').then(({ runRefine }) => runRefine(feedback, runId)).catch((err) => {
-    console.error(`\x1b[31m[mosaicat] Refine failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
+    process.stderr.write(`\x1b[31m[mosaicat] Refine failed: ${err instanceof Error ? err.message : err}\x1b[0m\n`);
     process.exit(1);
   });
 } else if (command === 'evolve') {
   import('./core/evolve-runner.js').then(({ runEvolve }) => runEvolve()).catch((err) => {
-    console.error(`\x1b[31m[mosaicat] Evolve failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
+    process.stderr.write(`\x1b[31m[mosaicat] Evolve failed: ${err instanceof Error ? err.message : err}\x1b[0m\n`);
     process.exit(1);
   });
 } else if (command === 'resume') {
@@ -80,29 +81,36 @@ if (command === 'login') {
   const fromIdx = args.indexOf('--from');
   const fromStage = fromIdx >= 0 ? args[fromIdx + 1] : undefined;
 
-  const detach = attachCLIProgress();
+  const coordinator = new ShutdownCoordinator();
+  coordinator.install();
+
+  const orchestrator = new Orchestrator(undefined, undefined, { signal: coordinator.signal });
+  const detach = attachCLIProgress(orchestrator.eventBus);
 
   const startResume = async () => {
-    const orchestrator = new Orchestrator();
     const fromLabel = fromStage ? ` from ${fromStage}` : '';
-    console.log(`[mosaicat] Resuming${runId ? ` run ${runId}` : ' latest run'}${fromLabel}...`);
+    process.stdout.write(`[mosaicat] Resuming${runId ? ` run ${runId}` : ' latest run'}${fromLabel}...\n`);
 
-    const result = await orchestrator.resumeRun(runId, fromStage);
-
-    console.log(`\x1b[2mRun ID: ${result.id}\x1b[0m`);
-    console.log(`\x1b[2mArtifacts: .mosaic/artifacts/${result.id}/\x1b[0m`);
-    detach();
+    try {
+      const result = await orchestrator.resumeRun(runId, fromStage);
+      process.stdout.write(`\x1b[2mRun ID: ${result.id}\x1b[0m\n`);
+      process.stdout.write(`\x1b[2mArtifacts: .mosaic/artifacts/${result.id}/\x1b[0m\n`);
+    } finally {
+      coordinator.uninstall();
+      detach();
+    }
   };
 
   startResume().catch((err) => {
-    console.error(`\n\x1b[31m[mosaicat] Resume failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
+    process.stderr.write(`\n\x1b[31m[mosaicat] Resume failed: ${err instanceof Error ? err.message : err}\x1b[0m\n`);
+    coordinator.uninstall();
     detach();
     process.exit(1);
   });
 } else if (command === 'run') {
   const instruction = args[1];
   if (!instruction) {
-    console.error('Usage: mosaicat run <instruction> [--auto-approve] [--github] [--evolve] [--profile <design-only|full|frontend-only>]');
+    process.stderr.write('Usage: mosaicat run <instruction> [--auto-approve] [--github] [--evolve] [--profile <design-only|full|frontend-only>]\n');
     process.exit(1);
   }
 
@@ -112,10 +120,10 @@ if (command === 'login') {
   const profileIdx = args.indexOf('--profile');
   const profileArg = profileIdx >= 0 ? args[profileIdx + 1] as import('./core/types.js').PipelineProfile | undefined : undefined;
 
-  // Attach rich CLI progress output
-  const detach = attachCLIProgress();
-
   const startRun = async () => {
+    const coordinator = new ShutdownCoordinator();
+    coordinator.install();
+
     let orchestrator: Orchestrator;
 
     if (useGitHub) {
@@ -125,51 +133,56 @@ if (command === 'login') {
 
       try {
         const authConfig = await resolveGitHubAuth();
-        console.log(`[mosaicat] GitHub App mode — repo: ${authConfig.owner}/${authConfig.repo} (auto-detected)`);
+        process.stdout.write(`[mosaicat] GitHub App mode — repo: ${authConfig.owner}/${authConfig.repo} (auto-detected)\n`);
 
         const adapter = createGitHubAdapterFromAuth(authConfig);
         await adapter.refreshToken();
 
         const securityConfig = loadSecurityConfig(pipelineConfig, authConfig.userLogin);
         const handler = new GitHubInteractionHandler(adapter, pipelineConfig.github, securityConfig);
-        orchestrator = new Orchestrator(handler, adapter);
+        orchestrator = new Orchestrator(handler, adapter, { enableEvolution: useEvolve, signal: coordinator.signal });
       } catch (err) {
-        console.error(`\x1b[31m[mosaicat] GitHub auth failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
+        coordinator.uninstall();
+        process.stderr.write(`\x1b[31m[mosaicat] GitHub auth failed: ${err instanceof Error ? err.message : err}\x1b[0m\n`);
         process.exit(1);
       }
     } else {
-      orchestrator = new Orchestrator();
+      orchestrator = new Orchestrator(undefined, undefined, { enableEvolution: useEvolve, signal: coordinator.signal });
     }
+
+    // Attach rich CLI progress output
+    const detach = attachCLIProgress(orchestrator.eventBus);
 
     if (useEvolve) {
-      orchestrator.enableEvolution();
-      console.log('[mosaicat] Evolution mode enabled — proposals after pipeline completes');
+      process.stdout.write('[mosaicat] Evolution mode enabled — proposals after pipeline completes\n');
     }
 
-    console.log(`\x1b[2mInstruction: ${instruction}\x1b[0m`);
-    console.log(`\x1b[2mAuto-approve: ${autoApprove}\x1b[0m`);
-    if (profileArg) console.log(`\x1b[2mProfile: ${profileArg}\x1b[0m`);
+    process.stdout.write(`\x1b[2mInstruction: ${instruction}\x1b[0m\n`);
+    process.stdout.write(`\x1b[2mAuto-approve: ${autoApprove}\x1b[0m\n`);
+    if (profileArg) process.stdout.write(`\x1b[2mProfile: ${profileArg}\x1b[0m\n`);
 
-    const result = await orchestrator.run(instruction, autoApprove, profileArg);
-
-    console.log(`\x1b[2mRun ID: ${result.id}\x1b[0m`);
-    console.log(`\x1b[2mArtifacts: .mosaic/artifacts/${result.id}/\x1b[0m`);
-    console.log(`\x1b[2mLogs: .mosaic/logs/${result.id}/\x1b[0m`);
-    detach();
+    try {
+      const result = await orchestrator.run(instruction, autoApprove, profileArg);
+      process.stdout.write(`\x1b[2mRun ID: ${result.id}\x1b[0m\n`);
+      process.stdout.write(`\x1b[2mArtifacts: .mosaic/artifacts/${result.id}/\x1b[0m\n`);
+      process.stdout.write(`\x1b[2mLogs: .mosaic/logs/${result.id}/\x1b[0m\n`);
+    } finally {
+      coordinator.uninstall();
+      detach();
+    }
   };
 
   startRun().catch((err) => {
-    console.error(`\n\x1b[31m[mosaicat] Pipeline failed: ${err instanceof Error ? err.message : err}\x1b[0m`);
-    detach();
+    process.stderr.write(`\n\x1b[31m[mosaicat] Pipeline failed: ${err instanceof Error ? err.message : err}\x1b[0m\n`);
     process.exit(1);
   });
 } else {
-  console.log('Usage:');
-  console.log('  mosaicat setup                                     # Configure LLM provider (interactive)');
-  console.log('  mosaicat login                                     # One-time GitHub OAuth login');
-  console.log('  mosaicat logout                                    # Clear saved credentials');
-  console.log('  mosaicat run <instruction> [--auto-approve] [--github] [--evolve]');
-  console.log('  mosaicat resume [--run <runId>] [--from <stage>]    # Resume pipeline (optionally from a specific stage)');
-  console.log('  mosaicat refine <feedback> [--run <runId>]          # Fix issues in generated code');
-  console.log('  mosaicat evolve                                     # Analyze retry patterns & generate skill proposals');
+  process.stdout.write('Usage:\n');
+  process.stdout.write('  mosaicat setup                                     # Configure LLM provider (interactive)\n');
+  process.stdout.write('  mosaicat login                                     # One-time GitHub OAuth login\n');
+  process.stdout.write('  mosaicat logout                                    # Clear saved credentials\n');
+  process.stdout.write('  mosaicat run <instruction> [--auto-approve] [--github] [--evolve]\n');
+  process.stdout.write('  mosaicat resume [--run <runId>] [--from <stage>]    # Resume pipeline (optionally from a specific stage)\n');
+  process.stdout.write('  mosaicat refine <feedback> [--run <runId>]          # Fix issues in generated code\n');
+  process.stdout.write('  mosaicat evolve                                     # Analyze retry patterns & generate skill proposals\n');
 }

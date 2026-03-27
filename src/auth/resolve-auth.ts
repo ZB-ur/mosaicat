@@ -91,7 +91,7 @@ async function resolveRepo(allRepos: RepoEntry[]): Promise<RepoEntry> {
     default: remoteMatch ?? undefined,
   });
 
-  console.log(`\x1b[32m✓ 已选择: ${chosen.fullName}\x1b[0m`);
+  process.stdout.write(`\x1b[32m✓ 已选择: ${chosen.fullName}\x1b[0m\n`);
   return chosen;
 }
 

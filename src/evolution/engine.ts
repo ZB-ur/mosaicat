@@ -3,7 +3,8 @@ import path from 'node:path';
 import yaml from 'js-yaml';
 import type { LLMProvider } from '../core/llm-provider.js';
 import type { Logger } from '../core/logger.js';
-import { getArtifactsDir } from '../core/artifact.js';
+import { type Result, ok, err } from '../core/result.js';
+import { ArtifactStore } from '../core/artifact-store.js';
 import type { StageName, PipelineConfig } from '../core/types.js';
 import { STAGE_NAMES } from '../core/types.js';
 import type { EvolutionProposal, EvolutionState, EvolutionType, LLMProposalCandidate } from './types.js';
@@ -53,10 +54,17 @@ function ensureDir(dir: string): void {
 export class EvolutionEngine {
   private provider: LLMProvider;
   private logger: Logger;
+  private artifactsDir: string;
 
-  constructor(provider: LLMProvider, logger: Logger) {
+  constructor(provider: LLMProvider, logger: Logger, artifactsDir?: string) {
     this.provider = provider;
     this.logger = logger;
+    this.artifactsDir = artifactsDir ?? this.resolveArtifactsDir();
+  }
+
+  private resolveArtifactsDir(): string {
+    const latestRun = ArtifactStore.findLatestRun('.mosaic/artifacts');
+    return latestRun ? `.mosaic/artifacts/${latestRun}` : '.mosaic/artifacts';
   }
 
   /**
@@ -66,7 +74,12 @@ export class EvolutionEngine {
   async analyzeStage(runId: string, stage: StageName): Promise<EvolutionProposal[]> {
     this.logger.pipeline('info', 'evolution:analyze-stage:start', { runId, stage });
 
-    const state = this.loadState();
+    const stateResult = this.loadState();
+    const state = stateResult.ok ? stateResult.value : { proposals: [], promptVersions: {}, cooldowns: {} };
+    if (!stateResult.ok) {
+      this.logger.pipeline('warn', 'evolution:state-fallback', { error: stateResult.error });
+    }
+
     const summary = this.buildStageSummary(stage);
 
     if (!summary) {
@@ -84,7 +97,12 @@ export class EvolutionEngine {
   async analyze(runId: string): Promise<EvolutionProposal[]> {
     this.logger.pipeline('info', 'evolution:analyze:start', { runId });
 
-    const state = this.loadState();
+    const stateResult = this.loadState();
+    const state = stateResult.ok ? stateResult.value : { proposals: [], promptVersions: {}, cooldowns: {} };
+    if (!stateResult.ok) {
+      this.logger.pipeline('warn', 'evolution:state-fallback', { error: stateResult.error });
+    }
+
     const summary = this.buildPipelineSummary(runId);
 
     if (!summary) {
@@ -115,7 +133,12 @@ export class EvolutionEngine {
     }
 
     // Parse LLM response
-    const candidates = this.parseCandidates(rawContent);
+    const candidatesResult = this.parseCandidates(rawContent);
+    if (!candidatesResult.ok) {
+      this.logger.pipeline('info', 'evolution:analyze:no-proposals', { runId, parseError: candidatesResult.error });
+      return [];
+    }
+    const candidates = candidatesResult.value;
     if (candidates.length === 0) {
       this.logger.pipeline('info', 'evolution:analyze:no-proposals', { runId });
       return [];
@@ -148,7 +171,8 @@ export class EvolutionEngine {
   }
 
   canPropose(stage: StageName, type: EvolutionType, stateOverride?: EvolutionState): boolean {
-    const state = stateOverride ?? this.loadState();
+    const stateResult = stateOverride ? ok(stateOverride) : this.loadState();
+    const state = stateResult.ok ? stateResult.value : { proposals: [], promptVersions: {}, cooldowns: {} };
 
     // Check max-1-pending-per-agent
     const hasPending = state.proposals.some(
@@ -171,11 +195,12 @@ export class EvolutionEngine {
     return true;
   }
 
-  loadState(): EvolutionState {
+  loadState(): Result<EvolutionState, string> {
     try {
-      return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
-    } catch {
-      return { proposals: [], promptVersions: {}, cooldowns: {} };
+      const content = fs.readFileSync(STATE_FILE, 'utf-8');
+      return ok(JSON.parse(content) as EvolutionState);
+    } catch (e) {
+      return err(`state-file-unreadable: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -186,7 +211,7 @@ export class EvolutionEngine {
 
   private buildStageSummary(stage: StageName): string | null {
     const parts: string[] = [];
-    const artifactsDir = getArtifactsDir();
+    const artifactsDir = this.artifactsDir;
 
     // Find manifests and artifacts for this stage
     const stageArtifactMap: Record<string, string[]> = {
@@ -204,8 +229,11 @@ export class EvolutionEngine {
       try {
         const content = fs.readFileSync(filePath, 'utf-8');
         parts.push(`## ${file}\n${content}`);
-      } catch {
-        // File doesn't exist or can't be read — skip
+      } catch (e) {
+        this.logger.pipeline('warn', 'evolution:stage-summary-read-failed', {
+          file,
+          error: e instanceof Error ? e.message : String(e),
+        });
       }
     }
 
@@ -219,15 +247,17 @@ export class EvolutionEngine {
     const parts: string[] = [];
 
     // Read validation report
-    const validationPath = `${getArtifactsDir()}/validation-report.md`;
+    const validationPath = `${this.artifactsDir}/validation-report.md`;
     try {
       parts.push('## Validation Report\n' + fs.readFileSync(validationPath, 'utf-8'));
-    } catch {
-      // Validation report doesn't exist — skip
+    } catch (e) {
+      this.logger.pipeline('warn', 'evolution:validation-report-read-failed', {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
 
     // Read all manifests
-    const artifactsDir = getArtifactsDir();
+    const artifactsDir = this.artifactsDir;
     try {
       const files = fs.readdirSync(artifactsDir);
       for (const file of files) {
@@ -235,13 +265,18 @@ export class EvolutionEngine {
           try {
             const content = fs.readFileSync(path.join(artifactsDir, file), 'utf-8');
             parts.push(`## Manifest: ${file}\n${content}`);
-          } catch {
-            // Individual manifest read failed — skip
+          } catch (e) {
+            this.logger.pipeline('warn', 'evolution:manifest-read-failed', {
+              manifest: file,
+              error: e instanceof Error ? e.message : String(e),
+            });
           }
         }
       }
-    } catch {
-      // Artifacts directory doesn't exist — skip
+    } catch (e) {
+      this.logger.pipeline('warn', 'evolution:artifacts-dir-read-failed', {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
 
     // Read run logs for retry counts and timings
@@ -250,8 +285,10 @@ export class EvolutionEngine {
       const logContent = fs.readFileSync(pipelineLog, 'utf-8');
       const retries = (logContent.match(/stage:retry/g) || []).length;
       parts.push(`## Run Metadata\nRun ID: ${runId}\nRetries: ${retries}`);
-    } catch {
-      // Pipeline log doesn't exist — skip
+    } catch (e) {
+      this.logger.pipeline('warn', 'evolution:log-read-failed', {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
 
     if (parts.length === 0) return null;
@@ -260,7 +297,7 @@ export class EvolutionEngine {
     return parts.join('\n\n');
   }
 
-  private parseCandidates(rawResponse: string): LLMProposalCandidate[] {
+  private parseCandidates(rawResponse: string): Result<LLMProposalCandidate[], string> {
     // Extract JSON array from response (may be wrapped in markdown code blocks)
     let jsonStr = rawResponse.trim();
     const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -270,7 +307,7 @@ export class EvolutionEngine {
 
     try {
       const parsed = JSON.parse(jsonStr);
-      if (!Array.isArray(parsed)) return [];
+      if (!Array.isArray(parsed)) return ok([]);
 
       const valid: LLMProposalCandidate[] = [];
       for (const item of parsed) {
@@ -279,10 +316,13 @@ export class EvolutionEngine {
           valid.push(result.data);
         }
       }
-      return valid;
-    } catch {
-      this.logger.pipeline('warn', 'evolution:parse-error', { rawResponse: rawResponse.slice(0, 500) });
-      return [];
+      return ok(valid);
+    } catch (e) {
+      this.logger.pipeline('warn', 'evolution:parse-error', {
+        rawResponse: rawResponse.slice(0, 500),
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return err(`candidates-parse-failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -300,8 +340,11 @@ export class EvolutionEngine {
       try {
         const promptPath = getCurrentPromptPath(candidate.agentStage);
         currentContent = fs.readFileSync(promptPath, 'utf-8');
-      } catch {
-        // Prompt file may not exist
+      } catch (e) {
+        this.logger.pipeline('warn', 'evolution:prompt-read-failed', {
+          promptFile: getCurrentPromptPath(candidate.agentStage),
+          error: e instanceof Error ? e.message : String(e),
+        });
       }
     }
 
@@ -325,7 +368,7 @@ export class EvolutionEngine {
 
   /**
    * Analyze from retry-log failure statistics (used by `mosaicat evolve`).
-   * Bypasses cooldown — user explicitly triggered evolution.
+   * Bypasses cooldown -- user explicitly triggered evolution.
    */
   async analyzeFromRetryStats(
     stats: import('../core/retry-log.js').FailureStat[],
@@ -338,7 +381,8 @@ export class EvolutionEngine {
     }).join('\n\n');
 
     const summary = `# Retry-Log Failure Analysis\n\n${statsText}`;
-    const state = this.loadState();
+    const stateResult = this.loadState();
+    const state = stateResult.ok ? stateResult.value : { proposals: [], promptVersions: {}, cooldowns: {} };
 
     return this.runAnalysis('evolve-cli', summary, state);
   }
@@ -351,7 +395,10 @@ export class EvolutionEngine {
       return {
         cooldown_hours: config.evolution?.cooldown_hours ?? 24,
       };
-    } catch {
+    } catch (e) {
+      this.logger.pipeline('warn', 'evolution:config-parse-failed', {
+        error: e instanceof Error ? e.message : String(e),
+      });
       return { cooldown_hours: 24 };
     }
   }

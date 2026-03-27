@@ -2,7 +2,6 @@ import type { AgentContext } from '../core/types.js';
 import { ClarificationNeeded } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
 import { assemblePrompt, type OutputSpec } from '../core/prompt-assembler.js';
-import { eventBus } from '../core/event-bus.js';
 
 /**
  * Build a JSON schema that enforces structured output from the LLM.
@@ -49,7 +48,7 @@ export abstract class LLMAgent extends BaseAgent {
       promptLength: prompt.length,
       expectedArtifacts: spec.artifacts,
     });
-    eventBus.emit('agent:thinking', this.stage, prompt.length);
+    this.ctx.eventBus.emit('agent:thinking', this.stage, prompt.length);
 
     const response = await this.provider.call(prompt, {
       systemPrompt: context.systemPrompt,
@@ -60,7 +59,7 @@ export abstract class LLMAgent extends BaseAgent {
     this.logger.agent(this.stage, 'info', 'llm:response', {
       responseLength: raw.length,
     });
-    eventBus.emit('agent:response', this.stage, raw.length);
+    this.ctx.eventBus.emit('agent:response', this.stage, raw.length);
 
     // Parse structured JSON response
     let parsed: { artifact?: string; manifest?: unknown; clarification?: string };
@@ -85,7 +84,7 @@ export abstract class LLMAgent extends BaseAgent {
 
     // Clarification signal
     if (parsed.clarification && parsed.clarification.trim().length > 0 && !parsed.artifact) {
-      eventBus.emit('agent:clarification', this.stage, parsed.clarification);
+      this.ctx.eventBus.emit('agent:clarification', this.stage, parsed.clarification);
       throw new ClarificationNeeded(parsed.clarification);
     }
 

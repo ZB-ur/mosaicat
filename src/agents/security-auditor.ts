@@ -1,10 +1,9 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { execSync } from 'node:child_process';
 import type { AgentContext } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
 import type { OutputSpec } from '../core/prompt-assembler.js';
-import { eventBus } from '../core/event-bus.js';
-import { getArtifactsDir } from '../core/artifact.js';
 
 const AUDITOR_PROMPT_PATH = '.claude/agents/mosaic/security-auditor.md';
 
@@ -14,6 +13,7 @@ interface ScanResults {
   secrets_found: number;
   raw_npm_audit: string;
   raw_pattern_scan: string;
+  env_files_found: string[];
 }
 
 interface LLMFinding {
@@ -39,7 +39,7 @@ export class SecurityAuditorAgent extends BaseAgent {
 
   protected async run(context: AgentContext): Promise<void> {
     const autonomy = context.task.autonomy;
-    const codeDir = `${getArtifactsDir()}/code`;
+    const codeDir = `${this.ctx.store.getDir()}/code`;
 
     // Phase 1: Programmatic scanning
     this.logger.agent(this.stage, 'info', 'auditor:scan-start', {});
@@ -66,6 +66,7 @@ export class SecurityAuditorAgent extends BaseAgent {
       secrets_found: 0,
       raw_npm_audit: '',
       raw_pattern_scan: '',
+      env_files_found: [],
     };
 
     // npm audit (if package.json exists)
@@ -105,6 +106,9 @@ export class SecurityAuditorAgent extends BaseAgent {
     results.secrets_found = patternFindings.length;
     results.raw_pattern_scan = patternFindings.join('\n');
 
+    // Check for .env file existence (without reading contents)
+    results.env_files_found = this.checkEnvFileExistence(codeDir);
+
     return results;
   }
 
@@ -116,7 +120,7 @@ export class SecurityAuditorAgent extends BaseAgent {
           if (['node_modules', '.git', 'dist', 'build'].includes(entry.name)) continue;
           this.scanFilesForPatterns(fullPath, patterns, findings);
         } else {
-          if (!['.ts', '.tsx', '.js', '.jsx', '.json', '.yaml', '.yml', '.env'].some(ext => entry.name.endsWith(ext))) continue;
+          if (!['.ts', '.tsx', '.js', '.jsx', '.json', '.yaml', '.yml'].some(ext => entry.name.endsWith(ext))) continue;
           try {
             const content = fs.readFileSync(fullPath, 'utf-8');
             for (const pattern of patterns) {
@@ -186,7 +190,7 @@ export class SecurityAuditorAgent extends BaseAgent {
       highRiskFiles: highRiskFiles.length,
       promptLength: userPrompt.length,
     });
-    eventBus.emit('agent:thinking', this.stage, userPrompt.length);
+    this.ctx.eventBus.emit('agent:thinking', this.stage, userPrompt.length);
 
     const response = await this.provider.call(userPrompt, {
       systemPrompt: auditorPrompt,
@@ -212,7 +216,7 @@ export class SecurityAuditorAgent extends BaseAgent {
       },
     });
 
-    eventBus.emit('agent:response', this.stage, response.content.length);
+    this.ctx.eventBus.emit('agent:response', this.stage, response.content.length);
 
     try {
       const parsed = JSON.parse(response.content);
@@ -257,6 +261,29 @@ export class SecurityAuditorAgent extends BaseAgent {
     }
   }
 
+  /**
+   * Walk directory tree to find .env files by existence only -- never reads their contents.
+   * Returns relative paths of found .env files.
+   */
+  private checkEnvFileExistence(codeDir: string): string[] {
+    const envFiles: string[] = [];
+    const walk = (dir: string) => {
+      try {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (entry.isDirectory() && entry.name !== 'node_modules' && entry.name !== '.git') {
+            walk(path.join(dir, entry.name));
+          } else if (entry.name === '.env' || entry.name.startsWith('.env.')) {
+            envFiles.push(path.relative(codeDir, path.join(dir, entry.name)));
+          }
+        }
+      } catch {
+        // Directory not accessible
+      }
+    };
+    walk(codeDir);
+    return envFiles;
+  }
+
   // ─── Report Generation ─────────────────────────────────────
 
   private generateReport(scanResults: ScanResults, llmFindings: LLMFinding[]): void {
@@ -284,6 +311,14 @@ export class SecurityAuditorAgent extends BaseAgent {
       lines.push('```');
       lines.push(scanResults.raw_pattern_scan.slice(0, 2000));
       lines.push('```');
+      lines.push('');
+    }
+
+    if (scanResults.env_files_found.length > 0) {
+      lines.push('### Environment Files Found');
+      for (const envFile of scanResults.env_files_found) {
+        lines.push(`- **SEC-ENV-001:** .env file found at \`${envFile}\` -- ensure it is gitignored`);
+      }
       lines.push('');
     }
 

@@ -1,6 +1,6 @@
 import type { GitPlatformAdapter, IssueRef } from '../adapters/types.js';
 import type { StageName } from './types.js';
-import { eventBus } from './event-bus.js';
+import type { EventBus } from './event-bus.js';
 
 export interface StepInfo {
   name: string;
@@ -11,11 +11,13 @@ export interface StepInfo {
 
 export class IssueManager {
   private adapter: GitPlatformAdapter;
+  private eventBus: EventBus;
   private stageIssues = new Map<string, number>(); // "runId:stage" → issue#
   private stepIssues = new Map<string, number>();   // "runId:stage:step" → issue#
 
-  constructor(adapter: GitPlatformAdapter) {
+  constructor(adapter: GitPlatformAdapter, eventBus: EventBus) {
     this.adapter = adapter;
+    this.eventBus = eventBus;
   }
 
   /** Create a stage-level issue (e.g., [UIDesigner] React components) */
@@ -38,7 +40,7 @@ export class IssueManager {
     });
 
     this.stageIssues.set(`${runId}:${stage}`, issue.number);
-    eventBus.emit('issue:created', issue.number, stage, runId);
+    this.eventBus.emit('issue:created', issue.number, stage, runId);
     return issue;
   }
 
@@ -96,7 +98,7 @@ export class IssueManager {
     if (!issueNumber) return;
     await this.adapter.addLabels(issueNumber, ['status:completed']);
     await this.adapter.closeIssue(issueNumber);
-    eventBus.emit('issue:closed', issueNumber, stage, runId);
+    this.eventBus.emit('issue:closed', issueNumber, stage, runId);
   }
 
   getStageIssueNumber(stage: StageName, runId: string): number | undefined {

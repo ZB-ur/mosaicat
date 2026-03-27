@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
 import type { StageName, GateResult } from '../core/types.js';
 import { DEFAULT_STAGES } from '../core/types.js';
-import { createTestMosaicDir, cleanupTestMosaicDir } from './test-helpers.js';
+import { createTestMosaicDir, cleanupTestMosaicDir, createTestArtifactStore, createMockLogger } from './test-helpers.js';
 import type { InteractionHandler, EvolutionApprovalResult } from '../core/interaction-handler.js';
 import type { EvolutionProposal } from '../evolution/types.js';
 import { Orchestrator } from '../core/orchestrator.js';
@@ -126,9 +126,9 @@ vi.mock('../core/agent-factory.js', async () => {
   } as const;
 
   return {
-    createAgent: (stage: keyof typeof AGENT_MAP, provider: unknown, logger: unknown) => {
+    createAgent: (stage: keyof typeof AGENT_MAP, ctx: import('../core/run-context.js').RunContext) => {
       const AgentClass = AGENT_MAP[stage];
-      return new AgentClass(stage, provider as any, logger as any);
+      return new AgentClass(stage, ctx);
     },
   };
 });
@@ -162,8 +162,7 @@ describe('Phase 5 E2E: Self-Evolution', () => {
     sharedProvider = provider;
 
     const handler = new AutoApproveEvolutionHandler();
-    const orchestrator = new Orchestrator(handler);
-    orchestrator.enableEvolution();
+    const orchestrator = new Orchestrator(handler, undefined, { enableEvolution: true });
 
     const result = await orchestrator.run('test evolution', true);
 
@@ -203,8 +202,7 @@ describe('Phase 5 E2E: Self-Evolution', () => {
     sharedProvider = provider;
 
     const handler = new AutoApproveEvolutionHandler();
-    const orchestrator = new Orchestrator(handler);
-    orchestrator.enableEvolution();
+    const orchestrator = new Orchestrator(handler, undefined, { enableEvolution: true });
 
     await orchestrator.run('test skills', true);
 
@@ -226,7 +224,7 @@ describe('Phase 5 E2E: Self-Evolution', () => {
       runId: 'test',
       stage: 'researcher',
       instruction: 'test',
-    });
+    }, createTestArtifactStore(), createMockLogger(), true);
     expect(context.systemPrompt).toContain('## Available Skills');
     expect(context.systemPrompt).toContain('comparison-framework');
   }, 30000);
@@ -270,8 +268,7 @@ describe('Phase 5 E2E: Self-Evolution', () => {
     sharedProvider = provider;
 
     const handler = new AutoApproveEvolutionHandler();
-    const orchestrator = new Orchestrator(handler);
-    orchestrator.enableEvolution();
+    const orchestrator = new Orchestrator(handler, undefined, { enableEvolution: true });
 
     await orchestrator.run('test rollback', true);
 
@@ -303,8 +300,7 @@ describe('Phase 5 E2E: Self-Evolution', () => {
 
     const handler = new AutoApproveEvolutionHandler();
     handler.defaultApproval = { approved: false, reason: 'Too aggressive' };
-    const orchestrator = new Orchestrator(handler);
-    orchestrator.enableEvolution();
+    const orchestrator = new Orchestrator(handler, undefined, { enableEvolution: true });
 
     await orchestrator.run('test rejection', true);
 
@@ -322,8 +318,7 @@ describe('Phase 5 E2E: Self-Evolution', () => {
     sharedProvider = provider;
 
     const handler = new AutoApproveEvolutionHandler();
-    const orchestrator = new Orchestrator(handler);
-    orchestrator.enableEvolution();
+    const orchestrator = new Orchestrator(handler, undefined, { enableEvolution: true });
 
     const result = await orchestrator.run('test no proposals', true);
 

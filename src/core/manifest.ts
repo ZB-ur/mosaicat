@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { writeArtifact, readArtifact } from './artifact.js';
+import type { ArtifactStore } from './artifact-store.js';
 
 // --- Manifest Schemas ---
 
@@ -185,21 +185,19 @@ export type TestReportManifest = z.infer<typeof TestReportManifestSchema>;
 export type SecurityReportManifest = z.infer<typeof SecurityReportManifestSchema>;
 export type ReviewManifest = z.infer<typeof ReviewManifestSchema>;
 
-export function writeManifest(name: string, data: unknown): void {
+/** Write a manifest using an ArtifactStore. Validates against schema if available. */
+export function writeManifest(store: ArtifactStore, name: string, data: unknown): void {
   const schema = MANIFEST_SCHEMAS[name];
-  if (schema) {
-    schema.parse(data);
-  }
-  writeArtifact(name, JSON.stringify(data, null, 2));
+  if (schema) schema.parse(data);
+  store.write(name, JSON.stringify(data, null, 2));
 }
 
-export function readManifest<T = unknown>(name: string): T {
-  const content = readArtifact(name);
+/** Read a manifest from an ArtifactStore. Validates against schema if available. */
+export function readManifest<T = unknown>(store: ArtifactStore, name: string): T {
+  const content = store.read(name);
   const parsed = JSON.parse(content) as unknown;
   const schema = MANIFEST_SCHEMAS[name];
-  if (schema) {
-    schema.parse(parsed);
-  }
+  if (schema) schema.parse(parsed);
   return parsed as T;
 }
 
@@ -207,9 +205,9 @@ export function readManifest<T = unknown>(name: string): T {
  * Extract human-readable summary lines from a manifest file.
  * Returns empty array if manifest doesn't exist or can't be parsed.
  */
-export function extractManifestSummary(manifestName: string): string[] {
+export function extractManifestSummary(store: ArtifactStore, manifestName: string): string[] {
   try {
-    const data = readManifest(manifestName) as Record<string, unknown>;
+    const data = readManifest(store, manifestName) as Record<string, unknown>;
     return SUMMARY_EXTRACTORS[manifestName]?.(data) ?? [];
   } catch {
     return [];

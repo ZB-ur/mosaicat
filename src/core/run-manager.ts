@@ -74,7 +74,7 @@ export class RunManager {
       handler = this.createTrackedHandler(deferredHandler, id);
     }
 
-    const orchestrator = new Orchestrator(handler, adapter);
+    const orchestrator = new Orchestrator(handler!, adapter);
 
     const managedRun: ManagedRun = {
       id,

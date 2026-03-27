@@ -11,7 +11,7 @@ import { EvolutionEngine } from '../evolution/engine.js';
 import { listPromptVersions, rollbackPrompt } from '../evolution/prompt-versioning.js';
 import { StubProvider } from '../core/llm-provider.js';
 import { Logger } from '../core/logger.js';
-import { getArtifactsDir } from '../core/artifact.js';
+import { ArtifactStore } from '../core/artifact-store.js';
 
 export function registerTools(server: McpServer, runManager: RunManager): void {
   server.tool(
@@ -100,9 +100,20 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
       artifact_name: z.string().optional().describe('Specific artifact file name to read (e.g., "prd.md", "components/AuthForm.tsx")'),
     },
     async ({ artifact_name }) => {
+      const latestRunId = ArtifactStore.findLatestRun('.mosaic/artifacts');
+      if (!latestRunId) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ artifacts: [], note: 'No artifacts directory found. Run a pipeline first.' }),
+          }],
+        };
+      }
+      const artifactsDir = path.join('.mosaic/artifacts', latestRunId);
+
       if (artifact_name) {
         // Read specific artifact
-        const filePath = path.join(getArtifactsDir(), artifact_name);
+        const filePath = path.join(artifactsDir, artifact_name);
         try {
           const content = fs.readFileSync(filePath, 'utf-8');
           return {
@@ -124,7 +135,7 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
 
       // List all artifacts
       try {
-        const files = listFilesRecursive(getArtifactsDir());
+        const files = listFilesRecursive(artifactsDir);
         return {
           content: [{
             type: 'text' as const,
@@ -195,12 +206,13 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
       try {
         const logger = new Logger('mcp-evolution');
         const engine = new EvolutionEngine(new StubProvider(), logger);
-        const state = engine.loadState();
+        const stateResult = engine.loadState();
         await logger.close();
 
+        const state = stateResult.ok ? stateResult.value : { proposals: [], promptVersions: {}, cooldowns: {} };
         let proposals = state.proposals;
         if (status && status !== 'all') {
-          proposals = proposals.filter((p) => p.status === status);
+          proposals = proposals.filter((p: import('../evolution/types.js').EvolutionProposal) => p.status === status);
         }
 
         return {
@@ -236,10 +248,14 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
       try {
         const logger = new Logger('mcp-evolution');
         const engine = new EvolutionEngine(new StubProvider(), logger);
-        const state = engine.loadState();
+        const stateResult2 = engine.loadState();
         await logger.close();
 
-        const proposal = state.proposals.find((p) => p.id === proposal_id);
+        if (!stateResult2.ok) {
+          return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `Cannot load evolution state: ${stateResult2.error}` }) }], isError: true };
+        }
+        const approveState = stateResult2.value;
+        const proposal = approveState.proposals.find((p: import('../evolution/types.js').EvolutionProposal) => p.id === proposal_id);
         if (!proposal) {
           return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `Proposal ${proposal_id} not found` }) }], isError: true };
         }
@@ -259,7 +275,7 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
         proposal.status = 'approved';
         proposal.resolvedAt = new Date().toISOString();
         proposal.resolvedBy = 'mcp';
-        engine.saveState(state);
+        engine.saveState(approveState);
 
         return { content: [{ type: 'text' as const, text: JSON.stringify({ status: 'approved', proposal_id }) }] };
       } catch (err) {
@@ -279,10 +295,14 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
       try {
         const logger = new Logger('mcp-evolution');
         const engine = new EvolutionEngine(new StubProvider(), logger);
-        const state = engine.loadState();
+        const stateResult3 = engine.loadState();
         await logger.close();
 
-        const proposal = state.proposals.find((p) => p.id === proposal_id);
+        if (!stateResult3.ok) {
+          return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `Cannot load evolution state: ${stateResult3.error}` }) }], isError: true };
+        }
+        const rejectState = stateResult3.value;
+        const proposal = rejectState.proposals.find((p: import('../evolution/types.js').EvolutionProposal) => p.id === proposal_id);
         if (!proposal) {
           return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `Proposal ${proposal_id} not found` }) }], isError: true };
         }
@@ -293,7 +313,7 @@ export function registerTools(server: McpServer, runManager: RunManager): void {
         proposal.status = 'rejected';
         proposal.resolvedAt = new Date().toISOString();
         proposal.rejectionReason = reason;
-        engine.saveState(state);
+        engine.saveState(rejectState);
 
         return { content: [{ type: 'text' as const, text: JSON.stringify({ status: 'rejected', proposal_id }) }] };
       } catch (err) {

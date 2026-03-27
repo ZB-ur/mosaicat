@@ -1,34 +1,50 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { StageName, AgentContext, AgentsConfig, Task } from './types.js';
-import { readArtifact, artifactExists } from './artifact.js';
+import type { ArtifactStore } from './artifact-store.js';
+import type { Logger } from './logger.js';
 import { loadSkillsForAgent } from '../evolution/skill-manager.js';
 
 const STATIC_CONSTITUTION_PATH = path.join('.claude', 'agents', 'mosaic', 'constitution.md');
 
 export function buildContext(
   agentConfig: AgentsConfig,
-  task: Task
+  task: Task,
+  store: ArtifactStore,
+  logger: Logger,
+  devMode: boolean,
 ): AgentContext {
   const config = agentConfig.agents[task.stage];
   if (!config) {
     throw new Error(`No agent config found for stage: ${task.stage}`);
   }
 
-  // Load system prompt
+  // Load system prompt (Tier 1 — critical file)
   let systemPrompt = '';
   try {
     systemPrompt = fs.readFileSync(config.prompt_file, 'utf-8');
-  } catch {
-    systemPrompt = `You are the ${config.name} agent.`;
+  } catch (e) {
+    if (devMode) {
+      logger.pipeline('warn', 'context:prompt-missing', {
+        stage: task.stage,
+        file: config.prompt_file,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      systemPrompt = `You are the ${config.name} agent.`;
+    } else {
+      throw new Error(`Required prompt file missing: ${config.prompt_file}`);
+    }
   }
 
-  // Inject static constitution into system prompt (applies to all agents)
+  // Inject static constitution into system prompt (Tier 2 — non-critical)
   try {
     const constitutionContent = fs.readFileSync(STATIC_CONSTITUTION_PATH, 'utf-8');
     systemPrompt += `\n\n---\n\n${constitutionContent}`;
-  } catch {
-    // Static constitution file not found — non-blocking
+  } catch (e) {
+    logger.pipeline('warn', 'context:constitution-missing', {
+      file: STATIC_CONSTITUTION_PATH,
+      error: e instanceof Error ? e.message : String(e),
+    });
   }
 
   // Load only contracted input artifacts (artifact isolation)
@@ -37,12 +53,12 @@ export function buildContext(
     if (input === 'user_instruction') {
       inputArtifacts.set('user_instruction', task.instruction);
     } else if (input.endsWith('/')) {
-      // Directory inputs are markers — agents access them via getArtifactsDir()
-      if (artifactExists(input)) {
+      // Directory inputs are markers — agents access them via store.getDir()
+      if (store.exists(input)) {
         inputArtifacts.set(input, `[directory: ${input}]`);
       }
-    } else if (artifactExists(input)) {
-      inputArtifacts.set(input, readArtifact(input));
+    } else if (store.exists(input)) {
+      inputArtifacts.set(input, store.read(input));
     }
   }
 
@@ -59,7 +75,10 @@ export function buildContext(
       systemPrompt += skillSection;
     }
   } catch (err) {
-    console.warn(`[context-manager] Failed to load skills for ${task.stage}: ${err instanceof Error ? err.message : String(err)}`);
+    logger.pipeline('warn', 'context:skills-load-failed', {
+      stage: task.stage,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   return {
