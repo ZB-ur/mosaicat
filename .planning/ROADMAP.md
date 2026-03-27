@@ -123,10 +123,10 @@ Note: Phase 4 depends on Phase 2 (not Phase 3), so it could theoretically overla
 
 ### Phase 7: 优化readme内容
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Update README.md and README.en.md to reflect v2 core engine rewrite -- fix all technical inaccuracies, reorganize structure for AI-savvy developers, shift tone from marketing to technical, add terminal demo
+**Requirements**: D-01, D-02, D-03, D-04, D-05, D-06, D-07, D-08
 **Depends on:** Phase 6
-**Plans:** 0 plans
+**Plans:** 1 plan
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 7 to break down)
+- [ ] 07-01-PLAN.md — Rewrite both README files with v2-accurate content, reorganized structure, and technical tone
