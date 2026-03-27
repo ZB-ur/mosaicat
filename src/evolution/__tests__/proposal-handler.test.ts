@@ -9,7 +9,9 @@ import { StubProvider } from '../../core/llm-provider.js';
 import { Logger } from '../../core/logger.js';
 import { listPromptVersions } from '../prompt-versioning.js';
 import { listSkills } from '../skill-manager.js';
-import { eventBus } from '../../core/event-bus.js';
+import { EventBus } from '../../core/event-bus.js';
+
+const eventBus = new EventBus();
 import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
 
 const PROMPT_FILE = '.claude/agents/mosaic/researcher.md';
@@ -67,7 +69,7 @@ describe('ProposalHandler', () => {
     const handler = new TestInteractionHandler();
     handler.approvals.set(proposal.id, { approved: true });
 
-    const proposalHandler = new ProposalHandler(handler, new StubProvider(), logger);
+    const proposalHandler = new ProposalHandler(handler, new StubProvider(), logger, eventBus);
 
     // Pre-populate state with the proposal
     const { EvolutionEngine } = await import('../engine.js');
@@ -98,7 +100,7 @@ describe('ProposalHandler', () => {
     const handler = new TestInteractionHandler();
     handler.approvals.set(proposal.id, { approved: true });
 
-    const proposalHandler = new ProposalHandler(handler, new StubProvider(), logger);
+    const proposalHandler = new ProposalHandler(handler, new StubProvider(), logger, eventBus);
 
     const { EvolutionEngine } = await import('../engine.js');
     const engine = new EvolutionEngine(new StubProvider(), logger);
@@ -116,7 +118,7 @@ describe('ProposalHandler', () => {
     const handler = new TestInteractionHandler();
     handler.approvals.set(proposal.id, { approved: false, reason: 'Too aggressive' });
 
-    const proposalHandler = new ProposalHandler(handler, new StubProvider(), logger);
+    const proposalHandler = new ProposalHandler(handler, new StubProvider(), logger, eventBus);
 
     const { EvolutionEngine } = await import('../engine.js');
     const engine = new EvolutionEngine(new StubProvider(), logger);
@@ -140,7 +142,7 @@ describe('ProposalHandler', () => {
     eventBus.on('evolution:proposed', (id) => events.push(`proposed:${id}`));
     eventBus.on('evolution:approved', (id) => events.push(`approved:${id}`));
 
-    const proposalHandler = new ProposalHandler(handler, new StubProvider(), logger);
+    const proposalHandler = new ProposalHandler(handler, new StubProvider(), logger, eventBus);
 
     const { EvolutionEngine } = await import('../engine.js');
     const engine = new EvolutionEngine(new StubProvider(), logger);

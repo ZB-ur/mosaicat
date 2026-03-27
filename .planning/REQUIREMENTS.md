@@ -45,8 +45,8 @@
 ### Orchestrator Facade
 
 - [x] **ORCH-01**: 重写 Orchestrator 为 thin facade（< 200 行），创建 RunContext 并委派到 PipelineLoop
-- [ ] **ORCH-02**: EventBus 从 singleton 改为实例化，通过 RunContext 传递
-- [ ] **ORCH-03**: 统一 30+ 处 `console.log` 到 Logger 模块，消除绕过 logger 的直接输出
+- [x] **ORCH-02**: EventBus 从 singleton 改为实例化，通过 RunContext 传递
+- [x] **ORCH-03**: 统一 30+ 处 `console.log` 到 Logger 模块，消除绕过 logger 的直接输出
 
 ### Security
 
@@ -109,9 +109,9 @@
 | CODER-04 | Phase 4 | Complete |
 | CODER-05 | Phase 4 | Complete |
 | ORCH-01 | Phase 5 | Complete |
-| ORCH-02 | Phase 5 | Pending |
-| ORCH-03 | Phase 5 | Pending |
-| SEC-01 | Phase 2 | Pending |
+| ORCH-02 | Phase 5 | Complete |
+| ORCH-03 | Phase 5 | Complete |
+| SEC-01 | Phase 2 | Complete |
 
 **Coverage:**
 - v1 requirements: 26 total

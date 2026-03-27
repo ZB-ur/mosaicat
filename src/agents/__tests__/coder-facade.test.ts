@@ -143,6 +143,7 @@ function createMockRunContext(): RunContext {
     eventBus,
     config: {} as any,
     signal: new AbortController().signal,
+    devMode: true,
   };
 }
 
