@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { readArtifact, getArtifactsDir } from '../../core/artifact.js';
+import type { ArtifactIO } from './types.js';
 import type { CodePlan } from '../code-plan-schema.js';
 import { listBuiltFiles } from './utils.js';
 
@@ -18,10 +18,11 @@ export class OutputGenerator {
     private readonly stage: string,
     private readonly logger: { agent(stage: string, level: string, event: string, data?: Record<string, unknown>): void },
     private readonly writer: OutputWriter,
+    private readonly artifacts: ArtifactIO,
   ) {}
 
   generateManifest(plan: CodePlan): void {
-    const codeDir = `${getArtifactsDir()}/code`;
+    const codeDir = `${this.artifacts.getDir()}/code`;
     const allFiles = listBuiltFiles(codeDir);
 
     const fileEntries = allFiles.map(filePath => {
@@ -49,14 +50,14 @@ export class OutputGenerator {
   }
 
   generateReadme(plan: CodePlan): void {
-    const codeDir = `${getArtifactsDir()}/code`;
+    const codeDir = `${this.artifacts.getDir()}/code`;
     const lines: string[] = [];
 
     lines.push(`# ${plan.project_name}`);
     lines.push('');
 
     try {
-      const briefRaw = readArtifact('intent-brief.json');
+      const briefRaw = this.artifacts.read('intent-brief.json');
       const brief = JSON.parse(briefRaw);
       if (brief.problem) lines.push(brief.problem);
       lines.push('');
@@ -75,7 +76,7 @@ export class OutputGenerator {
     }
 
     try {
-      const prdRaw = readArtifact('prd.manifest.json');
+      const prdRaw = this.artifacts.read('prd.manifest.json');
       const prd = JSON.parse(prdRaw);
       if (prd.features?.length > 0) {
         lines.push('## Features');
