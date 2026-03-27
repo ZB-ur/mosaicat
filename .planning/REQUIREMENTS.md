@@ -90,11 +90,11 @@
 | TEST-02 | Phase 1 | Complete |
 | TEST-03 | Phase 1 | Complete |
 | TEST-04 | Phase 4 | Complete |
-| ERR-01 | Phase 2 | Pending |
-| ERR-02 | Phase 2 | Pending |
-| ERR-03 | Phase 2 | Pending |
+| ERR-01 | Phase 2 | Complete |
+| ERR-02 | Phase 2 | Complete |
+| ERR-03 | Phase 2 | Complete |
 | ERR-04 | Phase 2 | Complete |
-| STATE-01 | Phase 2 | Pending |
+| STATE-01 | Phase 2 | Complete |
 | STATE-02 | Phase 2 | Complete |
 | STATE-03 | Phase 2 | Complete |
 | STATE-04 | Phase 2 | Complete |
