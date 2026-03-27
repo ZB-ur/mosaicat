@@ -1,20 +1,30 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
+import path from 'node:path';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-provider.js';
 import type { AgentContext } from '../../core/types.js';
 import { ClarificationNeeded } from '../../core/types.js';
-import { createTestMosaicDir, cleanupTestMosaicDir, createTestRunContext } from '../../__tests__/test-helpers.js';
+import { createTestRunContext, createTestArtifactStore } from '../../__tests__/test-helpers.js';
 import { UIDesignerAgent } from '../ui-designer.js';
-import { Logger } from '../../core/logger.js';
-
-const ARTIFACTS_DIR = '.mosaic/artifacts';
+import type { RunContext } from '../../core/run-context.js';
 
 class MockUIProvider implements LLMProvider {
   callCount = 0;
   calls: Array<{ prompt: string; systemPrompt?: string }> = [];
   private builderCallCount = 0;
-  // Set to true to make the second builder call fail
+  // Set to make a specific builder call fail
   failOnBuilder = 0;
+
+  private componentData: Record<string, { tsx: string; html: string }> = {
+    CompA: {
+      tsx: 'export default function CompA() { return <div>A</div>; }',
+      html: '<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div>A</div></body></html>',
+    },
+    CompB: {
+      tsx: 'export default function CompB() { return <div>B</div>; }',
+      html: '<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div>B</div></body></html>',
+    },
+  };
 
   async call(prompt: string, options?: LLMCallOptions): Promise<LLMResponse> {
     this.callCount++;
@@ -27,14 +37,14 @@ class MockUIProvider implements LLMProvider {
 {
   "design_tokens": {"primary": "blue-600"},
   "components": [
-    {"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "First component", "covers_features": ["F-001"], "parent": null, "children": [], "props": ["text: string"], "priority": 1},
-    {"name": "CompB", "file": "components/CompB.tsx", "preview": "previews/CompB.html", "purpose": "Second component", "covers_features": ["F-002"], "parent": null, "children": [], "props": [], "priority": 2}
+    {"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "First component", "covers_features": ["F-001"], "parent": null, "children": [], "props": ["text: string"], "priority": 1, "category": "atomic"},
+    {"name": "CompB", "file": "components/CompB.tsx", "preview": "previews/CompB.html", "purpose": "Second component", "covers_features": ["F-002"], "parent": null, "children": [], "props": [], "priority": 2, "category": "atomic"}
   ]
 }
 <!-- END:ui-plan.json -->` };
     }
 
-    // Builder
+    // Builder — detect which component(s) are being requested from the prompt
     if (sys.includes('UIBuilder') || sys.includes('builder phase of the UI designer')) {
       this.builderCallCount++;
 
@@ -42,21 +52,24 @@ class MockUIProvider implements LLMProvider {
         throw new Error('Simulated builder failure');
       }
 
-      const components: Record<number, { name: string; tsx: string; html: string }> = {
-        1: {
-          name: 'CompA',
-          tsx: 'export default function CompA() { return <div>A</div>; }',
-          html: '<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div>A</div></body></html>',
-        },
-        2: {
-          name: 'CompB',
-          tsx: 'export default function CompB() { return <div>B</div>; }',
-          html: '<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script></head><body><div>B</div></body></html>',
-        },
-      };
+      // Detect requested components from prompt content
+      const requestedNames = Object.keys(this.componentData).filter(
+        name => prompt.includes(`"name": "${name}"`)
+      );
 
-      const comp = components[this.builderCallCount] ?? components[1];
-      return { content: `<!-- ARTIFACT:components/${comp.name}.tsx -->\n${comp.tsx}\n<!-- END:components/${comp.name}.tsx -->\n\n<!-- ARTIFACT:previews/${comp.name}.html -->\n${comp.html}\n<!-- END:previews/${comp.name}.html -->` };
+      // Generate ARTIFACT blocks for all requested components
+      const blocks: string[] = [];
+      for (const name of requestedNames) {
+        const comp = this.componentData[name];
+        if (comp) {
+          blocks.push(
+            `<!-- ARTIFACT:components/${name}.tsx -->\n${comp.tsx}\n<!-- END:components/${name}.tsx -->\n\n` +
+            `<!-- ARTIFACT:previews/${name}.html -->\n${comp.html}\n<!-- END:previews/${name}.html -->`
+          );
+        }
+      }
+
+      return { content: blocks.join('\n\n') };
     }
 
     return { content: '[unknown call]' };
@@ -66,7 +79,7 @@ class MockUIProvider implements LLMProvider {
 // Mock screenshot renderer to avoid Playwright dependency in unit tests
 vi.mock('../../core/screenshot-renderer.js', () => ({
   renderPreviewScreenshots: async () => [],
-  generateGallery: () => '.mosaic/artifacts/gallery.html',
+  generateGallery: () => 'gallery.html',
 }));
 
 function makeContext(): AgentContext {
@@ -81,61 +94,56 @@ function makeContext(): AgentContext {
   };
 }
 
+/** Create a RunContext and return it with the artifacts directory path */
+function createCtx(provider: LLMProvider): { ctx: RunContext; artifactsDir: string } {
+  const store = createTestArtifactStore();
+  const ctx = createTestRunContext({ provider, store });
+  return { ctx, artifactsDir: store.getDir() };
+}
+
 describe('UIDesignerAgent', () => {
-  let tmpRoot: string;
-
-  beforeEach(() => {
-    tmpRoot = createTestMosaicDir();
-  });
-
-  afterEach(() => {
-    cleanupTestMosaicDir(tmpRoot);
-  });
-
-  it('should make 1 planner call + N builder calls', async () => {
+  it('should make planner + builder calls (batched for atomic)', async () => {
     const provider = new MockUIProvider();
-    const logger = new Logger('test');
-    const agent = new UIDesignerAgent('ui_designer', createTestRunContext({ provider, logger }));
+    const { ctx } = createCtx(provider);
+    const agent = new UIDesignerAgent('ui_designer', ctx);
 
     await agent.execute(makeContext());
-    await logger.close();
 
-    // 1 planner + 2 builder = 3 total calls
-    expect(provider.callCount).toBe(3);
+    // Both atomic components are batched together:
+    // 1 planner + 1 batch builder = 2 total calls
+    expect(provider.callCount).toBe(2);
 
-    // First call should be planner (system prompt contains planner content)
+    // First call should be planner
     expect(provider.calls[0].systemPrompt).toContain('planning phase of the UI designer');
 
-    // Second and third calls should be builder
+    // Second call should be builder (batch of 2 atomic components)
     expect(provider.calls[1].systemPrompt).toContain('builder phase of the UI designer');
-    expect(provider.calls[2].systemPrompt).toContain('builder phase of the UI designer');
   });
 
   it('should write ui-plan.json, component files, and previews', async () => {
     const provider = new MockUIProvider();
-    const logger = new Logger('test');
-    const agent = new UIDesignerAgent('ui_designer', createTestRunContext({ provider, logger }));
+    const { ctx, artifactsDir } = createCtx(provider);
+    const agent = new UIDesignerAgent('ui_designer', ctx);
 
     await agent.execute(makeContext());
-    await logger.close();
 
-    expect(fs.existsSync(`${ARTIFACTS_DIR}/ui-plan.json`)).toBe(true);
-    expect(fs.existsSync(`${ARTIFACTS_DIR}/components/CompA.tsx`)).toBe(true);
-    expect(fs.existsSync(`${ARTIFACTS_DIR}/components/CompB.tsx`)).toBe(true);
-    expect(fs.existsSync(`${ARTIFACTS_DIR}/previews/CompA.html`)).toBe(true);
-    expect(fs.existsSync(`${ARTIFACTS_DIR}/previews/CompB.html`)).toBe(true);
+    expect(fs.existsSync(path.join(artifactsDir, 'ui-plan.json'))).toBe(true);
+    expect(fs.existsSync(path.join(artifactsDir, 'components/CompA.tsx'))).toBe(true);
+    expect(fs.existsSync(path.join(artifactsDir, 'components/CompB.tsx'))).toBe(true);
+    expect(fs.existsSync(path.join(artifactsDir, 'previews/CompA.html'))).toBe(true);
+    expect(fs.existsSync(path.join(artifactsDir, 'previews/CompB.html'))).toBe(true);
   });
 
   it('should programmatically generate manifest', async () => {
     const provider = new MockUIProvider();
-    const logger = new Logger('test');
-    const agent = new UIDesignerAgent('ui_designer', createTestRunContext({ provider, logger }));
+    const { ctx, artifactsDir } = createCtx(provider);
+    const agent = new UIDesignerAgent('ui_designer', ctx);
 
     await agent.execute(makeContext());
-    await logger.close();
 
-    expect(fs.existsSync(`${ARTIFACTS_DIR}/components.manifest.json`)).toBe(true);
-    const manifest = JSON.parse(fs.readFileSync(`${ARTIFACTS_DIR}/components.manifest.json`, 'utf-8'));
+    const manifestPath = path.join(artifactsDir, 'components.manifest.json');
+    expect(fs.existsSync(manifestPath)).toBe(true);
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
 
     expect(manifest.components).toHaveLength(2);
     expect(manifest.components[0].name).toBe('CompA');
@@ -144,40 +152,101 @@ describe('UIDesignerAgent', () => {
     expect(manifest.previews).toHaveLength(2);
   });
 
-  it('should continue when a single component build fails', async () => {
+  it('should retry failed component and recover via retry pass', async () => {
     const provider = new MockUIProvider();
-    provider.failOnBuilder = 1; // Fail on first builder call (CompA)
-    const logger = new Logger('test');
-    const agent = new UIDesignerAgent('ui_designer', createTestRunContext({ provider, logger }));
+    provider.failOnBuilder = 1; // Fail on first builder call (the batch)
+    const { ctx, artifactsDir } = createCtx(provider);
+    const agent = new UIDesignerAgent('ui_designer', ctx);
 
     await agent.execute(makeContext());
-    await logger.close();
 
-    // CompA should NOT exist (failed)
-    expect(fs.existsSync(`${ARTIFACTS_DIR}/components/CompA.tsx`)).toBe(false);
+    // Both components should exist — batch failed, fallback to individual succeeded,
+    // and retry pass picks up any remaining
+    expect(fs.existsSync(path.join(artifactsDir, 'components/CompA.tsx'))).toBe(true);
+    expect(fs.existsSync(path.join(artifactsDir, 'components/CompB.tsx'))).toBe(true);
 
-    // CompB should exist (succeeded)
-    expect(fs.existsSync(`${ARTIFACTS_DIR}/components/CompB.tsx`)).toBe(true);
-    expect(fs.existsSync(`${ARTIFACTS_DIR}/previews/CompB.html`)).toBe(true);
-
-    // Manifest should only contain CompB
-    const manifest = JSON.parse(fs.readFileSync(`${ARTIFACTS_DIR}/components.manifest.json`, 'utf-8'));
-    expect(manifest.components).toHaveLength(1);
-    expect(manifest.components[0].name).toBe('CompB');
+    // Manifest should contain both components
+    const manifestPath = path.join(artifactsDir, 'components.manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    expect(manifest.components).toHaveLength(2);
   });
 
-  it('should pass sibling context to later builder calls', async () => {
-    const provider = new MockUIProvider();
-    const logger = new Logger('test');
-    const agent = new UIDesignerAgent('ui_designer', createTestRunContext({ provider, logger }));
+  it('should throw when too many components fail to build', async () => {
+    // Provider that returns responses with no ARTIFACT blocks for builders
+    const silentFailProvider: LLMProvider = {
+      async call(_prompt: string, options?: LLMCallOptions): Promise<LLMResponse> {
+        const sys = options?.systemPrompt ?? '';
+        if (sys.includes('planning phase of the UI designer')) {
+          return { content: `<!-- ARTIFACT:ui-plan.json -->
+{
+  "design_tokens": {"primary": "blue-600"},
+  "components": [
+    {"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "First", "covers_features": ["F-001"], "parent": null, "children": [], "props": ["text: string"], "priority": 1, "category": "atomic"},
+    {"name": "CompB", "file": "components/CompB.tsx", "preview": "previews/CompB.html", "purpose": "Second", "covers_features": ["F-002"], "parent": null, "children": [], "props": [], "priority": 2, "category": "atomic"},
+    {"name": "CompC", "file": "components/CompC.tsx", "preview": "previews/CompC.html", "purpose": "Third", "covers_features": ["F-003"], "parent": null, "children": [], "props": [], "priority": 3, "category": "atomic"}
+  ]
+}
+<!-- END:ui-plan.json -->` };
+        }
+        // Builder: return text without ARTIFACT blocks (simulating silent failure)
+        return { content: 'I apologize, I cannot generate this component due to complexity limitations.' };
+      },
+    };
 
+    const { ctx } = createCtx(silentFailProvider);
+    const agent = new UIDesignerAgent('ui_designer', ctx);
+
+    // Should throw because 100% of components are missing (> 20% threshold)
+    await expect(agent.execute(makeContext())).rejects.toThrow(/built only 0\/3/);
+  });
+
+  it('should include missing_components in manifest when under threshold', async () => {
+    // Provider where one component silently fails but the rest succeed (under 20% threshold)
+    let builderCallCount = 0;
+    const partialFailProvider: LLMProvider = {
+      async call(prompt: string, options?: LLMCallOptions): Promise<LLMResponse> {
+        const sys = options?.systemPrompt ?? '';
+        if (sys.includes('planning phase of the UI designer')) {
+          return { content: `<!-- ARTIFACT:ui-plan.json -->
+{
+  "design_tokens": {"primary": "blue-600"},
+  "components": [
+    {"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "First", "covers_features": ["F-001"], "parent": null, "children": [], "props": [], "priority": 1, "category": "page"},
+    {"name": "CompB", "file": "components/CompB.tsx", "preview": "previews/CompB.html", "purpose": "Second", "covers_features": ["F-002"], "parent": null, "children": [], "props": [], "priority": 2, "category": "page"},
+    {"name": "CompC", "file": "components/CompC.tsx", "preview": "previews/CompC.html", "purpose": "Third", "covers_features": ["F-003"], "parent": null, "children": [], "props": [], "priority": 3, "category": "page"},
+    {"name": "CompD", "file": "components/CompD.tsx", "preview": "previews/CompD.html", "purpose": "Fourth", "covers_features": ["F-004"], "parent": null, "children": [], "props": [], "priority": 4, "category": "page"},
+    {"name": "CompE", "file": "components/CompE.tsx", "preview": "previews/CompE.html", "purpose": "Fifth", "covers_features": ["F-005"], "parent": null, "children": [], "props": [], "priority": 5, "category": "page"}
+  ]
+}
+<!-- END:ui-plan.json -->` };
+        }
+        // Builder
+        builderCallCount++;
+        // Detect which component is being requested
+        const names = ['CompA', 'CompB', 'CompC', 'CompD', 'CompE'];
+        for (const name of names) {
+          if (prompt.includes(`"name": "${name}"`)) {
+            // CompE always fails silently (returns no ARTIFACT blocks)
+            if (name === 'CompE') {
+              return { content: 'I cannot generate this component.' };
+            }
+            return { content: `<!-- ARTIFACT:components/${name}.tsx -->\nexport default function ${name}() { return <div>${name}</div>; }\n<!-- END:components/${name}.tsx -->\n\n<!-- ARTIFACT:previews/${name}.html -->\n<html><body>${name}</body></html>\n<!-- END:previews/${name}.html -->` };
+          }
+        }
+        return { content: 'unknown' };
+      },
+    };
+
+    const { ctx, artifactsDir } = createCtx(partialFailProvider);
+    const agent = new UIDesignerAgent('ui_designer', ctx);
+
+    // 1/5 = 20% missing, which is exactly at threshold (not >20%), should succeed
     await agent.execute(makeContext());
-    await logger.close();
 
-    // Second builder call (CompB) should include CompA in its prompt
-    const secondBuilderPrompt = provider.calls[2].prompt;
-    expect(secondBuilderPrompt).toContain('Already Built Components');
-    expect(secondBuilderPrompt).toContain('CompA');
+    const manifestPath = path.join(artifactsDir, 'components.manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    expect(manifest.components).toHaveLength(4);
+    expect(manifest.missing_components).toEqual(['CompE']);
   });
 
   it('should throw ClarificationNeeded when planner requests clarification', async () => {
@@ -196,10 +265,9 @@ describe('UIDesignerAgent', () => {
       },
     };
 
-    const logger = new Logger('test');
-    const agent = new UIDesignerAgent('ui_designer', createTestRunContext({ provider, logger }));
+    const { ctx } = createCtx(provider);
+    const agent = new UIDesignerAgent('ui_designer', ctx);
 
     await expect(agent.execute(makeContext())).rejects.toThrow(ClarificationNeeded);
-    await logger.close();
   });
 });

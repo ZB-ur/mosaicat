@@ -247,6 +247,18 @@ export class UIDesignerAgent extends BaseAgent {
       }
     }
 
+    // Retry pass: individually retry any components that were not built
+    const stillMissing = sorted.filter(c => !builtComponents.has(c.name));
+    if (stillMissing.length > 0) {
+      this.logger.agent(this.stage, 'warn', 'build:retry-pass', {
+        missingCount: stillMissing.length,
+        missingComponents: stillMissing.map(c => c.name),
+      });
+      for (const comp of stillMissing) {
+        await this.buildSingleComponent(context, plan, comp, builtComponents, previewFiles, builderPrompt);
+      }
+    }
+
     (this as { _previewFiles?: string[] })._previewFiles = [
       ...((this as { _previewFiles?: string[] })._previewFiles ?? []),
       ...previewFiles,
@@ -423,6 +435,18 @@ export class UIDesignerAgent extends BaseAgent {
       }
     }
 
+    // Retry pass: individually retry any components that were not built
+    const stillMissing = sorted.filter(c => !builtComponents.has(c.name));
+    if (stillMissing.length > 0) {
+      this.logger.agent(this.stage, 'warn', 'build:retry-pass', {
+        missingCount: stillMissing.length,
+        missingComponents: stillMissing.map(c => c.name),
+      });
+      for (const comp of stillMissing) {
+        await this.buildSingleComponent(context, plan, comp, builtComponents, previewFiles, builderPrompt);
+      }
+    }
+
     (this as { _previewFiles?: string[] })._previewFiles = previewFiles;
     return builtComponents;
   }
@@ -509,6 +533,7 @@ export class UIDesignerAgent extends BaseAgent {
 
   /**
    * Build a single component (original per-component flow).
+   * Returns true if the component TSX was successfully written, false otherwise.
    */
   private async buildSingleComponent(
     context: AgentContext,
@@ -517,7 +542,7 @@ export class UIDesignerAgent extends BaseAgent {
     builtComponents: Map<string, string>,
     previewFiles: string[],
     builderPrompt: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       const userPrompt = this.buildBuilderUserPrompt(context, plan, comp);
 
@@ -528,12 +553,23 @@ export class UIDesignerAgent extends BaseAgent {
       this.ctx.eventBus.emit('agent:thinking', this.stage, userPrompt.length);
 
       const response = await this.provider.call(userPrompt, { systemPrompt: builderPrompt });
-      this.extractAndWriteArtifacts(response.content, [comp], builtComponents, previewFiles);
+      const written = this.extractAndWriteArtifacts(response.content, [comp], builtComponents, previewFiles);
+
+      if (!written.has(comp.name)) {
+        this.logger.agent(this.stage, 'warn', 'builder:no-artifact-extracted', {
+          component: comp.name,
+          responseLength: response.content.length,
+          responseHead: response.content.slice(0, 200),
+        });
+        return false;
+      }
 
       this.logger.agent(this.stage, 'info', 'builder:complete', { component: comp.name });
+      return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.agent(this.stage, 'warn', 'builder:failed', { component: comp.name, error: message });
+      return false;
     }
   }
 
@@ -629,6 +665,31 @@ export class UIDesignerAgent extends BaseAgent {
   ): Promise<void> {
     const previewFiles = (this as { _previewFiles?: string[] })._previewFiles ?? [];
 
+    // --- Completeness check ---
+    const missingComponents = plan.components.filter(c => !builtComponents.has(c.name));
+    if (missingComponents.length > 0) {
+      const missingNames = missingComponents.map(c => c.name);
+      const totalPlanned = plan.components.length;
+      const built = builtComponents.size;
+      const missingPct = Math.round((missingComponents.length / totalPlanned) * 100);
+
+      this.logger.agent(this.stage, 'error', 'build:incomplete', {
+        planned: totalPlanned,
+        built,
+        missing: missingComponents.length,
+        missingPct,
+        missingComponents: missingNames,
+      });
+
+      // Fail the stage if more than 20% of components are missing
+      if (missingPct > 20) {
+        throw new Error(
+          `UIDesigner built only ${built}/${totalPlanned} components (${missingPct}% missing). ` +
+          `Missing: ${missingNames.join(', ')}`
+        );
+      }
+    }
+
     // Render screenshots from preview HTML files
     if (previewFiles.length > 0) {
       await this.renderPreviewsAndGallery(previewFiles);
@@ -652,11 +713,17 @@ export class UIDesignerAgent extends BaseAgent {
       components: { name: string; file: string; covers_features: string[] }[];
       screenshots: string[];
       previews: string[];
+      missing_components?: string[];
     } = {
       components,
       screenshots,
       previews,
     };
+
+    // Include missing components in manifest for downstream visibility
+    if (missingComponents.length > 0) {
+      manifestData.missing_components = missingComponents.map(c => c.name);
+    }
 
     this.writeOutputManifest('components.manifest.json', manifestData);
 
@@ -664,6 +731,7 @@ export class UIDesignerAgent extends BaseAgent {
       componentCount: components.length,
       screenshotCount: screenshots.length,
       previewCount: previews.length,
+      missingCount: missingComponents.length,
     });
   }
 
