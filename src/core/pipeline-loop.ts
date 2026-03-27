@@ -32,7 +32,7 @@ export class PipelineLoop {
     pipelineRun: PipelineRun,
     stages: readonly StageName[],
   ): Promise<void> {
-    this.ctx.eventBus.emit('pipeline:start', pipelineRun.id, stages);
+    this.ctx.eventBus.emit('pipeline:start', pipelineRun.id, stages, undefined, this.ctx.store.getDir());
 
     let i = 0;
     while (i < stages.length) {

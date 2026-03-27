@@ -75,8 +75,9 @@ export function attachCLIProgress(eventBusInstance: EventBus): () => void {
 
   // ── Pipeline ──
 
-  on('pipeline:start', (runId, stages, provider) => {
+  on('pipeline:start', (runId, stages, provider, artifactsDir) => {
     if (stages) activeStages = stages;
+    if (artifactsDir) presenter = new CLIArtifactPresenter(artifactsDir);
     process.stdout.write(`\n${BOLD}${CYAN}━━━ Mosaicat Pipeline ━━━${RESET}\n`);
     process.stdout.write(`${DIM}Run: ${runId}${RESET}\n`);
     if (provider) process.stdout.write(`${DIM}LLM: ${provider}${RESET}\n`);
@@ -187,7 +188,7 @@ export function attachCLIProgress(eventBusInstance: EventBus): () => void {
 
   // ── Artifacts ──
 
-  const presenter = new CLIArtifactPresenter();
+  let presenter = new CLIArtifactPresenter();
 
   on('artifact:written', (stage, name, size) => {
     process.stdout.write(`  ${CYAN}→${RESET} ${presenter.formatLink(name, size)}\n`);

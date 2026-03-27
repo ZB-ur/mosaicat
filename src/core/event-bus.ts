@@ -10,7 +10,7 @@ export interface PipelineEvents {
   'stage:rejected': (stage: StageName, runId: string) => void;
   'stage:rollback': (from: StageName, to: StageName, runId: string) => void;
   'stage:retry': (stage: StageName, runId: string, attempt: number) => void;
-  'pipeline:start': (runId: string, stages?: readonly StageName[], provider?: string) => void;
+  'pipeline:start': (runId: string, stages?: readonly StageName[], provider?: string, artifactsDir?: string) => void;
   'pipeline:complete': (runId: string) => void;
   'pipeline:failed': (runId: string, error: string) => void;
   'issue:created': (issueNumber: number, stage: StageName, runId: string) => void;
