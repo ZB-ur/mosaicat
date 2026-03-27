@@ -41,7 +41,7 @@ Pipeline 引擎的可靠性和可维护性 — 每个 Agent 的输入输出契�
 - [x] 添加优雅关闭处理（SIGINT/SIGTERM → 完成当前 stage 写入后退出） — Validated in Phase 3: Execution Engine
 - [x] 补齐 resume 流程集成测试（覆盖 `resumeRun()`、`--from` stage reset、artifact cleanup） — Validated in Phase 1: Test Infrastructure Hardening
 - [x] 补齐 Coder shell 命令执行路径测试（setup/build/verify/smoke-test） — Validated in Phase 4: Coder Decomposition
-- [ ] 统一 console.log 到 logger 模块（消除 30+ 处绕过 logger 的直接输出）
+- [x] 统一 console.log 到 logger 模块（消除 30+ 处绕过 logger 的直接输出） — Validated in Phase 5: Orchestrator Facade
 - [x] Orchestrator 可变 config 注入改为 clone-before-mutate 模式 — Validated in Phase 2: Foundation Layer
 - [x] SecurityAuditor 排除 .env 文件内容扫描，只检查存在性 — Validated in Phase 2: Foundation Layer
 
@@ -102,4 +102,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 after Phase 4 (Coder Decomposition) completion*
+*Last updated: 2026-03-27 after Phase 5 (Orchestrator Facade) completion — ALL PHASES COMPLETE*
