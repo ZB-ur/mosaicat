@@ -70,6 +70,10 @@ Progress: [==========] 100%
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 7 added: 优化readme内容
+
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.

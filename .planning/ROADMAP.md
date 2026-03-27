@@ -120,3 +120,13 @@ Note: Phase 4 depends on Phase 2 (not Phase 3), so it could theoretically overla
 | 3. Execution Engine | 1/3 | In Progress|  |
 | 4. Coder Decomposition | 0/3 | Planning complete | - |
 | 5. Orchestrator Facade + Logging Cleanup | 2/3 | In Progress|  |
+
+### Phase 7: 优化readme内容
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 6
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 7 to break down)
