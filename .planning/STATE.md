@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 
 ## Current Position
 
-Phase: 05
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-03-27
+Phase: 06 (integration-wiring-fixes) — EXECUTING
+Plan: 2 of 2
+Status: Completed 06-02 (ShutdownCoordinator + OutputGenerator wiring)
+Last activity: 2026-03-27 -- Plan 06-02 complete
 
-Progress: [..........] 0%
+Progress: [==========] 100%
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [..........] 0%
 | Phase 05 P01 | 2min | 2 tasks | 4 files |
 | Phase 05 P02 | 5min | 2 tasks | 11 files |
 | Phase 05 P03 | 17min | 2 tasks | 5 files |
+| Phase 06 P02 | 6min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,7 @@ Recent decisions affecting current work:
 - [Phase 05]: console.warn -> process.stderr.write; 3 extra files (snapshot, git-publisher, retrying-provider) fixed beyond plan scope
 - [Phase 05]: Extract git/issue operations to OrchestratorGitOps to meet 200-line facade target
 - [Phase 05]: onStageComplete callback fires only for done outcomes, not skipped -- skipped stages have no artifacts to commit
+- [Phase 06]: ShutdownCoordinator instantiated inside startRun async function to scope lifecycle per invocation
 
 ### Pending Todos
 
@@ -113,6 +115,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-27T07:52:04.813Z
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-integration-wiring-fixes/06-CONTEXT.md
+Last session: 2026-03-27T09:04:11Z
+Stopped at: Completed 06-02-PLAN.md
+Resume file: .planning/phases/06-integration-wiring-fixes/06-02-SUMMARY.md

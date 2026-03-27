@@ -105,7 +105,7 @@ Plans:
 **Plans:** 2 plans
 Plans:
 - [ ] 06-01-PLAN.md — FixLoopRunner verdict path fix + PipelineEvents stage:skipped type declaration
-- [ ] 06-02-PLAN.md — OutputGenerator ArtifactIO refactor + ShutdownCoordinator wiring in index.ts
+- [x] 06-02-PLAN.md — OutputGenerator ArtifactIO refactor + ShutdownCoordinator wiring in index.ts
 
 ## Progress
 
