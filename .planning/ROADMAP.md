@@ -129,4 +129,4 @@ Note: Phase 4 depends on Phase 2 (not Phase 3), so it could theoretically overla
 **Plans:** 1 plan
 
 Plans:
-- [ ] 07-01-PLAN.md — Rewrite both README files with v2-accurate content, reorganized structure, and technical tone
+- [x] 07-01-PLAN.md — Rewrite both README files with v2-accurate content, reorganized structure, and technical tone
