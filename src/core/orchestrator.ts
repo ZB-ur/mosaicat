@@ -32,16 +32,18 @@ export class Orchestrator {
   private gitOps?: OrchestratorGitOps;
   private evolutionEnabled: boolean;
   private devMode: boolean;
+  private signal?: AbortSignal;
   private currentCtx?: RunContext;
   readonly eventBus: EventBus;
 
-  constructor(handler?: InteractionHandler, adapter?: GitPlatformAdapter, options?: { enableEvolution?: boolean; devMode?: boolean }) {
+  constructor(handler?: InteractionHandler, adapter?: GitPlatformAdapter, options?: { enableEvolution?: boolean; devMode?: boolean; signal?: AbortSignal }) {
     this.pipelineConfig = yaml.load(fs.readFileSync('config/pipeline.yaml', 'utf-8')) as PipelineConfig;
     this.agentsConfig = yaml.load(fs.readFileSync('config/agents.yaml', 'utf-8')) as AgentsConfig;
     this.handler = handler ?? new CLIInteractionHandler();
     this.adapter = adapter;
     this.evolutionEnabled = options?.enableEvolution ?? false;
     this.devMode = options?.devMode ?? false;
+    this.signal = options?.signal;
     this.eventBus = new EventBus();
   }
 
@@ -102,7 +104,7 @@ export class Orchestrator {
 
   private initRunContext(runId: string): RunContext {
     const store = new ArtifactStore('.mosaic/artifacts', runId);
-    const ctx = createRunContext({ store, logger: new Logger(runId), provider: createProvider(this.pipelineConfig), eventBus: this.eventBus, config: this.pipelineConfig, devMode: this.devMode });
+    const ctx = createRunContext({ store, logger: new Logger(runId), provider: createProvider(this.pipelineConfig), eventBus: this.eventBus, config: this.pipelineConfig, signal: this.signal, devMode: this.devMode });
     this.currentCtx = ctx;
     this.gitOps = new OrchestratorGitOps(ctx, this.agentsConfig, this.handler, this.adapter, this.publisher);
     return ctx;

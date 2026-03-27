@@ -7,6 +7,7 @@ import type { PipelineConfig } from './core/types.js';
 import { resolveGitHubAuth } from './auth/resolve-auth.js';
 import { oauthDeviceFlow } from './auth/oauth-device-flow.js';
 import { saveCachedAuth, clearCachedAuth } from './auth/auth-store.js';
+import { ShutdownCoordinator } from './core/shutdown-coordinator.js';
 import fs from 'node:fs';
 import yaml from 'js-yaml';
 
@@ -80,22 +81,29 @@ if (command === 'login') {
   const fromIdx = args.indexOf('--from');
   const fromStage = fromIdx >= 0 ? args[fromIdx + 1] : undefined;
 
-  const orchestrator = new Orchestrator();
+  const coordinator = new ShutdownCoordinator();
+  coordinator.install();
+
+  const orchestrator = new Orchestrator(undefined, undefined, { signal: coordinator.signal });
   const detach = attachCLIProgress(orchestrator.eventBus);
 
   const startResume = async () => {
     const fromLabel = fromStage ? ` from ${fromStage}` : '';
     process.stdout.write(`[mosaicat] Resuming${runId ? ` run ${runId}` : ' latest run'}${fromLabel}...\n`);
 
-    const result = await orchestrator.resumeRun(runId, fromStage);
-
-    process.stdout.write(`\x1b[2mRun ID: ${result.id}\x1b[0m\n`);
-    process.stdout.write(`\x1b[2mArtifacts: .mosaic/artifacts/${result.id}/\x1b[0m\n`);
-    detach();
+    try {
+      const result = await orchestrator.resumeRun(runId, fromStage);
+      process.stdout.write(`\x1b[2mRun ID: ${result.id}\x1b[0m\n`);
+      process.stdout.write(`\x1b[2mArtifacts: .mosaic/artifacts/${result.id}/\x1b[0m\n`);
+    } finally {
+      coordinator.uninstall();
+      detach();
+    }
   };
 
   startResume().catch((err) => {
     process.stderr.write(`\n\x1b[31m[mosaicat] Resume failed: ${err instanceof Error ? err.message : err}\x1b[0m\n`);
+    coordinator.uninstall();
     detach();
     process.exit(1);
   });
@@ -113,6 +121,9 @@ if (command === 'login') {
   const profileArg = profileIdx >= 0 ? args[profileIdx + 1] as import('./core/types.js').PipelineProfile | undefined : undefined;
 
   const startRun = async () => {
+    const coordinator = new ShutdownCoordinator();
+    coordinator.install();
+
     let orchestrator: Orchestrator;
 
     if (useGitHub) {
@@ -129,13 +140,14 @@ if (command === 'login') {
 
         const securityConfig = loadSecurityConfig(pipelineConfig, authConfig.userLogin);
         const handler = new GitHubInteractionHandler(adapter, pipelineConfig.github, securityConfig);
-        orchestrator = new Orchestrator(handler, adapter, { enableEvolution: useEvolve });
+        orchestrator = new Orchestrator(handler, adapter, { enableEvolution: useEvolve, signal: coordinator.signal });
       } catch (err) {
+        coordinator.uninstall();
         process.stderr.write(`\x1b[31m[mosaicat] GitHub auth failed: ${err instanceof Error ? err.message : err}\x1b[0m\n`);
         process.exit(1);
       }
     } else {
-      orchestrator = new Orchestrator(undefined, undefined, { enableEvolution: useEvolve });
+      orchestrator = new Orchestrator(undefined, undefined, { enableEvolution: useEvolve, signal: coordinator.signal });
     }
 
     // Attach rich CLI progress output
@@ -149,12 +161,15 @@ if (command === 'login') {
     process.stdout.write(`\x1b[2mAuto-approve: ${autoApprove}\x1b[0m\n`);
     if (profileArg) process.stdout.write(`\x1b[2mProfile: ${profileArg}\x1b[0m\n`);
 
-    const result = await orchestrator.run(instruction, autoApprove, profileArg);
-
-    process.stdout.write(`\x1b[2mRun ID: ${result.id}\x1b[0m\n`);
-    process.stdout.write(`\x1b[2mArtifacts: .mosaic/artifacts/${result.id}/\x1b[0m\n`);
-    process.stdout.write(`\x1b[2mLogs: .mosaic/logs/${result.id}/\x1b[0m\n`);
-    detach();
+    try {
+      const result = await orchestrator.run(instruction, autoApprove, profileArg);
+      process.stdout.write(`\x1b[2mRun ID: ${result.id}\x1b[0m\n`);
+      process.stdout.write(`\x1b[2mArtifacts: .mosaic/artifacts/${result.id}/\x1b[0m\n`);
+      process.stdout.write(`\x1b[2mLogs: .mosaic/logs/${result.id}/\x1b[0m\n`);
+    } finally {
+      coordinator.uninstall();
+      detach();
+    }
   };
 
   startRun().catch((err) => {

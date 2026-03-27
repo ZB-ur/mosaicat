@@ -219,7 +219,7 @@ export class CoderAgent extends BaseAgent {
     const output = new OutputGenerator(this.stage, this.logger, {
       writeOutput: (name, content) => this.writeOutput(name, content),
       writeOutputManifest: (name, data) => this.writeOutputManifest(name, data),
-    });
+    }, artifacts);
     output.generateManifest(plan);
     output.generateReadme(plan);
   }

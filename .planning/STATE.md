@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-03-27T09:03:29.725Z"
+status: verifying
+stopped_at: Phase 6 context gathered
+last_updated: "2026-03-27T07:52:04.817Z"
 last_activity: 2026-03-27
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 18
-  completed_plans: 17
+  total_plans: 16
+  completed_plans: 16
   percent: 0
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** Pipeline engine reliability and maintainability -- errors must be visible, state must be trackable
-**Current focus:** Phase 06 — integration-wiring-fixes
+**Current focus:** Phase 05 — orchestrator-facade
 
 ## Current Position
 
 Phase: 06 (integration-wiring-fixes) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
-Last activity: 2026-03-27
+Status: Completed 06-02 (ShutdownCoordinator + OutputGenerator wiring)
+Last activity: 2026-03-27 -- Plan 06-02 complete
 
-Progress: [..........] 0%
+Progress: [==========] 100%
 
 ## Performance Metrics
 
@@ -66,7 +66,7 @@ Progress: [..........] 0%
 | Phase 05 P01 | 2min | 2 tasks | 4 files |
 | Phase 05 P02 | 5min | 2 tasks | 11 files |
 | Phase 05 P03 | 17min | 2 tasks | 5 files |
-| Phase 06 P01 | 5min | 2 tasks | 3 files |
+| Phase 06 P02 | 6min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -101,6 +101,7 @@ Recent decisions affecting current work:
 - [Phase 05]: console.warn -> process.stderr.write; 3 extra files (snapshot, git-publisher, retrying-provider) fixed beyond plan scope
 - [Phase 05]: Extract git/issue operations to OrchestratorGitOps to meet 200-line facade target
 - [Phase 05]: onStageComplete callback fires only for done outcomes, not skipped -- skipped stages have no artifacts to commit
+- [Phase 06]: ShutdownCoordinator instantiated inside startRun async function to scope lifecycle per invocation
 
 ### Pending Todos
 
@@ -114,6 +115,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-27T09:03:29.722Z
-Stopped at: Completed 06-01-PLAN.md
-Resume file: None
+Last session: 2026-03-27T09:04:11Z
+Stopped at: Completed 06-02-PLAN.md
+Resume file: .planning/phases/06-integration-wiring-fixes/06-02-SUMMARY.md
