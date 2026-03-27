@@ -25,14 +25,14 @@ describe('FixLoopRunner', () => {
   let executor: StageExecutor;
   let ctx: RunContext;
   let run: PipelineRun;
-  let onStateSave: ReturnType<typeof vi.fn>;
+  let onStateSave: (fixLoopRound: number) => void;
 
   beforeEach(() => {
     executor = createMockExecutor();
     const store = createTestArtifactStore();
     ctx = createTestRunContext({ store });
     run = createTestRun();
-    onStateSave = vi.fn();
+    onStateSave = vi.fn<(fixLoopRound: number) => void>();
   });
 
   it('stops when tester verdict is pass (returns after 0 fix rounds)', async () => {
