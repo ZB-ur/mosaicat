@@ -38,7 +38,7 @@ describe('FixLoopRunner', () => {
   it('stops when tester verdict is pass (returns after 0 fix rounds)', async () => {
     // Write a passing manifest
     ctx.store.write('test-report.manifest.json', JSON.stringify({
-      quality_assessment: { verdict: 'pass' },
+      verdict: 'pass',
     }));
 
     const runner = new FixLoopRunner(executor, ctx);
@@ -59,7 +59,7 @@ describe('FixLoopRunner', () => {
   it('uses direct-fix approach for rounds 1 and 2', async () => {
     let callCount = 0;
     ctx.store.write('test-report.manifest.json', JSON.stringify({
-      quality_assessment: { verdict: 'fail' },
+      verdict: 'fail',
     }));
 
     // After 2 rounds, make it pass
@@ -68,7 +68,7 @@ describe('FixLoopRunner', () => {
       // After round 2 tester call (call 4), make tests pass
       if (callCount >= 4) {
         ctx.store.write('test-report.manifest.json', JSON.stringify({
-          quality_assessment: { verdict: 'pass' },
+          verdict: 'pass',
         }));
       }
       return { type: 'done' };
@@ -89,7 +89,7 @@ describe('FixLoopRunner', () => {
   it('uses replan-failed-modules approach for round 3', async () => {
     let callCount = 0;
     ctx.store.write('test-report.manifest.json', JSON.stringify({
-      quality_assessment: { verdict: 'fail' },
+      verdict: 'fail',
     }));
 
     (executor.execute as ReturnType<typeof vi.fn>).mockImplementation(async () => {
@@ -97,7 +97,7 @@ describe('FixLoopRunner', () => {
       // After round 3 tester call (call 6), make tests pass
       if (callCount >= 6) {
         ctx.store.write('test-report.manifest.json', JSON.stringify({
-          quality_assessment: { verdict: 'pass' },
+          verdict: 'pass',
         }));
       }
       return { type: 'done' };
@@ -116,7 +116,7 @@ describe('FixLoopRunner', () => {
 
   it('uses full-history-fix approach for rounds 4 and 5', async () => {
     ctx.store.write('test-report.manifest.json', JSON.stringify({
-      quality_assessment: { verdict: 'fail' },
+      verdict: 'fail',
     }));
 
     // Never pass -- run all 5 rounds
@@ -136,7 +136,7 @@ describe('FixLoopRunner', () => {
 
   it('stops after maxRounds (5) even if tests still fail', async () => {
     ctx.store.write('test-report.manifest.json', JSON.stringify({
-      quality_assessment: { verdict: 'fail' },
+      verdict: 'fail',
     }));
 
     (executor.execute as ReturnType<typeof vi.fn>).mockResolvedValue({ type: 'done' });
@@ -150,7 +150,7 @@ describe('FixLoopRunner', () => {
 
   it('resets coder and tester stage states to idle between rounds', async () => {
     ctx.store.write('test-report.manifest.json', JSON.stringify({
-      quality_assessment: { verdict: 'fail' },
+      verdict: 'fail',
     }));
 
     let checkCount = 0;
@@ -163,7 +163,7 @@ describe('FixLoopRunner', () => {
         expect(run.stages['tester']?.state).toBe('idle');
         // Make it pass to stop
         ctx.store.write('test-report.manifest.json', JSON.stringify({
-          quality_assessment: { verdict: 'pass' },
+          verdict: 'pass',
         }));
       }
       return { type: 'done' };
@@ -175,7 +175,7 @@ describe('FixLoopRunner', () => {
 
   it('calls executor.execute for coder then tester each round', async () => {
     ctx.store.write('test-report.manifest.json', JSON.stringify({
-      quality_assessment: { verdict: 'fail' },
+      verdict: 'fail',
     }));
 
     let callCount = 0;
@@ -183,7 +183,7 @@ describe('FixLoopRunner', () => {
       callCount++;
       if (callCount >= 2) {
         ctx.store.write('test-report.manifest.json', JSON.stringify({
-          quality_assessment: { verdict: 'pass' },
+          verdict: 'pass',
         }));
       }
       return { type: 'done' };
@@ -199,7 +199,7 @@ describe('FixLoopRunner', () => {
 
   it('emits coder:fix-round event with round number and approach', async () => {
     ctx.store.write('test-report.manifest.json', JSON.stringify({
-      quality_assessment: { verdict: 'fail' },
+      verdict: 'fail',
     }));
 
     let callCount = 0;
@@ -207,7 +207,7 @@ describe('FixLoopRunner', () => {
       callCount++;
       if (callCount >= 2) {
         ctx.store.write('test-report.manifest.json', JSON.stringify({
-          quality_assessment: { verdict: 'pass' },
+          verdict: 'pass',
         }));
       }
       return { type: 'done' };
@@ -228,7 +228,7 @@ describe('FixLoopRunner', () => {
 
   it('calls onStateSave callback after each round for crash recovery', async () => {
     ctx.store.write('test-report.manifest.json', JSON.stringify({
-      quality_assessment: { verdict: 'fail' },
+      verdict: 'fail',
     }));
 
     let callCount = 0;
@@ -236,7 +236,7 @@ describe('FixLoopRunner', () => {
       callCount++;
       if (callCount >= 4) {
         ctx.store.write('test-report.manifest.json', JSON.stringify({
-          quality_assessment: { verdict: 'pass' },
+          verdict: 'pass',
         }));
       }
       return { type: 'done' };
@@ -251,7 +251,7 @@ describe('FixLoopRunner', () => {
 
   it('can resume from startRound (e.g., startRound=2 starts at round 3)', async () => {
     ctx.store.write('test-report.manifest.json', JSON.stringify({
-      quality_assessment: { verdict: 'fail' },
+      verdict: 'fail',
     }));
 
     let callCount = 0;
@@ -259,7 +259,7 @@ describe('FixLoopRunner', () => {
       callCount++;
       if (callCount >= 2) {
         ctx.store.write('test-report.manifest.json', JSON.stringify({
-          quality_assessment: { verdict: 'pass' },
+          verdict: 'pass',
         }));
       }
       return { type: 'done' };
@@ -280,7 +280,7 @@ describe('FixLoopRunner', () => {
   it('reads test-report.manifest.json to check verdict', async () => {
     // Write fail verdict
     ctx.store.write('test-report.manifest.json', JSON.stringify({
-      quality_assessment: { verdict: 'fail' },
+      verdict: 'fail',
     }));
 
     let callCount = 0;
@@ -289,7 +289,7 @@ describe('FixLoopRunner', () => {
       // On tester execution, update manifest to pass
       if (callCount === 2) {
         ctx.store.write('test-report.manifest.json', JSON.stringify({
-          quality_assessment: { verdict: 'pass' },
+          verdict: 'pass',
         }));
       }
       return { type: 'done' };
