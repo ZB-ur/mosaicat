@@ -3,7 +3,10 @@ import { z } from 'zod';
 export const CodePlanModuleSchema = z.object({
   name: z.string(),
   description: z.string(),
-  files: z.array(z.string()),
+  files: z.array(z.string().refine(
+    (p) => !p.includes('{') && !p.includes('}'),
+    { message: 'File path must not contain curly braces' },
+  )),
   dependencies: z.array(z.string()),
   covers_tasks: z.array(z.string()),
   covers_features: z.array(z.string()),
