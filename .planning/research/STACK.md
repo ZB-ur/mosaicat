@@ -1,539 +1,198 @@
-# Technology Stack: Core Engine Rewrite Patterns
+# Stack Research: v1.1 Quality & Cost Optimization
 
-**Project:** Mosaicat v2 Core Engine Rewrite
-**Researched:** 2026-03-26
-**Focus:** Patterns and approaches for rewriting ~70% of an existing TypeScript multi-agent pipeline orchestration engine
+**Domain:** AI multi-agent pipeline quality gates, LLM cost tracking, intelligent error classification
+**Researched:** 2026-03-28
+**Confidence:** HIGH (verified against official Anthropic docs, existing codebase patterns)
 
-## Recommended Patterns & Libraries
+## Key Finding: No New Dependencies Needed
 
-### 1. Error Handling: Lightweight Result Type (NOT Effect-TS)
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| Custom `Result<T, E>` type | N/A | Typed error returns for all engine operations | Minimal overhead, no dependency, fits existing codebase style |
-
-**Rationale:** Effect-TS is powerful but overkill for this project. It would force a paradigm shift across the entire codebase (pipe-based composition, Effect monad everywhere) that conflicts with the constraint of incremental rewrite and compatibility with preserved modules. neverthrow is no longer actively maintained (PRs stalled for months). A custom 50-line Result type gives us what we need: explicit error types in function signatures, no silent catch blocks.
-
-**Confidence:** HIGH (multiple sources confirm neverthrow maintenance status; Effect-TS learning curve well-documented)
-
-**Implementation:**
-
-```typescript
-// src/core/result.ts — the entire file
-export type Result<T, E = Error> =
-  | { ok: true; value: T }
-  | { ok: false; error: E };
-
-export function Ok<T>(value: T): Result<T, never> {
-  return { ok: true, value };
-}
-
-export function Err<E>(error: E): Result<never, E> {
-  return { ok: false, error };
-}
-
-export function fromTryCatch<T, E = Error>(
-  fn: () => T,
-  mapError?: (e: unknown) => E
-): Result<T, E> {
-  try {
-    return Ok(fn());
-  } catch (e) {
-    return Err((mapError ? mapError(e) : e) as E);
-  }
-}
-
-export async function fromPromise<T, E = Error>(
-  promise: Promise<T>,
-  mapError?: (e: unknown) => E
-): Promise<Result<T, E>> {
-  try {
-    return Ok(await promise);
-  } catch (e) {
-    return Err((mapError ? mapError(e) : e) as E);
-  }
-}
-```
-
-**Usage pattern across the rewrite:**
-
-```typescript
-// Before (current — silent catch)
-try {
-  const manifest = JSON.parse(fs.readFileSync(path, 'utf-8'));
-  return validateManifest(manifest);
-} catch {
-  return []; // silent failure, bugs hide here
-}
-
-// After (rewrite — explicit error)
-function readManifest(path: string): Result<Manifest, ManifestError> {
-  const raw = fromTryCatch(
-    () => fs.readFileSync(path, 'utf-8'),
-    () => ({ type: 'unreadable' as const, path })
-  );
-  if (!raw.ok) return raw;
-
-  const parsed = fromTryCatch(
-    () => JSON.parse(raw.value),
-    () => ({ type: 'malformed_json' as const, path })
-  );
-  if (!parsed.ok) return parsed;
-
-  const validated = manifestSchema.safeParse(parsed.value);
-  if (!validated.success) {
-    return Err({ type: 'invalid_schema' as const, path, issues: validated.error.issues });
-  }
-  return Ok(validated.data);
-}
-```
-
-**What NOT to do:**
-- Do NOT adopt Effect-TS. The pipe-based functional style would require rewriting ALL modules including frozen ones to maintain consistency. The learning curve for contributors is steep.
-- Do NOT use neverthrow. It's unmaintained and the maintenance status adds supply-chain risk for a core engine dependency.
-- Do NOT keep bare `catch {}` blocks. Every catch must either return a Result error or log + return a typed fallback.
+All five v1.1 capabilities can be built with the existing stack plus capabilities already available in `@anthropic-ai/sdk ^0.78.0`. Zero new `npm install` required.
 
 ---
 
-### 2. State Management: Iterative Loop with Typed Stage Context (NOT XState)
+## Recommended Stack Additions
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| Iterative `while` loop | N/A | Replace recursive `executeStage` | Eliminates stack overflow, simpler debugging |
-| Discriminated union for stage outcomes | N/A | Type-safe stage result handling | Forces exhaustive handling of all outcomes |
+### 1. Manifest Content Validation — Zod Refinements (existing `zod ^4.3.6`)
 
-**Rationale:** XState v5 is excellent for UI state management and complex statecharts, but Mosaicat already has a working state machine in `pipeline.ts` (FROZEN). The problem is not the state machine — it is the orchestrator's recursive execution pattern and mutable config injection. XState would require rewriting the frozen `pipeline.ts` module and adding a ~15KB dependency for something achievable with a `while` loop and discriminated unions.
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| Zod `.refine()` / `.superRefine()` | ^4.3.6 (existing) | Semantic validation beyond schema shape | Already in the stack. Refinements add content-level checks (e.g., "files array must reference existing disk paths", "covers_features must be non-empty") without a new dependency. |
 
-**Confidence:** HIGH (the existing pipeline.ts state machine is proven; the recursive execution is the documented problem)
+**Integration point:** `src/core/manifest.ts` — extend existing schemas with `.refine()` checks.
 
-**Implementation:**
+**What to build (not install):**
+- Add `.refine()` validators to `CodeManifestSchema`: files exist on disk, no placeholder markers (`TODO`, `PLACEHOLDER`, `// stub`)
+- Add `.refine()` validators to `TestReportManifestSchema`: failure messages are non-empty, total >= passed + failed + skipped
+- Add `.refine()` validators to `ComponentsManifestSchema`: component files exist, covers_features non-empty
+- Create a `validateManifestContent(store, name, data)` function that runs Zod schema + disk existence checks
+- Wire into `StageExecutor` post-agent-execution, before gate check
 
+**Why NOT a separate validation library:**
+Zod refinements are composable and co-located with schema definitions. Adding a separate validation framework (e.g., Joi, class-validator) would split validation logic across two systems. The existing Zod-everywhere pattern is correct.
+
+### 2. LLM Token Cost Tracking — Anthropic SDK `usage` field (existing `@anthropic-ai/sdk ^0.78.0`)
+
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| `@anthropic-ai/sdk` usage response field | ^0.78.0 (existing) | Per-call token counting from API response | Already returns `usage.input_tokens` and `usage.output_tokens` on every `messages.create()` response. AnthropicSDKProvider already extracts this. |
+| `@anthropic-ai/sdk` `messages.countTokens()` | ^0.78.0 (existing) | Pre-call token estimation | Available via `client.messages.countTokens()`. Accepts same message/tool params. Use for budget checks before expensive calls. |
+
+**Integration points:**
+- `LLMResponse.usage` — already defined with `inputTokens` and `outputTokens`
+- `AnthropicSDKProvider` — already populates `usage` from response (lines 62-73)
+- `ClaudeCLIProvider` — does NOT populate usage (CLI JSON output doesn't expose token counts reliably)
+
+**What to build (not install):**
+- Add a `CostTracker` class that accumulates `LLMResponse.usage` per stage per run
+- Emit `stage:cost` events on EventBus with `{ stage, inputTokens, outputTokens, estimatedCostUsd }` payload
+- Store per-run cost summary in `run-metadata.json` alongside `pipeline-state.json`
+- Add cost-per-model lookup table (static pricing data, not an API call)
+- Optionally use `messages.countTokens()` for pre-flight budget checks on expensive stages (UIDesigner, Coder)
+
+**Cost model data (hardcoded, no API):**
+
+| Model | Input ($/1M tokens) | Output ($/1M tokens) |
+|-------|---------------------|----------------------|
+| claude-sonnet-4 | $3.00 | $15.00 |
+| claude-opus-4 | $15.00 | $75.00 |
+| claude-haiku-3.5 | $0.80 | $4.00 |
+
+**Why NOT tiktoken or external token counters:**
+The Anthropic SDK's built-in `messages.countTokens()` is the only accurate method for Claude models. Third-party tokenizers (tiktoken, anthropic-tokenizer-typescript) use approximations that diverge from actual billing. Post-call `usage` is free and exact.
+
+**Why NOT pipeline-level budget enforcement:**
+PROJECT.md explicitly lists "Pipeline 级费用控制" as out of scope. Track and report costs, don't enforce budgets.
+
+### 3. Intelligent Error Classification — Enhanced `retry-log.ts` (no new deps)
+
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| Enhanced `classifyError()` | existing code | Root cause diagnosis for fix loop | Current `classifyError()` in `src/core/retry-log.ts` already has 8 categories. Extend with test-specific subcategories. |
+
+**Integration point:** `src/core/retry-log.ts`, `src/core/fix-loop-runner.ts`
+
+**What to build (not install):**
+- Extend `ErrorCategory` type with test-specific subcategories: `'test-config-error'`, `'test-import-error'`, `'test-assertion-error'`, `'test-runtime-error'`
+- Add pattern matching for common root causes the current classifier misses:
+  - `.ts`/`.tsx` extension in test imports → `'test-config-error'` (the v1.0 run-1774640936546 failure root cause)
+  - Missing test setup/teardown → `'test-config-error'`
+  - `Cannot find module` in test context → `'test-import-error'`
+  - `expect(...).toBe(...)` assertion failures → `'test-assertion-error'`
+- Add `suggestFix(category: ErrorCategory): string` that returns actionable guidance for each category
+- Feed classification + suggestion into fix loop context so Coder gets structured diagnosis, not raw error dumps
+- Add `isInfrastructureError(category)` helper — infrastructure errors (config, import) should trigger different fix strategies than logic errors (assertion)
+
+**Why NOT an ML-based classifier:**
+The error space is bounded (TypeScript compilation, Vitest test execution, ESM module resolution). Regex patterns match 95%+ of cases. An ML classifier would add latency, cost, and a dependency for marginal improvement.
+
+### 4. Web Research for Intent Consultant — Anthropic SDK `web_search` Server Tool (existing `@anthropic-ai/sdk ^0.78.0`)
+
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| Anthropic `web_search_20250305` server tool | API-level (no SDK version bump) | Real-time web research during intent analysis | Server-side tool — Anthropic executes the search, returns results with citations. No client-side infrastructure needed. $10/1000 searches. |
+
+**Integration point:** `src/providers/anthropic-sdk.ts`, `src/agents/intent-consultant.ts` (or a new Researcher agent enhancement)
+
+**How it works:**
 ```typescript
-// Discriminated union for stage outcomes
-type StageOutcome =
-  | { type: 'completed'; artifacts: string[] }
-  | { type: 'clarification_resolved'; answer: string }
-  | { type: 'rejected'; feedback: string; retryCount: number }
-  | { type: 'failed'; error: Error; retryable: boolean }
-  | { type: 'skipped'; reason: string };
-
-// Iterative execution loop (replaces recursive executeStage)
-async executeStages(run: PipelineRun, stages: StageName[]): Promise<PipelineRun> {
-  let stageIndex = 0;
-
-  while (stageIndex < stages.length) {
-    const stage = stages[stageIndex];
-    const outcome = await this.executeStage(run, stage);
-
-    switch (outcome.type) {
-      case 'completed':
-        stageIndex++;
-        break;
-
-      case 'rejected': {
-        if (outcome.retryCount >= this.maxRetries(stage)) {
-          throw new StageExhaustedError(stage, outcome.retryCount);
-        }
-        // Stay on same stageIndex — retry
-        break;
-      }
-
-      case 'failed': {
-        if (!outcome.retryable) throw outcome.error;
-        // Stay on same stageIndex — retry
-        break;
-      }
-
-      case 'skipped':
-        stageIndex++;
-        break;
-    }
-  }
-  return run;
-}
-```
-
-**Tester-Coder fix loop as a dedicated method:**
-
-```typescript
-// Extract from main loop — no more index manipulation
-async executeCoderTesterFixLoop(
-  run: PipelineRun,
-  maxFixAttempts: number = 3
-): Promise<StageOutcome> {
-  for (let attempt = 0; attempt < maxFixAttempts; attempt++) {
-    const coderResult = await this.executeStage(run, 'coder');
-    if (!coderResult.ok) return coderResult;
-
-    const testerResult = await this.executeStage(run, 'tester');
-    if (testerResult.type === 'completed') return testerResult;
-
-    // Inject test failures for next coder iteration
-    this.prepareCoderRetry(run, testerResult);
-  }
-  return { type: 'failed', error: new Error('Fix loop exhausted'), retryable: false };
-}
-```
-
-**What NOT to do:**
-- Do NOT introduce XState for the orchestration loop. It solves a different problem (complex statecharts with parallel regions) and the existing `pipeline.ts` state machine works.
-- Do NOT manipulate loop indices. Extract sub-loops into dedicated methods with their own iteration.
-- Do NOT mutate shared config objects. Clone before mutate, always.
-
----
-
-### 3. Artifact Store: Class Instance Per Run (NOT global module state)
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| `ArtifactStore` class | N/A | Per-run artifact I/O scoped by instance | Eliminates global mutable state, enables test isolation, future concurrency |
-
-**Rationale:** The current `artifact.ts` uses module-level `currentRunDir` — a textbook global mutable state problem. The fix is straightforward: wrap it in a class, instantiate per run, pass through context.
-
-**Confidence:** HIGH (this is standard OOP encapsulation, not experimental)
-
-**Implementation:**
-
-```typescript
-// src/core/artifact-store.ts
-export class ArtifactStore {
-  private readonly runDir: string;
-
-  constructor(baseDir: string, runId: string) {
-    this.runDir = path.join(baseDir, runId);
-    fs.mkdirSync(this.runDir, { recursive: true });
-  }
-
-  get dir(): string { return this.runDir; }
-
-  write(name: string, content: string): void {
-    const filePath = path.join(this.runDir, name);
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, content, 'utf-8');
-  }
-
-  read(name: string): Result<string, ArtifactError> {
-    return fromTryCatch(
-      () => fs.readFileSync(path.join(this.runDir, name), 'utf-8'),
-      () => ({ type: 'not_found' as const, name, runDir: this.runDir })
-    );
-  }
-
-  exists(name: string): boolean {
-    return fs.existsSync(path.join(this.runDir, name));
-  }
-}
-```
-
-**Backward compatibility:** Keep the old `artifact.ts` functions as thin wrappers that delegate to a module-level default store during migration. This lets frozen modules continue working.
-
----
-
-### 4. Dependency Wiring: Constructor Injection with Context Object (NOT a DI framework)
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| Plain constructor injection | N/A | Pass dependencies explicitly | Zero overhead, full type safety, no decorators, no reflect-metadata |
-
-**Rationale:** tsyringe requires decorators and reflect-metadata polyfills. InversifyJS is heavy. typed-inject is clever but adds cognitive overhead for a project of this size (~15K lines). The codebase already uses constructor injection in several places. Formalizing a `RunContext` object that flows through the pipeline gives us DI benefits without framework overhead.
-
-**Confidence:** HIGH (the project is not large enough for a DI container to pay for itself)
-
-**Implementation:**
-
-```typescript
-// src/core/run-context.ts
-export interface RunContext {
-  readonly runId: string;
-  readonly artifacts: ArtifactStore;
-  readonly provider: LLMProvider;
-  readonly logger: Logger;
-  readonly handler: InteractionHandler;
-  readonly config: Readonly<PipelineConfig>;
-  readonly agentsConfig: Readonly<AgentsConfig>;
-}
-
-// Orchestrator creates the context once, passes it down
-const ctx: RunContext = {
-  runId,
-  artifacts: new ArtifactStore('.mosaic/artifacts', runId),
-  provider: createRetryingProvider(providerConfig),
-  logger: new Logger(runId),
-  handler: this.handler,
-  config: structuredClone(this.pipelineConfig), // clone, never mutate original
-  agentsConfig: structuredClone(this.agentsConfig),
-};
-
-// Agents receive context, not individual dependencies
-class CoderPlanner {
-  constructor(private readonly ctx: RunContext) {}
-}
-```
-
-**What NOT to do:**
-- Do NOT add tsyringe, InversifyJS, or any DI container. The project has ~13 agents and ~6 core modules — manual wiring is completely manageable.
-- Do NOT pass dependencies as separate constructor params (current pattern leads to 5+ params). Use a single context object.
-- Do NOT mutate config after context creation. The `structuredClone` at creation time prevents the mutable config bug.
-
----
-
-### 5. Resilience: Cockatiel for Retry + Circuit Breaker
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| `cockatiel` | ^3.2 | Retry with backoff + circuit breaker + timeout policies | Battle-tested, composable policies, TypeScript-native, zero-dep |
-
-**Rationale:** The current `RetryingProvider` has `maxRetries: Infinity` by default and no circuit breaker. Cockatiel provides composable resilience policies (retry, circuit breaker, timeout, bulkhead) that can be wrapped around any async operation. It is MIT-licensed, actively maintained (by a VS Code team member at Microsoft), TypeScript-first, and has zero dependencies.
-
-**Confidence:** MEDIUM (cockatiel is well-documented but I haven't verified the exact latest version via official source; the pattern is solid regardless of whether you use the library or hand-roll it)
-
-**Implementation:**
-
-```typescript
-import { retry, circuitBreaker, wrap, handleAll, ExponentialBackoff } from 'cockatiel';
-
-// Compose policies
-const retryPolicy = retry(handleAll, {
-  maxAttempts: 20,
-  backoff: new ExponentialBackoff({
-    initialDelay: 1000,
-    maxDelay: 60_000,
-  }),
-});
-
-const breakerPolicy = circuitBreaker(handleAll, {
-  halfOpenAfter: 30_000,    // try again after 30s
-  breaker: new ConsecutiveBreaker(5), // open after 5 consecutive failures
-});
-
-// Wrap: retry first, then circuit breaker
-const resilientCall = wrap(retryPolicy, breakerPolicy);
-
-// Use in provider
-async call(prompt: string, options?: LLMCallOptions): Promise<LLMResponse> {
-  return resilientCall.execute(() => this.inner.call(prompt, options));
-}
-```
-
-**Alternative:** If adding a dependency feels wrong, keep the hand-rolled retry but add: (1) finite default `maxRetries: 20`, (2) total elapsed time circuit breaker (`Date.now() - startTime > maxTotalMs`), (3) log via logger instead of `console.warn`.
-
----
-
-### 6. Testing Strategy for Async Pipelines
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| Vitest (existing) | ^4.1 | Test runner | Already in stack, no reason to change |
-| Typed mock factories | N/A | Replace `as any` casts | Type-safe test setup, catches regressions |
-| Integration test harness | N/A | Test resume, fix loops, stage transitions | Cover the critical paths that currently have zero tests |
-
-**Confidence:** HIGH (Vitest is already in use; the patterns are well-established)
-
-**Pattern 1: Typed mock factories (eliminate `as any`)**
-
-```typescript
-// src/__tests__/test-factories.ts
-import type { LLMProvider, LLMResponse } from '../core/llm-provider.js';
-import type { Logger } from '../core/logger.js';
-import type { RunContext } from '../core/run-context.js';
-import { ArtifactStore } from '../core/artifact-store.js';
-
-export function createMockProvider(overrides?: Partial<LLMProvider>): LLMProvider {
-  return {
-    call: vi.fn().mockResolvedValue({ text: '', usage: { inputTokens: 0, outputTokens: 0 } }),
-    ...overrides,
-  };
-}
-
-export function createMockLogger(): Logger {
-  return {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-    flush: vi.fn(),
-  } as unknown as Logger;
-}
-
-export function createTestContext(overrides?: Partial<RunContext>): RunContext {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mosaicat-test-'));
-  return {
-    runId: 'test-run',
-    artifacts: new ArtifactStore(tmpDir, 'test-run'),
-    provider: createMockProvider(),
-    logger: createMockLogger(),
-    handler: createMockHandler(),
-    config: loadTestPipelineConfig(),
-    agentsConfig: loadTestAgentsConfig(),
-    ...overrides,
-  };
-}
-```
-
-**Pattern 2: Integration tests for async pipeline flows**
-
-```typescript
-// Test the iterative loop, not individual stages
-describe('Orchestrator stage execution', () => {
-  it('retries rejected stage up to maxRetries then fails', async () => {
-    const ctx = createTestContext({
-      provider: createMockProvider({
-        call: vi.fn()
-          .mockResolvedValueOnce(rejectedOutput())
-          .mockResolvedValueOnce(rejectedOutput())
-          .mockResolvedValueOnce(approvedOutput()),
-      }),
-    });
-
-    const result = await orchestrator.executeStages(ctx, ['product_owner']);
-    expect(result.stages.product_owner?.retryCount).toBe(2);
-    expect(result.stages.product_owner?.state).toBe('done');
-  });
-
-  it('coder-tester fix loop exhausts after maxFixAttempts', async () => {
-    // ...
-  });
+// Add to tools array in AnthropicSDKProvider when web search is requested
+params.tools.push({
+  type: 'web_search_20250305',
+  name: 'web_search',
+  max_uses: 5,  // cap searches per call
 });
 ```
 
-**Pattern 3: Filesystem-based integration tests for resume**
+**What to build (not install):**
+- Add `webSearch?: boolean | WebSearchConfig` to `LLMCallOptions` interface
+- In `AnthropicSDKProvider.call()`, when `options.webSearch` is truthy, add the `web_search_20250305` tool to `params.tools`
+- Handle `server_tool_use` and `web_search_tool_result` content blocks in response parsing
+- Extract citations from response for inclusion in research artifact
+- For Claude CLI provider: use `--allowedTools WebSearch` flag (already supported via `allowedTools` option)
+- Add `webSearch: true` to Researcher agent config in `config/agents.yaml`
 
+**Configuration options for WebSearchConfig:**
 ```typescript
-describe('Resume flow', () => {
-  let tmpDir: string;
-
-  beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mosaicat-resume-'));
-  });
-
-  afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  it('resumes from last completed stage', async () => {
-    // Write a partial pipeline-state.json
-    // Write some artifacts
-    // Call resumeRun()
-    // Assert it starts from the correct stage
-  });
-});
-```
-
----
-
-### 7. Graceful Shutdown
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| `AbortController` (Node.js built-in) | N/A | Signal cancellation through the pipeline | Standard API, no dependencies, works with async/await |
-
-**Confidence:** HIGH (AbortController is stable Node.js API since v15)
-
-**Implementation:**
-
-```typescript
-// In CLI entry point
-const controller = new AbortController();
-
-process.on('SIGINT', () => {
-  console.log('\nGraceful shutdown: finishing current stage...');
-  controller.abort();
-});
-
-process.on('SIGTERM', () => {
-  controller.abort();
-});
-
-// Pass signal through RunContext
-interface RunContext {
-  // ... existing fields
-  readonly signal: AbortSignal;
-}
-
-// Check in orchestrator loop
-while (stageIndex < stages.length) {
-  if (ctx.signal.aborted) {
-    await this.saveState(run); // persist current state
-    break; // exit cleanly
-  }
-  // ... execute stage
+interface WebSearchConfig {
+  maxUses?: number;           // default 5
+  allowedDomains?: string[];  // domain whitelist
+  blockedDomains?: string[];  // domain blacklist
 }
 ```
+
+**Why NOT a separate search API (Brave, Tavily, SerpAPI):**
+- Anthropic's server-side web search is zero-infrastructure: no API keys to manage, no rate limiting to implement, no search result parsing
+- Results are pre-integrated into Claude's context with citations
+- Cost is comparable ($10/1000 vs Brave's $3-5/1000) but eliminates all integration complexity
+- The search runs server-side in the same API call, no additional latency from client-side tool loops
+
+**Why NOT the newer `web_search_20260209` with dynamic filtering:**
+- Requires the code execution tool to be enabled, which adds complexity
+- The base `web_search_20250305` is sufficient for intent research (not doing large-scale literature review)
+- Can upgrade later if needed — it's a one-line tool type change
+
+### 5. UI Component Generation Cost Reduction — Prompt Engineering + Batching (no new deps)
+
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| Existing batching in `UIDesignerAgent` | current code | Reduce LLM calls by batching components | Already implemented with `MAX_BATCH_SIZE = 6`. Optimization is about smarter batching and prompt trimming, not new libraries. |
+| `ui-api-trimmer.ts` | current code | Trim API spec per component category | Already implements layered injection (atomic=none, composite=schemas, page=endpoints). Further trimming is prompt engineering. |
+
+**What to build (not install):**
+- **Selective screenshot rendering**: Skip Playwright screenshots for atomic components (buttons, inputs). Only render composite and page previews. This alone could eliminate 40-60% of Playwright calls.
+- **Component deduplication in planner**: Add a dedup pass that merges similar atomic components (e.g., `PrimaryButton`, `SecondaryButton`, `DangerButton` → single `Button` with variant prop)
+- **Cached design tokens**: Extract design tokens once and cache, don't re-serialize per component
+- **Batch size tuning**: Current `MAX_BATCH_SIZE = 6` may be suboptimal. Add configuration to `config/pipeline.yaml` for per-category batch sizes
+- **Preview HTML simplification**: Current previews are full HTML documents. Use a minimal wrapper template to reduce output tokens
+
+**Why NOT a template/codegen approach (Shadcn, Storybook automation):**
+The UIDesigner produces bespoke components matching the PRD, not generic UI kit components. Template libraries would constrain the design space. The correct optimization is fewer, smarter LLM calls — not replacing LLM generation.
 
 ---
 
 ## Alternatives Considered
 
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| Error handling | Custom Result type | Effect-TS | Paradigm shift incompatible with incremental rewrite; steep learning curve |
-| Error handling | Custom Result type | neverthrow | Unmaintained (PRs stalled months); supply-chain risk for core engine |
-| State management | Iterative loop + discriminated unions | XState v5 | Existing pipeline.ts state machine works; XState solves a different problem |
-| DI | Constructor injection + RunContext | tsyringe | Requires decorators + reflect-metadata; overkill for ~13 agents |
-| DI | Constructor injection + RunContext | InversifyJS | Heavy, enterprise-grade; project is 15K lines not 150K |
-| Resilience | cockatiel | Hand-rolled retry | Current hand-rolled version has Infinity default and no circuit breaker |
-| Resilience | cockatiel | @carbonteq/resilience | Less mature, smaller community |
-| Testing | Typed mock factories | No change | Current `as any` pattern hides type regressions |
+| Recommended | Alternative | When to Use Alternative |
+|-------------|-------------|-------------------------|
+| Zod `.refine()` for manifest validation | JSON Schema + ajv | If validation needs to run outside Node.js (e.g., browser, other language). Not our case. |
+| Anthropic SDK `usage` for cost tracking | LangSmith / Helicone / Portkey | If you need a hosted observability dashboard with team access. Overkill for single-developer pipeline. |
+| Enhanced regex `classifyError()` | LLM-based error classification | If error patterns become too diverse for regex. Currently bounded — revisit after v1.1 data. |
+| Anthropic `web_search` server tool | Brave Search API + custom integration | If you need search independent of LLM provider, or need guaranteed deterministic search results. |
+| Prompt engineering for UI cost | Smaller model for atomic components | If cost remains high after prompt optimization. Could route atomic components to Haiku. |
 
----
+## What NOT to Add
 
-## What Stays (No Changes Needed)
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| `tiktoken` | Inaccurate for Claude models. Anthropic's tokenizer is proprietary. | `@anthropic-ai/sdk` `messages.countTokens()` or post-call `usage` |
+| `langchain` / `langsmith` | Massive dependency tree, abstractions conflict with existing agent architecture | Built-in `CostTracker` class + EventBus emissions |
+| `ajv` / `joi` for validation | Splits validation across two schema systems (Zod + another) | Zod refinements keep everything in one system |
+| External search API SDKs | Additional API keys, rate limiting, response parsing | Anthropic server-side `web_search` tool |
+| `anthropic-tokenizer-typescript` | Offline tokenizer — but approximation only, not billing-accurate | `messages.countTokens()` for pre-call, `usage` for post-call |
+| Template UI libraries (Shadcn codegen) | Constrains LLM design freedom, doesn't match the product vision | Smarter batching + prompt trimming |
 
-| Technology | Version | Why Keep |
-|------------|---------|----------|
-| TypeScript | ^5.9 | Already using strict mode, NodeNext module resolution |
-| Vitest | ^4.1 | Solid, fast, works well with ESM |
-| Zod | ^4.3 | Already used for all artifact validation |
-| p-queue | ^9.1 | Still needed for Claude CLI serial execution |
-| eventemitter3 | ^5.0 | Event bus is frozen, works fine |
-| @anthropic-ai/sdk | ^0.78 | Direct API provider, stable |
-| Playwright | ^1.58 | Screenshot rendering is frozen |
+## Version Compatibility
 
----
+| Package | Compatible With | Notes |
+|---------|-----------------|-------|
+| `@anthropic-ai/sdk ^0.78.0` | `web_search_20250305` tool type | Server tool — no SDK update needed, just pass correct tool type in API params |
+| `@anthropic-ai/sdk ^0.78.0` | `messages.countTokens()` | Available since SDK v0.25+. Already in our version range. |
+| `zod ^4.3.6` | `.refine()` / `.superRefine()` | Available since Zod v3. Fully supported in v4. |
 
 ## Installation
 
 ```bash
-# Only new dependency (optional — can hand-roll instead)
-npm install cockatiel
-
-# No other new dependencies needed — all patterns use:
-# - TypeScript built-in types (Result, discriminated unions)
-# - Node.js built-in APIs (AbortController, fs, path)
-# - Existing dependencies (Vitest, Zod)
+# No new packages to install.
+# All capabilities are available in existing dependencies.
 ```
-
----
-
-## Summary: What Changes in the Rewrite
-
-| Before (v1) | After (v2) | Pattern |
-|---|---|---|
-| Silent `catch {}` (16+ instances) | `Result<T, E>` returns with typed errors | Custom Result type |
-| Recursive `executeStage()` | Iterative `while` loop with `StageOutcome` union | Discriminated union |
-| Loop index manipulation for fix loop | `executeCoderTesterFixLoop()` method | Extract method |
-| Module-level `currentRunDir` global | `ArtifactStore` class per run | Instance scoping |
-| 5+ constructor params | Single `RunContext` object | Context object pattern |
-| `maxRetries: Infinity` | Finite retry (20) + circuit breaker + total time limit | cockatiel or enhanced hand-roll |
-| No shutdown handling | `AbortController` signal through context | Node.js built-in |
-| `as any` in 6 test files | Typed mock factories | `createTestContext()` |
-| `console.warn` in retry | Logger integration | Unified logging |
-| Mutable config injection | `structuredClone` at context creation | Clone-before-mutate |
-
----
 
 ## Sources
 
-- [Cockatiel: resilience library for TypeScript](https://github.com/connor4312/cockatiel) — Retry, circuit breaker, timeout policies
-- [Effect-TS Documentation](https://effect.website/) — Evaluated and rejected for this project
-- [neverthrow GitHub](https://github.com/supermacro/neverthrow) — Evaluated; maintenance concerns
-- [XState v5](https://stately.ai/docs/xstate) — Evaluated; not needed given existing pipeline.ts
-- [TypeScript Orchestration Guide](https://medium.com/@matthieumordrel/the-ultimate-guide-to-typescript-orchestration-temporal-vs-trigger-dev-vs-inngest-and-beyond-29e1147c8f2d) — Ecosystem overview
-- [typed-inject](https://www.npmjs.com/package/typed-inject) — DI alternative evaluated
-- [tsyringe](https://github.com/microsoft/tsyringe) — DI alternative evaluated
-- [Vitest Mocking Guide](https://vitest.dev/guide/mocking) — Testing patterns
-- [DI Benchmark: Vanilla vs frameworks](https://blog.vady.dev/di-benchmark-vanilla-registrycomposer-typed-inject-tsyringe-inversify-nestjs) — Performance comparison showing vanilla is 3x faster
+- [Anthropic Web Search Tool Docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) — verified tool type `web_search_20250305`, TypeScript integration, pricing ($10/1000 searches) — HIGH confidence
+- [Anthropic Count Tokens API](https://platform.claude.com/docs/en/api/typescript/messages/count_tokens) — verified `client.messages.countTokens()` availability in TypeScript SDK — HIGH confidence
+- Existing codebase: `src/core/manifest.ts`, `src/core/retry-log.ts`, `src/providers/anthropic-sdk.ts`, `src/agents/ui-designer.ts` — direct code analysis — HIGH confidence
+- [Anthropic Web Search Announcement](https://www.anthropic.com/news/web-search-api) — pricing and availability confirmation — HIGH confidence
 
 ---
-
-*Stack research: 2026-03-26*
+*Stack research for: Mosaicat v1.1 Quality & Cost Optimization*
+*Researched: 2026-03-28*
