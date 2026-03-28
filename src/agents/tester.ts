@@ -46,17 +46,17 @@ export class TesterAgent extends BaseAgent {
     }
 
     // Step 1.5: Pre-compilation check (D-07, D-08)
-    eventBus.emit('agent:progress', this.stage, 'pre-compiling test files (tsc --noEmit)');
+    this.ctx.eventBus.emit('agent:progress', this.stage, 'pre-compiling test files (tsc --noEmit)');
     const preCompile = this.runPreCompilation(codeDir);
     if (!preCompile.success) {
       this.logger.agent(this.stage, 'warn', 'tester:precompile-failed', {
         errors: preCompile.errors.slice(0, 1000),
       });
-      eventBus.emit('agent:progress', this.stage, 'pre-compilation failed — skipping vitest');
+      this.ctx.eventBus.emit('agent:progress', this.stage, 'pre-compilation failed — skipping vitest');
 
       // Per D-08: skip vitest, report as parse-import failure
       this.generatePreCompileFailureReport(preCompile.errors);
-      eventBus.emit('agent:summary', this.stage, 'Pre-compilation failed — vitest skipped');
+      this.ctx.eventBus.emit('agent:summary', this.stage, 'Pre-compilation failed — vitest skipped');
       return;
     }
     this.logger.agent(this.stage, 'info', 'tester:precompile-passed', {});

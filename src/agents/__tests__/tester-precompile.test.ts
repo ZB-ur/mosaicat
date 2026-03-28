@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
+import type { AgentContext } from '../../core/types.js';
 import { TesterAgent } from '../tester.js';
 
 // Mock child_process
@@ -33,13 +34,24 @@ vi.mock('../../core/event-bus.js', () => ({
 
 const mockExecSync = vi.mocked(execSync);
 
-function createTesterAgent(): TesterAgent {
-  const mockProvider = { call: vi.fn() } as any;
-  const mockLogger = {
-    agent: vi.fn(),
-    pipeline: vi.fn(),
+function createMockRunContext(overrides: Record<string, any> = {}) {
+  return {
+    provider: { call: vi.fn() },
+    logger: { agent: vi.fn(), pipeline: vi.fn() },
+    store: {
+      getDir: vi.fn().mockReturnValue('/tmp/test-code'),
+      exists: vi.fn().mockReturnValue(false),
+      read: vi.fn().mockReturnValue('{}'),
+      write: vi.fn(),
+    },
+    eventBus: { emit: vi.fn(), on: vi.fn(), off: vi.fn() },
+    ...overrides,
   } as any;
-  return new TesterAgent('tester', mockProvider, mockLogger);
+}
+
+function createTesterAgent(ctxOverrides: Record<string, any> = {}): TesterAgent {
+  const ctx = createMockRunContext(ctxOverrides);
+  return new TesterAgent('tester', ctx);
 }
 
 describe('TesterAgent.runPreCompilation', () => {
@@ -102,14 +114,12 @@ describe('TesterAgent.runPreCompilation', () => {
 });
 
 describe('TesterAgent.generatePreCompileFailureReport', () => {
-  it('writes test-report.md with pre-compilation error info', async () => {
-    const { writeArtifact } = await import('../../core/artifact.js');
-    const { writeManifest } = await import('../../core/manifest.js');
-
+  it('writes test-report.md with pre-compilation error info', () => {
     const agent = createTesterAgent() as any;
     agent.generatePreCompileFailureReport('error TS2304: Cannot find name "foo"');
 
-    expect(writeArtifact).toHaveBeenCalledWith(
+    const ctx = (agent as any).ctx;
+    expect(ctx.store.write).toHaveBeenCalledWith(
       'test-report.md',
       expect.stringContaining('Pre-compilation failed'),
     );
@@ -117,11 +127,14 @@ describe('TesterAgent.generatePreCompileFailureReport', () => {
 
   it('writes manifest with preCompilationFailed flag', async () => {
     const { writeManifest } = await import('../../core/manifest.js');
+    const mockWriteManifest = vi.mocked(writeManifest);
+    mockWriteManifest.mockClear();
 
     const agent = createTesterAgent() as any;
     agent.generatePreCompileFailureReport('error TS2304');
 
-    expect(writeManifest).toHaveBeenCalledWith(
+    expect(mockWriteManifest).toHaveBeenCalledWith(
+      expect.anything(),
       'test-report.manifest.json',
       expect.objectContaining({
         preCompilationFailed: true,
@@ -143,11 +156,9 @@ describe('TesterAgent.run pre-compilation integration', () => {
     });
     agent.generatePreCompileFailureReport = vi.fn();
 
-    const context = {
+    const context: AgentContext = {
       inputArtifacts: new Map([['test-plan.manifest.json', '{}']]),
-      store: {},
-      eventBus: { emit: vi.fn() },
-    };
+    } as any;
 
     await agent.run(context);
 
