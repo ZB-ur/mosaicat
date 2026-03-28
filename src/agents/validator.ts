@@ -13,11 +13,81 @@ import {
   type TechSpecManifest,
   type CodeManifest,
 } from '../core/manifest.js';
+import type { QualityGate } from '../core/quality-gate-types.js';
 
 interface CheckResult {
   name: string;
   passed: boolean;
   details: string | string[];
+}
+
+const MANIFESTS_TO_CHECK = [
+  'research.manifest.json',
+  'prd.manifest.json',
+  'ux-flows.manifest.json',
+  'api-spec.manifest.json',
+  'components.manifest.json',
+  'tech-spec.manifest.json',
+  'code.manifest.json',
+  'test-plan.manifest.json',
+  'test-report.manifest.json',
+  'security-report.manifest.json',
+  'review.manifest.json',
+];
+
+/**
+ * Aggregate quality gate data from all stage manifests into a single check result.
+ * Exported for direct unit testing.
+ */
+export function aggregateQualityGates(): CheckResult {
+  const details: string[] = [];
+  let totalStubs = 0;
+  let totalPartial = 0;
+  let totalComplete = 0;
+  const allGaps = new Set<string>();
+  let anyBlocked = false;
+  let checkedCount = 0;
+
+  for (const manifestName of MANIFESTS_TO_CHECK) {
+    try {
+      const data = readManifest(manifestName) as Record<string, unknown>;
+      const qg = data.quality_gate as QualityGate | undefined;
+      if (!qg) continue; // Manifest exists but no quality_gate field -- skip
+
+      checkedCount++;
+      totalStubs += qg.stub_count;
+      totalPartial += qg.partial_count;
+      totalComplete += qg.complete_count;
+      for (const gap of qg.coverage_gaps) allGaps.add(gap);
+      if (qg.blocked) {
+        anyBlocked = true;
+        details.push(`${manifestName}: BLOCKED (${qg.stub_count} stubs, ${qg.partial_count} partial)`);
+      } else {
+        details.push(`${manifestName}: OK (${qg.complete_count} complete)`);
+      }
+    } catch {
+      // Manifest doesn't exist for this profile -- skip silently
+    }
+  }
+
+  if (checkedCount === 0) {
+    return {
+      name: 'Check 9: Quality Gate Aggregation',
+      passed: true,
+      details: 'No manifests with quality_gate data found -- skipped (may be design-only profile)',
+    };
+  }
+
+  details.unshift(`Checked ${checkedCount} manifests: ${totalComplete} complete, ${totalPartial} partial, ${totalStubs} stubs`);
+  if (allGaps.size > 0) {
+    details.push(`Coverage gaps: ${[...allGaps].join(', ')}`);
+  }
+
+  return {
+    name: 'Check 9: Quality Gate Aggregation',
+    passed: !anyBlocked,
+    details,
+  };
 }
 
 export class ValidatorAgent extends BaseAgent {
@@ -65,6 +135,7 @@ export class ValidatorAgent extends BaseAgent {
     content = content.replace(/\n*### Check 6: Feature ID Traceability[\s\S]*$/, '').trimEnd();
     content = content.replace(/\n*### Check 7: Tech-Spec Feature Coverage[\s\S]*$/, '').trimEnd();
     content = content.replace(/\n*### Check 8: Code Task Coverage[\s\S]*$/, '').trimEnd();
+    content = content.replace(/\n*### Check 9: Quality Gate Aggregation[\s\S]*$/, '').trimEnd();
 
     // Post-LLM: programmatic file integrity check (Check 5)
     const integrity = this.checkFileIntegrity();
@@ -81,6 +152,10 @@ export class ValidatorAgent extends BaseAgent {
     // Post-LLM: programmatic code task coverage (Check 8)
     const codeTaskCoverage = this.checkCodeTaskCoverage();
     content = this.appendCheck(content, codeTaskCoverage);
+
+    // Post-LLM: programmatic quality gate aggregation (Check 9)
+    const qualityGate = aggregateQualityGates();
+    content = this.appendCheck(content, qualityGate);
 
     this.writeOutput('validation-report.md', content);
   }
