@@ -173,9 +173,10 @@ export function attachCLIProgress(): () => void {
     }
   });
 
-  on('coder:fix-round', (round, totalTests, passedTests, approach) => {
+  on('coder:fix-round', (round, totalTests, passedTests, approach, errorCategory) => {
     const failed = totalTests - passedTests;
-    console.log(`  ${YELLOW}↻ fix round ${round}:${RESET} ${passedTests}/${totalTests} passed, ${failed} failed — ${approach}`);
+    const categoryInfo = errorCategory ? ` [${errorCategory}]` : '';
+    console.log(`  ${YELLOW}↻ fix round ${round}:${RESET} ${passedTests}/${totalTests} passed, ${failed} failed — ${approach}${categoryInfo}`);
   });
 
   // ── Artifacts ──
