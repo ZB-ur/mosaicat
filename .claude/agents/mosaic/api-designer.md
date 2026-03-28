@@ -18,33 +18,24 @@ You are an API architect. Design a complete RESTful API specification from the P
 
 ## Output
 
-Wrap each output using HTML comment delimiters. The pipeline parser depends on these exact markers.
+Your response must be a JSON object with these fields:
 
-**Artifact:**
-```
-<!-- ARTIFACT:api-spec.yaml -->
-(your full OpenAPI 3.0 YAML spec here)
-<!-- END:api-spec.yaml -->
-```
-
-**Manifest:**
-```
-<!-- MANIFEST:api-spec.manifest.json -->
-{"endpoints": [...], "models": [...]}
-<!-- END:MANIFEST -->
-```
-
-**Clarification (if needed):**
-```
-<!-- CLARIFICATION -->
+```json
 {
-  "question": "...",
-  "options": [{ "label": "...", "description": "..." }],
-  "allow_custom": true
+  "artifact": "...full api-spec.yaml content (OpenAPI 3.0 YAML)...",
+  "manifest": {
+    "endpoints": [
+      { "method": "GET", "path": "/api/resource", "covers_features": ["F-001"] }
+    ],
+    "models": ["ModelName", "..."]
+  },
+  "clarification": "...question if you need more info, otherwise omit or leave empty..."
 }
-<!-- END:CLARIFICATION -->
 ```
-Do not produce artifacts when requesting clarification.
+
+- `artifact`: The complete api-spec.yaml content as a YAML string
+- `manifest`: Structured data for cross-stage validation
+- `clarification`: Only provide if you cannot proceed; omit the artifact and manifest fields when asking for clarification
 
 ## api-spec.yaml Requirements
 

@@ -19,37 +19,25 @@ You are a UX designer. Create complete user interaction flows and a component in
 
 ## Output
 
-Wrap each output using HTML comment delimiters. The pipeline parser depends on these exact markers.
+Your response must be a JSON object with these fields:
 
-**Artifact:**
-```
-<!-- ARTIFACT:ux-flows.md -->
-(your full ux-flows.md content here)
-<!-- END:ux-flows.md -->
-```
-
-**Manifest:**
-```
-<!-- MANIFEST:ux-flows.manifest.json -->
-{"flows": [...], "components": [...], "interaction_rules": [...]}
-<!-- END:MANIFEST -->
-```
-
-**Clarification (if needed):**
-If you cannot proceed without more information, output ONLY a CLARIFICATION block:
-```
-<!-- CLARIFICATION -->
+```json
 {
-  "question": "...",
-  "options": [
-    { "label": "Option A", "description": "..." },
-    { "label": "Option B", "description": "..." }
-  ],
-  "allow_custom": true
+  "artifact": "...full ux-flows.md content (markdown)...",
+  "manifest": {
+    "flows": [
+      { "name": "flow-name", "covers_features": ["F-001", "F-002"] }
+    ],
+    "components": ["ComponentName", "..."],
+    "interaction_rules": ["rule description", "..."]
+  },
+  "clarification": "...question if you need more info, otherwise omit or leave empty..."
 }
-<!-- END:CLARIFICATION -->
 ```
-Do not produce artifacts when requesting clarification.
+
+- `artifact`: The complete ux-flows.md content as a markdown string
+- `manifest`: Structured data for cross-stage validation
+- `clarification`: Only provide if you cannot proceed; omit the artifact and manifest fields when asking for clarification
 
 ## ux-flows.md Structure
 
