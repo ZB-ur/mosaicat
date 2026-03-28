@@ -22,10 +22,10 @@
 
 ### 质量门控 (GATE)
 
-- [x] **GATE-01**: 每个 stage 完成后运行程序化质量检查（stub 检测 + 特性覆盖率），不达标时阻断进入下一 stage
+- [ ] **GATE-01**: 每个 stage 完成后运行程序化质量检查（stub 检测 + 特性覆盖率），不达标时阻断进入下一 stage
 - [ ] **GATE-02**: Coder 输出经过 placeholder 扫描（空壳 div、空函数体、TODO/FIXME、return null），检测到 stub 时标记在 manifest
-- [x] **GATE-03**: code.manifest 每个文件标注 implementation_status（stub / partial / complete），由程序化检查填充
-- [x] **GATE-04**: 跨阶段特性覆盖验证：每个 stage 结束后对比 PRD feature list 与 manifest covers_features
+- [ ] **GATE-03**: code.manifest 每个文件标注 implementation_status（stub / partial / complete），由程序化检查填充
+- [ ] **GATE-04**: 跨阶段特性覆盖验证：每个 stage 结束后对比 PRD feature list 与 manifest covers_features
 - [x] **GATE-05**: Validator 简化为汇总各 stage 质量检查结果 + 全链路完整性报告
 
 ### 测试修复循环 (TEST)
@@ -73,10 +73,10 @@
 | AGENT-04 | Phase 8 | Complete |
 | AGENT-05 | Phase 8 | Complete |
 | AGENT-06 | Phase 8 | Complete |
-| GATE-01 | Phase 9 | Complete |
+| GATE-01 | Phase 9 | Pending |
 | GATE-02 | Phase 9 | Pending |
-| GATE-03 | Phase 9 | Complete |
-| GATE-04 | Phase 9 | Complete |
+| GATE-03 | Phase 9 | Pending |
+| GATE-04 | Phase 9 | Pending |
 | GATE-05 | Phase 9 | Complete |
 | TEST-01 | Phase 10 | Pending |
 | TEST-02 | Phase 10 | Pending |
