@@ -1,8 +1,6 @@
 import type { AgentContext } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
 import { assemblePrompt } from '../core/prompt-assembler.js';
-import { eventBus } from '../core/event-bus.js';
-
 /**
  * Output specification for tool-use agents.
  * Same shape as OutputSpec but semantically distinct: tool-use agents
@@ -43,7 +41,7 @@ export abstract class ToolUseAgent extends BaseAgent {
       expectedArtifacts: spec.artifacts,
       mode: 'tool-use',
     });
-    eventBus.emit('agent:thinking', this.stage, prompt.length);
+    this.ctx.eventBus.emit('agent:thinking', this.stage, prompt.length);
 
     const response = await this.provider.call(prompt, {
       systemPrompt: context.systemPrompt,
@@ -57,7 +55,7 @@ export abstract class ToolUseAgent extends BaseAgent {
     this.logger.agent(this.stage, 'info', 'llm:response', {
       responseLength: finalText.length,
     });
-    eventBus.emit('agent:response', this.stage, finalText.length);
+    this.ctx.eventBus.emit('agent:response', this.stage, finalText.length);
 
     // Write primary artifact
     if (spec.artifacts.length > 0) {

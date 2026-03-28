@@ -1,19 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { ResearcherAgent } from '../researcher.js';
 import { ToolUseAgent } from '../tool-use-agent.js';
-import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-provider.js';
-import { Logger } from '../../core/logger.js';
-
-class MockProvider implements LLMProvider {
-  async call(_prompt: string, _options?: LLMCallOptions): Promise<LLMResponse> {
-    return { content: 'mock' };
-  }
-}
+import { createTestRunContext } from '../../__tests__/test-helpers.js';
 
 function makeAgent(): ResearcherAgent {
-  const provider = new MockProvider();
-  const logger = new Logger('test-run');
-  return new ResearcherAgent('researcher', provider, logger);
+  const ctx = createTestRunContext();
+  return new ResearcherAgent('researcher', ctx);
 }
 
 describe('ResearcherAgent', () => {

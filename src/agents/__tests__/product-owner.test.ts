@@ -1,17 +1,23 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import fs from 'node:fs';
-import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-provider.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import type { LLMCallOptions, LLMResponse } from '../../core/llm-provider.js';
 import type { AgentContext } from '../../core/types.js';
 import { ProductOwnerAgent } from '../product-owner.js';
-import { Logger } from '../../core/logger.js';
-import { initArtifactsDir } from '../../core/artifact.js';
+import {
+  createTestRunContext,
+  createTestArtifactStore,
+} from '../../__tests__/test-helpers.js';
+import type { RunContext } from '../../core/run-context.js';
 
-function makeProvider(response: object): LLMProvider {
-  return {
-    async call(_prompt: string, _options?: LLMCallOptions): Promise<LLMResponse> {
-      return { content: JSON.stringify(response) };
+function makeRunContext(response: object): RunContext {
+  const store = createTestArtifactStore();
+  return createTestRunContext({
+    store,
+    provider: {
+      async call(_prompt: string, _options?: LLMCallOptions): Promise<LLMResponse> {
+        return { content: JSON.stringify(response) };
+      },
     },
-  };
+  });
 }
 
 function makeContext(inputArtifacts?: Map<string, string>): AgentContext {
@@ -23,73 +29,60 @@ function makeContext(inputArtifacts?: Map<string, string>): AgentContext {
 }
 
 describe('ProductOwnerAgent', () => {
-  beforeEach(() => {
-    if (fs.existsSync('.mosaic')) fs.rmSync('.mosaic', { recursive: true });
-    initArtifactsDir('test-run');
-  });
-
-  afterEach(() => {
-    if (fs.existsSync('.mosaic')) fs.rmSync('.mosaic', { recursive: true });
-  });
-
   it('writes constitution.project.md when LLM returns constitution_project field', async () => {
-    const provider = makeProvider({
+    const ctx = makeRunContext({
       artifact: '## PRD Content\nSome product requirements.',
       manifest: { features: [{ id: 'F-001', name: 'feature-1' }], constraints: ['c1'], out_of_scope: ['o1'] },
       constitution_project: '## Product Constraints\n- Must be offline-first',
     });
-    const logger = new Logger('test-run');
-    const agent = new ProductOwnerAgent('product_owner', provider, logger);
+    const agent = new ProductOwnerAgent('product_owner', ctx);
 
     await agent.execute(makeContext());
 
-    const constitution = fs.readFileSync('.mosaic/artifacts/test-run/constitution.project.md', 'utf-8');
+    const constitution = ctx.store.read('constitution.project.md');
     expect(constitution).toContain('Product Constraints');
     expect(constitution).toContain('offline-first');
   });
 
   it('does NOT write constitution.project.md when field is absent', async () => {
-    const provider = makeProvider({
+    const ctx = makeRunContext({
       artifact: '## PRD Content\nSome product requirements.',
       manifest: { features: [{ id: 'F-001', name: 'feature-1' }], constraints: ['c1'], out_of_scope: ['o1'] },
     });
-    const logger = new Logger('test-run');
-    const agent = new ProductOwnerAgent('product_owner', provider, logger);
+    const agent = new ProductOwnerAgent('product_owner', ctx);
 
     await agent.execute(makeContext());
 
-    expect(fs.existsSync('.mosaic/artifacts/test-run/constitution.project.md')).toBe(false);
+    expect(ctx.store.exists('constitution.project.md')).toBe(false);
   });
 
   it('does NOT write constitution.project.md when field is empty', async () => {
-    const provider = makeProvider({
+    const ctx = makeRunContext({
       artifact: '## PRD Content\nSome product requirements.',
       manifest: { features: [{ id: 'F-001', name: 'feature-1' }], constraints: ['c1'], out_of_scope: ['o1'] },
       constitution_project: '   ',
     });
-    const logger = new Logger('test-run');
-    const agent = new ProductOwnerAgent('product_owner', provider, logger);
+    const agent = new ProductOwnerAgent('product_owner', ctx);
 
     await agent.execute(makeContext());
 
-    expect(fs.existsSync('.mosaic/artifacts/test-run/constitution.project.md')).toBe(false);
+    expect(ctx.store.exists('constitution.project.md')).toBe(false);
   });
 
   it('still writes prd.md and prd.manifest.json normally', async () => {
-    const provider = makeProvider({
+    const ctx = makeRunContext({
       artifact: '## PRD\nFull product requirements document.',
       manifest: { features: [{ id: 'F-001', name: 'feature-1' }], constraints: ['c1'], out_of_scope: ['o1'] },
       constitution_project: '## Product Constraints\n- Constraint A',
     });
-    const logger = new Logger('test-run');
-    const agent = new ProductOwnerAgent('product_owner', provider, logger);
+    const agent = new ProductOwnerAgent('product_owner', ctx);
 
     await agent.execute(makeContext());
 
-    const prd = fs.readFileSync('.mosaic/artifacts/test-run/prd.md', 'utf-8');
+    const prd = ctx.store.read('prd.md');
     expect(prd).toContain('Full product requirements document');
 
-    const manifest = JSON.parse(fs.readFileSync('.mosaic/artifacts/test-run/prd.manifest.json', 'utf-8'));
+    const manifest = JSON.parse(ctx.store.read('prd.manifest.json'));
     expect(manifest.features).toHaveLength(1);
     expect(manifest.features[0].id).toBe('F-001');
   });

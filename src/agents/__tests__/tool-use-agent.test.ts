@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import fs from 'node:fs';
-import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-provider.js';
+import type { LLMCallOptions, LLMResponse } from '../../core/llm-provider.js';
 import type { AgentContext } from '../../core/types.js';
 import { ToolUseAgent } from '../tool-use-agent.js';
 import type { ToolUseOutputSpec } from '../tool-use-agent.js';
-import { Logger } from '../../core/logger.js';
+import {
+  createTestRunContext,
+  createTestArtifactStore,
+} from '../../__tests__/test-helpers.js';
+import type { RunContext } from '../../core/run-context.js';
 
 // Concrete test subclass
 class TestToolUseAgent extends ToolUseAgent {
@@ -22,14 +25,21 @@ class TestToolUseAgent extends ToolUseAgent {
   }
 }
 
-class MockProvider implements LLMProvider {
-  lastOptions?: LLMCallOptions;
-  responseContent = 'Mock research content from web search';
+let lastCallOptions: LLMCallOptions | undefined;
+let responseContent = 'Mock research content from web search';
 
-  async call(_prompt: string, options?: LLMCallOptions): Promise<LLMResponse> {
-    this.lastOptions = options;
-    return { content: this.responseContent };
-  }
+function makeRunContext(): RunContext {
+  lastCallOptions = undefined;
+  const store = createTestArtifactStore();
+  return createTestRunContext({
+    store,
+    provider: {
+      async call(_prompt: string, options?: LLMCallOptions): Promise<LLMResponse> {
+        lastCallOptions = options;
+        return { content: responseContent };
+      },
+    },
+  });
 }
 
 function makeContext(tools?: string[]): AgentContext {
@@ -51,41 +61,29 @@ function makeContext(tools?: string[]): AgentContext {
 }
 
 describe('ToolUseAgent', () => {
-  let provider: MockProvider;
+  let ctx: RunContext;
   let agent: TestToolUseAgent;
-  let logger: Logger;
 
   beforeEach(() => {
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
-    fs.mkdirSync('.mosaic/artifacts', { recursive: true });
-
-    provider = new MockProvider();
-    logger = new Logger('test-run');
-    agent = new TestToolUseAgent('researcher', provider, logger);
-  });
-
-  afterEach(() => {
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    responseContent = 'Mock research content from web search';
+    ctx = makeRunContext();
+    agent = new TestToolUseAgent('researcher', ctx);
   });
 
   it('calls provider.call() with allowedTools from context', async () => {
     await agent.execute(makeContext(['WebSearch', 'WebFetch']));
-    expect(provider.lastOptions?.allowedTools).toEqual(['WebSearch', 'WebFetch']);
+    expect(lastCallOptions?.allowedTools).toEqual(['WebSearch', 'WebFetch']);
   });
 
   it('does NOT pass jsonSchema to provider.call()', async () => {
     await agent.execute(makeContext());
-    expect(provider.lastOptions?.jsonSchema).toBeUndefined();
+    expect(lastCallOptions?.jsonSchema).toBeUndefined();
   });
 
   it('writes response.content to artifact via writeOutput()', async () => {
-    provider.responseContent = 'Full research markdown content';
+    responseContent = 'Full research markdown content';
     await agent.execute(makeContext());
-    const written = fs.readFileSync('.mosaic/artifacts/research.md', 'utf-8');
+    const written = ctx.store.read('research.md');
     expect(written).toBe('Full research markdown content');
   });
 
@@ -97,9 +95,7 @@ describe('ToolUseAgent', () => {
       risks: ['risk1'],
     };
     await agent.execute(makeContext());
-    const manifest = JSON.parse(
-      fs.readFileSync('.mosaic/artifacts/research.manifest.json', 'utf-8'),
-    );
+    const manifest = JSON.parse(ctx.store.read('research.manifest.json'));
     expect(manifest.competitors).toEqual(['A', 'B']);
     expect(manifest.feasibility).toBe('high');
   });
@@ -107,6 +103,6 @@ describe('ToolUseAgent', () => {
   it('does NOT write manifest when parseManifest returns undefined', async () => {
     agent.manifestData = undefined;
     await agent.execute(makeContext());
-    expect(fs.existsSync('.mosaic/artifacts/research.manifest.json')).toBe(false);
+    expect(ctx.store.exists('research.manifest.json')).toBe(false);
   });
 });

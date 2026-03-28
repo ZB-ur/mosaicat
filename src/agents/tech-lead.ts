@@ -3,7 +3,6 @@ import { ClarificationNeeded } from '../core/types.js';
 import type { OutputSpec } from '../core/prompt-assembler.js';
 import { assemblePrompt } from '../core/prompt-assembler.js';
 import { LLMAgent } from './llm-agent.js';
-import { eventBus } from '../core/event-bus.js';
 
 /**
  * Build a JSON schema that includes the constitution_project_update field
@@ -39,7 +38,7 @@ export class TechLeadAgent extends LLMAgent {
       promptLength: prompt.length,
       expectedArtifacts: spec.artifacts,
     });
-    eventBus.emit('agent:thinking', this.stage, prompt.length);
+    this.ctx.eventBus.emit('agent:thinking', this.stage, prompt.length);
 
     const response = await this.provider.call(prompt, {
       systemPrompt: context.systemPrompt,
@@ -48,7 +47,7 @@ export class TechLeadAgent extends LLMAgent {
     const raw = response.content;
 
     this.logger.agent(this.stage, 'info', 'llm:response', { responseLength: raw.length });
-    eventBus.emit('agent:response', this.stage, raw.length);
+    this.ctx.eventBus.emit('agent:response', this.stage, raw.length);
 
     let parsed: { artifact?: string; manifest?: unknown; constitution_project_update?: string; clarification?: string };
     try {
@@ -61,7 +60,7 @@ export class TechLeadAgent extends LLMAgent {
     }
 
     if (parsed.clarification && parsed.clarification.trim().length > 0 && !parsed.artifact) {
-      eventBus.emit('agent:clarification', this.stage, parsed.clarification);
+      this.ctx.eventBus.emit('agent:clarification', this.stage, parsed.clarification);
       throw new ClarificationNeeded(parsed.clarification);
     }
 
