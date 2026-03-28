@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { execSync } from 'node:child_process';
 import type { AgentContext } from '../core/types.js';
 import { BaseAgent } from '../core/agent.js';
@@ -44,6 +45,22 @@ export class TesterAgent extends BaseAgent {
       this.runTestSetup(setupCommand, codeDir);
     }
 
+    // Step 1.5: Pre-compilation check (D-07, D-08)
+    eventBus.emit('agent:progress', this.stage, 'pre-compiling test files (tsc --noEmit)');
+    const preCompile = this.runPreCompilation(codeDir);
+    if (!preCompile.success) {
+      this.logger.agent(this.stage, 'warn', 'tester:precompile-failed', {
+        errors: preCompile.errors.slice(0, 1000),
+      });
+      eventBus.emit('agent:progress', this.stage, 'pre-compilation failed — skipping vitest');
+
+      // Per D-08: skip vitest, report as parse-import failure
+      this.generatePreCompileFailureReport(preCompile.errors);
+      eventBus.emit('agent:summary', this.stage, 'Pre-compilation failed — vitest skipped');
+      return;
+    }
+    this.logger.agent(this.stage, 'info', 'tester:precompile-passed', {});
+
     // Step 2: Execute acceptance tests
     this.ctx.eventBus.emit('agent:progress', this.stage, `executing acceptance tests`);
     const runCommand = planManifest.commands?.runCommand ?? 'npx vitest run tests/acceptance/';
@@ -59,7 +76,60 @@ export class TesterAgent extends BaseAgent {
       `${total} tests: ${testResult.passed} passed, ${testResult.failed} failed — ${verdict.toUpperCase()}`);
   }
 
-  // --- Test Execution ---
+  // ─── Pre-Compilation ────────────────────────────────────────
+
+  private runPreCompilation(codeDir: string): { success: boolean; errors: string } {
+    const testDir = path.join(codeDir, 'tests', 'acceptance');
+    if (!fs.existsSync(testDir)) {
+      // No test directory -- skip pre-compilation, let vitest handle it
+      return { success: true, errors: '' };
+    }
+
+    // Check for tsconfig.json in codeDir
+    const hasTsconfig = fs.existsSync(path.join(codeDir, 'tsconfig.json'));
+    const cmd = hasTsconfig
+      ? 'npx tsc --noEmit'
+      : 'npx tsc --noEmit tests/acceptance/**/*.ts --esModuleInterop --moduleResolution node';
+
+    try {
+      execSync(cmd, { cwd: codeDir, timeout: 60_000, stdio: 'pipe', encoding: 'utf-8' });
+      return { success: true, errors: '' };
+    } catch (err: unknown) {
+      const error = err as { stdout?: string; stderr?: string; message?: string };
+      const output = `${error.stdout ?? ''}\n${error.stderr ?? ''}`.trim();
+      return { success: false, errors: output || error.message || 'Unknown tsc error' };
+    }
+  }
+
+  private generatePreCompileFailureReport(errors: string): void {
+    const reportLines = [
+      '# Test Report',
+      '',
+      '## Summary',
+      '- **Verdict:** FAIL',
+      '- **Reason:** Pre-compilation failed (tsc --noEmit)',
+      '- **Classification:** parse-import',
+      '',
+      '## Pre-Compilation Errors',
+      '```',
+      errors.slice(0, 5000),
+      '```',
+    ];
+
+    this.writeOutput('test-report.md', reportLines.join('\n'));
+    this.writeOutputManifest('test-report.manifest.json', {
+      total: 0,
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+      failures: [],
+      verdict: 'fail',
+      preCompilationFailed: true,
+      errorClassification: 'parse-import',
+    });
+  }
+
+  // ─── Test Execution ───────────────────────────────────────
 
   private runTestSetup(setupCommand: string, codeDir: string): void {
     try {
