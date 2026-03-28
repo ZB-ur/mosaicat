@@ -5,7 +5,7 @@ milestone_name: milestone
 status: verifying
 stopped_at: Completed 07-01-PLAN.md
 last_updated: "2026-03-27T12:53:50.877Z"
-last_activity: 2026-03-27
+last_activity: 2026-03-28
 progress:
   total_phases: 7
   completed_phases: 7
@@ -109,9 +109,15 @@ Recent decisions affecting current work:
 - [Phase 06]: ShutdownCoordinator instantiated inside startRun async function to scope lifecycle per invocation
 - [Phase 07]: Used formatted code block for terminal demo instead of screenshot/recording (more maintainable)
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260328-kot | Fix resume state persistence and malformed path generation | 2026-03-28 | 6ad8880 | [260328-kot](./quick/260328-kot-fix-resume-state-persistence-and-malform/) |
+
 ### Pending Todos
 
-None yet.
+1 pending — /gsd:check-todos to review
 
 ### Blockers/Concerns
 
