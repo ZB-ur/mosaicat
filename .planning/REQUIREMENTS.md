@@ -30,8 +30,8 @@
 
 ### 测试修复循环 (TEST)
 
-- [ ] **TEST-01**: Tester 运行 vitest 前先执行测试文件预编译检查（tsc --noEmit）
-- [ ] **TEST-02**: 测试失败结果分为 3 类：parse/import error、assertion failure、runtime error
+- [x] **TEST-01**: Tester 运行 vitest 前先执行测试文件预编译检查（tsc --noEmit）
+- [x] **TEST-02**: 测试失败结果分为 3 类：parse/import error、assertion failure、runtime error
 - [ ] **TEST-03**: Fix loop 连续 2 轮相同失败集时提前终止并输出停滞报告
 - [ ] **TEST-04**: 错误类型映射到修复策略：parse → 修 config，assertion → 修逻辑，import → 修依赖
 
@@ -78,8 +78,8 @@
 | GATE-03 | Phase 9 | Pending |
 | GATE-04 | Phase 9 | Pending |
 | GATE-05 | Phase 9 | Complete |
-| TEST-01 | Phase 10 | Pending |
-| TEST-02 | Phase 10 | Pending |
+| TEST-01 | Phase 10 | Complete |
+| TEST-02 | Phase 10 | Complete |
 | TEST-03 | Phase 10 | Pending |
 | TEST-04 | Phase 10 | Pending |
 | COST-01 | Phase 11 | Pending |
