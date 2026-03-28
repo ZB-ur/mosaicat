@@ -73,7 +73,10 @@ Plans:
   2. Test failures are classified into three categories (parse/import error, assertion failure, runtime error) visible in fix loop logs
   3. Fix loop terminates early when identical failure sets repeat for 2 consecutive rounds, producing a stagnation report
   4. Error type drives fix strategy: parse/import errors trigger config/dependency fixes, assertion errors trigger logic fixes
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 10-01-PLAN.md — Failure classifier module + TesterAgent pre-compilation
+- [ ] 10-02-PLAN.md — Stagnation detection, classification-driven strategy, visibility wiring
 
 ### Phase 11: Cost Tracking & Optimization
 **Goal**: Pipeline runs report per-stage token costs, and UI Designer runs faster without degrading P0/P1 component quality
@@ -111,6 +114,6 @@ Phases execute in numeric order: 8 -> 9 -> 10 -> 11 -> 12
 | 7. README | v1.0 | 1/1 | Complete | 2026-03-27 |
 | 8. Agent Architecture Fixes | v1.1 | 0/3 | Planning | - |
 | 9. Quality Gate Infrastructure | v1.1 | 0/4 | Planning | - |
-| 10. Test Fix Loop Intelligence | v1.1 | 0/? | Not started | - |
+| 10. Test Fix Loop Intelligence | v1.1 | 0/2 | Planning | - |
 | 11. Cost Tracking & Optimization | v1.1 | 0/? | Not started | - |
 | 12. Intent & Research Enrichment | v1.1 | 0/? | Not started | - |
