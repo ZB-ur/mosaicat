@@ -14,7 +14,9 @@ export type ErrorCategory =
   | 'rate-limit'
   | 'timeout'
   | 'runtime-error'
-  | 'unknown';
+  | 'unknown'
+  | 'parse-import'
+  | 'assertion';
 
 export interface RetryLogEntry {
   timestamp: string;
