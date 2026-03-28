@@ -59,9 +59,9 @@ Plans:
   4. Validator produces a summary report aggregating per-stage quality results into a full-pipeline integrity assessment
 **Plans:** 3 plans
 Plans:
-- [ ] 09-01-PLAN.md — Types, manifest schema extensions, AST stub detection hook
+- [x] 09-01-PLAN.md — Types, manifest schema extensions, AST stub detection hook
 - [ ] 09-02-PLAN.md — Hook registration, feature coverage check, Coder manifest integration
-- [ ] 09-03-PLAN.md — Validator quality gate aggregation
+- [x] 09-03-PLAN.md — Validator quality gate aggregation
 
 ### Phase 10: Test Fix Loop Intelligence
 **Goal**: The Tester-Coder fix loop correctly diagnoses why tests fail and stops wasting rounds on unfixable infrastructure errors

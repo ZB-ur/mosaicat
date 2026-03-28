@@ -4,6 +4,7 @@ import type { InteractionHandler } from './interaction-handler.js';
 import { BaseAgent, StubAgent } from './agent.js';
 import { StubProvider } from './llm-provider.js';
 import { getHooksForStage } from './hooks/index.js';
+import { getArtifactsDir } from './artifact.js';
 import {
   ResearcherAgent,
   ProductOwnerAgent,
@@ -38,7 +39,8 @@ const AGENT_MAP: Partial<Record<StageName, AgentConstructor>> = {
 };
 
 function registerHooks(agent: BaseAgent, stage: StageName): void {
-  const hooks = getHooksForStage(stage);
+  const artifactDir = getArtifactsDir();
+  const hooks = getHooksForStage(stage, artifactDir);
   for (const hook of hooks.preRun) {
     agent.addPreRunHook(hook);
   }
