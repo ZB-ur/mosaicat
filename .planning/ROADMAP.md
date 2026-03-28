@@ -42,7 +42,11 @@
   3. `constitution_project` written by ProductOwner/TechLead exists on disk and is loaded by downstream agents
   4. UXDesigner and APIDesigner produce output that matches their prompt specifications without format contradictions
   5. Every manifest write is validated against its Zod schema (invalid data throws), and BaseAgent post-run hooks fire after agent execution
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 08-01-PLAN.md — ToolUseAgent base class + Researcher migration
+- [ ] 08-02-PLAN.md — Constitution persistence + output format alignment
+- [ ] 08-03-PLAN.md — Manifest validation hardening + hook activation
 
 ### Phase 9: Quality Gate Infrastructure
 **Goal**: Pipeline stages cannot advance when output contains stubs, placeholder components, or misreported coverage -- bad output is blocked, not passed through
@@ -100,7 +104,7 @@ Phases execute in numeric order: 8 -> 9 -> 10 -> 11 -> 12
 | 5. Orchestrator Facade | v1.0 | 3/3 | Complete | 2026-03-27 |
 | 6. Integration Wiring | v1.0 | 2/2 | Complete | 2026-03-27 |
 | 7. README | v1.0 | 1/1 | Complete | 2026-03-27 |
-| 8. Agent Architecture Fixes | v1.1 | 0/? | Not started | - |
+| 8. Agent Architecture Fixes | v1.1 | 0/3 | Planning | - |
 | 9. Quality Gate Infrastructure | v1.1 | 0/? | Not started | - |
 | 10. Test Fix Loop Intelligence | v1.1 | 0/? | Not started | - |
 | 11. Cost Tracking & Optimization | v1.1 | 0/? | Not started | - |
