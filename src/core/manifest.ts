@@ -186,6 +186,9 @@ export type ReviewManifest = z.infer<typeof ReviewManifestSchema>;
 
 export function writeManifest(name: string, data: unknown): void {
   const schema = MANIFEST_SCHEMAS[name];
+  if (!schema && name.endsWith('.manifest.json')) {
+    throw new Error(`No Zod schema registered for manifest: ${name}`);
+  }
   if (schema) {
     schema.parse(data);
   }
@@ -196,6 +199,9 @@ export function readManifest<T = unknown>(name: string): T {
   const content = readArtifact(name);
   const parsed = JSON.parse(content) as unknown;
   const schema = MANIFEST_SCHEMAS[name];
+  if (!schema && name.endsWith('.manifest.json')) {
+    throw new Error(`No Zod schema registered for manifest: ${name}`);
+  }
   if (schema) {
     schema.parse(parsed);
   }

@@ -40,4 +40,30 @@ describe('Manifest', () => {
       writeManifest('prd.manifest.json', { invalid: true });
     }).toThrow();
   });
+
+  it('should throw on unregistered .manifest.json name', () => {
+    expect(() => {
+      writeManifest('unknown.manifest.json', { foo: 'bar' });
+    }).toThrow('No Zod schema registered for manifest: unknown.manifest.json');
+  });
+
+  it('should NOT throw for names that do not end in .manifest.json', () => {
+    expect(() => {
+      writeManifest('config.json', { some: 'data' });
+    }).not.toThrow();
+  });
+
+  it('should throw ZodError for registered name with invalid data', () => {
+    expect(() => {
+      writeManifest('research.manifest.json', { bad: 'data' });
+    }).toThrow();
+  });
+
+  it('should throw on readManifest with unregistered .manifest.json name', () => {
+    // Write a raw file first so readArtifact succeeds
+    fs.writeFileSync('.mosaic/artifacts/unknown.manifest.json', '{}');
+    expect(() => {
+      readManifest('unknown.manifest.json');
+    }).toThrow('No Zod schema registered for manifest: unknown.manifest.json');
+  });
 });
