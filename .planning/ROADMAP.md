@@ -44,9 +44,9 @@
   5. Every manifest write is validated against its Zod schema (invalid data throws), and BaseAgent post-run hooks fire after agent execution
 **Plans:** 3 plans
 Plans:
-- [ ] 08-01-PLAN.md — ToolUseAgent base class + Researcher migration
-- [ ] 08-02-PLAN.md — Constitution persistence + output format alignment
-- [ ] 08-03-PLAN.md — Manifest validation hardening + hook activation
+- [x] 08-01-PLAN.md — ToolUseAgent base class + Researcher migration
+- [x] 08-02-PLAN.md — Constitution persistence + output format alignment
+- [x] 08-03-PLAN.md — Manifest validation hardening + hook activation
 
 ### Phase 9: Quality Gate Infrastructure
 **Goal**: Pipeline stages cannot advance when output contains stubs, placeholder components, or misreported coverage -- bad output is blocked, not passed through
