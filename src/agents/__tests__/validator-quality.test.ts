@@ -7,8 +7,11 @@ vi.mock('../../core/manifest.js', () => ({
 
 import { aggregateQualityGates } from '../validator.js';
 import { readManifest } from '../../core/manifest.js';
+import type { ArtifactStore } from '../../core/artifact-store.js';
 
-const mockedReadManifest = vi.mocked(readManifest);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockedReadManifest = readManifest as any as ReturnType<typeof vi.fn>;
+const dummyStore = {} as ArtifactStore;
 
 describe('aggregateQualityGates', () => {
   beforeEach(() => {
@@ -19,7 +22,7 @@ describe('aggregateQualityGates', () => {
     const qg = { stub_count: 0, partial_count: 0, complete_count: 5, coverage_gaps: [], blocked: false };
     mockedReadManifest.mockReturnValue({ quality_gate: qg });
 
-    const result = aggregateQualityGates();
+    const result = aggregateQualityGates(dummyStore);
     expect(result.passed).toBe(true);
     expect(result.name).toBe('Check 9: Quality Gate Aggregation');
   });
@@ -28,12 +31,13 @@ describe('aggregateQualityGates', () => {
     const okGate = { stub_count: 0, partial_count: 0, complete_count: 5, coverage_gaps: [], blocked: false };
     const blockedGate = { stub_count: 3, partial_count: 1, complete_count: 2, coverage_gaps: [], blocked: true };
 
-    mockedReadManifest.mockImplementation((name: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (mockedReadManifest as any).mockImplementation((_store: unknown, name: unknown) => {
       if (name === 'code.manifest.json') return { quality_gate: blockedGate };
       return { quality_gate: okGate };
     });
 
-    const result = aggregateQualityGates();
+    const result = aggregateQualityGates(dummyStore);
     expect(result.passed).toBe(false);
     const details = result.details as string[];
     expect(details.some(d => d.includes('BLOCKED'))).toBe(true);
@@ -51,7 +55,7 @@ describe('aggregateQualityGates', () => {
       return result;
     });
 
-    const result = aggregateQualityGates();
+    const result = aggregateQualityGates(dummyStore);
     const details = result.details as string[];
     const summaryLine = details[0];
     // 11 manifests: alternating gate1 and gate2
@@ -65,7 +69,8 @@ describe('aggregateQualityGates', () => {
   });
 
   it('collects all coverage_gaps from all manifests (deduplicated)', () => {
-    mockedReadManifest.mockImplementation((name: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (mockedReadManifest as any).mockImplementation((_store: unknown, name: unknown) => {
       if (name === 'research.manifest.json') {
         return { quality_gate: { stub_count: 0, partial_count: 0, complete_count: 1, coverage_gaps: ['F-001', 'F-002'], blocked: false } };
       }
@@ -76,7 +81,7 @@ describe('aggregateQualityGates', () => {
       return {};
     });
 
-    const result = aggregateQualityGates();
+    const result = aggregateQualityGates(dummyStore);
     const details = result.details as string[];
     const gapsLine = details.find(d => d.includes('Coverage gaps'));
     expect(gapsLine).toBeDefined();
@@ -90,7 +95,7 @@ describe('aggregateQualityGates', () => {
       throw new Error('File not found');
     });
 
-    const result = aggregateQualityGates();
+    const result = aggregateQualityGates(dummyStore);
     expect(result.passed).toBe(true);
     expect(result.details).toContain('No manifests with quality_gate data found');
   });
@@ -99,19 +104,20 @@ describe('aggregateQualityGates', () => {
     // Manifests exist but have no quality_gate field
     mockedReadManifest.mockReturnValue({ features: [{ id: 'F-001', name: 'test' }] });
 
-    const result = aggregateQualityGates();
+    const result = aggregateQualityGates(dummyStore);
     expect(result.passed).toBe(true);
     expect(result.details).toContain('No manifests with quality_gate data found');
   });
 
   it('includes stage name in BLOCKED detail line', () => {
     const blockedGate = { stub_count: 2, partial_count: 1, complete_count: 0, coverage_gaps: [], blocked: true };
-    mockedReadManifest.mockImplementation((name: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (mockedReadManifest as any).mockImplementation((_store: unknown, name: unknown) => {
       if (name === 'code.manifest.json') return { quality_gate: blockedGate };
       throw new Error('not found');
     });
 
-    const result = aggregateQualityGates();
+    const result = aggregateQualityGates(dummyStore);
     expect(result.passed).toBe(false);
     const details = result.details as string[];
     expect(details.some(d => d.includes('code.manifest.json: BLOCKED'))).toBe(true);

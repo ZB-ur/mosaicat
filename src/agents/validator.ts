@@ -12,6 +12,7 @@ import {
   type CodeManifest,
 } from '../core/manifest.js';
 import type { QualityGate } from '../core/quality-gate-types.js';
+import type { ArtifactStore } from '../core/artifact-store.js';
 
 interface CheckResult {
   name: string;
@@ -37,7 +38,7 @@ const MANIFESTS_TO_CHECK = [
  * Aggregate quality gate data from all stage manifests into a single check result.
  * Exported for direct unit testing.
  */
-export function aggregateQualityGates(): CheckResult {
+export function aggregateQualityGates(store: ArtifactStore): CheckResult {
   const details: string[] = [];
   let totalStubs = 0;
   let totalPartial = 0;
@@ -48,7 +49,7 @@ export function aggregateQualityGates(): CheckResult {
 
   for (const manifestName of MANIFESTS_TO_CHECK) {
     try {
-      const data = readManifest(manifestName) as Record<string, unknown>;
+      const data = readManifest(store, manifestName) as Record<string, unknown>;
       const qg = data.quality_gate as QualityGate | undefined;
       if (!qg) continue; // Manifest exists but no quality_gate field -- skip
 
@@ -152,7 +153,7 @@ export class ValidatorAgent extends BaseAgent {
     content = this.appendCheck(content, codeTaskCoverage);
 
     // Post-LLM: programmatic quality gate aggregation (Check 9)
-    const qualityGate = aggregateQualityGates();
+    const qualityGate = aggregateQualityGates(this.ctx.store);
     content = this.appendCheck(content, qualityGate);
 
     this.writeOutput('validation-report.md', content);

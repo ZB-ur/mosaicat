@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { writeArtifact, readArtifact } from './artifact.js';
+import type { ArtifactStore } from './artifact-store.js';
+import { readArtifact, writeArtifact } from './artifact.js';
 import { QualityGateSchema, ImplementationStatusSchema } from './quality-gate-types.js';
 
 // --- Manifest Schemas ---
@@ -197,21 +198,36 @@ export type TestReportManifest = z.infer<typeof TestReportManifestSchema>;
 export type SecurityReportManifest = z.infer<typeof SecurityReportManifestSchema>;
 export type ReviewManifest = z.infer<typeof ReviewManifestSchema>;
 
-export function writeManifest(name: string, data: unknown): void {
+export function writeManifest(store: ArtifactStore, name: string, data: unknown): void;
+export function writeManifest(name: string, data: unknown): void;
+export function writeManifest(storeOrName: ArtifactStore | string, nameOrData: string | unknown, maybeData?: unknown): void {
+  const isStoreOverload = typeof storeOrName !== 'string';
+  const name = isStoreOverload ? nameOrData as string : storeOrName;
+  const data = isStoreOverload ? maybeData : nameOrData;
   const schema = MANIFEST_SCHEMAS[name];
-  if (schema) {
-    schema.parse(data);
+  if (!schema && name.endsWith('.manifest.json')) {
+    throw new Error(`No Zod schema registered for manifest: ${name}`);
   }
-  writeArtifact(name, JSON.stringify(data, null, 2));
+  if (schema) schema.parse(data);
+  if (isStoreOverload) {
+    (storeOrName as ArtifactStore).write(name, JSON.stringify(data, null, 2));
+  } else {
+    writeArtifact(name, JSON.stringify(data, null, 2));
+  }
 }
 
-export function readManifest<T = unknown>(name: string): T {
-  const content = readArtifact(name);
+export function readManifest<T = unknown>(store: ArtifactStore, name: string): T;
+export function readManifest<T = unknown>(name: string): T;
+export function readManifest<T = unknown>(storeOrName: ArtifactStore | string, maybeName?: string): T {
+  const isStoreOverload = typeof storeOrName !== 'string';
+  const name = isStoreOverload ? maybeName! : storeOrName;
+  const content = isStoreOverload ? (storeOrName as ArtifactStore).read(name) : readArtifact(name);
   const parsed = JSON.parse(content) as unknown;
   const schema = MANIFEST_SCHEMAS[name];
-  if (schema) {
-    schema.parse(parsed);
+  if (!schema && name.endsWith('.manifest.json')) {
+    throw new Error(`No Zod schema registered for manifest: ${name}`);
   }
+  if (schema) schema.parse(parsed);
   return parsed as T;
 }
 
@@ -219,9 +235,13 @@ export function readManifest<T = unknown>(name: string): T {
  * Extract human-readable summary lines from a manifest file.
  * Returns empty array if manifest doesn't exist or can't be parsed.
  */
-export function extractManifestSummary(manifestName: string): string[] {
+export function extractManifestSummary(store: ArtifactStore, manifestName: string): string[];
+export function extractManifestSummary(manifestName: string): string[];
+export function extractManifestSummary(storeOrName: ArtifactStore | string, maybeName?: string): string[] {
+  const isStoreOverload = typeof storeOrName !== 'string';
+  const manifestName = isStoreOverload ? maybeName! : storeOrName;
   try {
-    const data = readManifest(manifestName) as Record<string, unknown>;
+    const data = (isStoreOverload ? readManifest(storeOrName as ArtifactStore, manifestName) : readManifest(manifestName)) as Record<string, unknown>;
     return SUMMARY_EXTRACTORS[manifestName]?.(data) ?? [];
   } catch {
     return [];
