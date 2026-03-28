@@ -32,7 +32,8 @@ v1.1 产出物质量提升 & 成本优化：
 
 - [ ] 各阶段自检门控强化：manifest 区分 stub vs 真实实现，不达标产物阻断而非放行
 - [ ] Coder 产出质量保障：禁止 placeholder 组件通过验证，支持分批实现
-- [ ] QA/Tester 基础设施修复：测试文件规范校验，fix loop 根因诊断能力
+- [x] QA/Tester fix loop 根因诊断能力 — Validated in Phase 10: test-fix-loop-intelligence
+- [ ] QA/Tester 基础设施修复：测试文件规范校验
 - [ ] UI Designer 成本优化：减少不必要的组件生成和截图，控制 token 消耗
 - [ ] 意图澄清 & 研究深度提升：结构化用户画像，支持真实网络调研
 - [ ] Validator 从 manifest 表面检查升级为产出物内容抽检
@@ -114,4 +115,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-28 after v1.0 milestone*
+*Last updated: 2026-03-29 after Phase 10 completion*
