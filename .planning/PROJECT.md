@@ -55,17 +55,31 @@ Pipeline 引擎的可靠性和可维护性 — 每个 Agent 的输入输出契�
 - 前端 UI 组件重写 — 输出层不在核心引擎范围内
 - Backend (Cloudflare Worker) 重写 — 独立部署单元，无架构债务
 
+## Current State
+
+**v1.0 Core Engine Rewrite — SHIPPED 2026-03-28**
+
+- 22,226 行 TypeScript，13 个 Agent，323 commits over 13 days
+- 核心引擎完全重写：PipelineLoop + StageExecutor + FixLoopRunner + ShutdownCoordinator
+- 零全局状态：所有 production code 使用 RunContext 依赖注入
+- 零 console 调用：全部通过 Logger/stderr
+- Coder: 1312 行 → 226 行 facade + 4 子模块
+- Orchestrator: 1080 行 → 208 行 facade + OrchestratorGitOps
+
+**已知 tech debt（carry forward to v1.1）：**
+- Fix loop 缺乏停滞检测，无效跑满 5 轮
+- Tester 错误分类粗糙（parse error vs assertion failure 不区分）
+- Manifest 只检查文件存在，不检查内容质量
+
 ## Context
 
 **技术栈**：TypeScript 5.9 / Node.js (ESM) / Vitest / Zod v4 / MCP SDK / Anthropic SDK / Octokit / Playwright
 
-**现有代码规模**：~15,000+ 行 TypeScript，13 个 Agent，6 层架构（CLI → MCP → Orchestration → State Machine → Agent → Provider）
+**代码规模**：~22,226 行 TypeScript，13 个 Agent，6 层架构（CLI → MCP → Orchestration → State Machine → Agent → Provider）
 
 **代码库分析**：`.planning/codebase/` 包含完整的架构、技术栈、规范、测试、集成、问题分析（2026-03-26）
 
-**重写策略**：方案 B — 保留接口契约和稳定胶水层（~30%），重写核心引擎和 Agent 实现（~70%）。保留 `types.ts`、`llm-provider.ts`、`interaction-handler.ts`、`adapters/types.ts` 等接口文件不变，确保重写后的模块与未重写模块无缝对接。
-
-**关键约束**：重写过程中必须保持现有测试通过（渐进式替换，不是一次性切换）。每个 phase 完成后需验证未被修改的模块仍然正常工作。
+**重写策略**：方案 B — 保留接口契约和稳定胶水层（~30%），重写核心引擎和 Agent 实现（~70%）。v1.0 已完成。
 
 ## Constraints
 
@@ -78,7 +92,7 @@ Pipeline 引擎的可靠性和可维护性 — 每个 Agent 的输入输出契�
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| 方案 B：核心引擎重写 + Agent 层重构 | 全部推倒浪费稳定代码，只修补无法解决交叉依赖的架构问题 | — Pending |
+| 方案 B：核心引擎重写 + Agent 层重构 | 全部推倒浪费稳定代码，只修补无法解决交叉依赖的架构问题 | ✓ Good — v1.0 shipped |
 | 保留 bypassPermissions | 产品设计本身就是 YOLO 模式 | ✓ Good |
 | Shell 注入面保持现状 | YOLO 模式下 LLM 已有完全 shell 权限，白名单校验收益低 | ✓ Good |
 | ArtifactStore 实例化替代全局变量 | 消除并发风险和测试隔离问题，为未来并行 stage 铺路 | ✓ Phase 2 |
@@ -102,4 +116,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 after Phase 6 (Integration Wiring Fixes) completion — ALL PHASES COMPLETE including gap closure*
+*Last updated: 2026-03-28 after v1.0 milestone*
