@@ -181,9 +181,10 @@ export function attachCLIProgress(eventBusInstance: EventBus): () => void {
     }
   });
 
-  on('coder:fix-round', (round, totalTests, passedTests, approach) => {
+  on('coder:fix-round', (round, totalTests, passedTests, approach, errorCategory) => {
     const failed = totalTests - passedTests;
-    process.stdout.write(`  ${YELLOW}↻ fix round ${round}:${RESET} ${passedTests}/${totalTests} passed, ${failed} failed — ${approach}\n`);
+    const categoryInfo = errorCategory ? ` [${errorCategory}]` : '';
+    process.stdout.write(`  ${YELLOW}↻ fix round ${round}:${RESET} ${passedTests}/${totalTests} passed, ${failed} failed — ${approach}${categoryInfo}\n`);
   });
 
   // ── Artifacts ──

@@ -26,7 +26,7 @@ export interface PipelineEvents {
   'manifest:written': (stage: StageName, name: string) => void;
   'snapshot:created': (stage: StageName, runId: string) => void;
   'agent:summary': (stage: StageName, summary: string) => void;
-  'coder:fix-round': (round: number, totalTests: number, passedTests: number, approach: string) => void;
+  'coder:fix-round': (round: number, totalTests: number, passedTests: number, approach: string, errorCategory?: string) => void;
   'evolution:proposals': (proposals: Array<{ id: string; type: string; reason: string }>) => void;
   'evolution:analyzing': (runId: string) => void;
   'evolution:proposed': (proposalId: string, stage: StageName) => void;

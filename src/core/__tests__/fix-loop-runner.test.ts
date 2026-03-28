@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { FixLoopRunner } from '../fix-loop-runner.js';
+import type { FixStrategy } from '../fix-loop-runner.js';
 import type { StageExecutor } from '../stage-executor.js';
 import type { RunContext } from '../run-context.js';
 import type { PipelineRun } from '../types.js';
@@ -300,5 +301,202 @@ describe('FixLoopRunner', () => {
 
     // Should have done exactly 1 round (coder + tester)
     expect((executor.execute as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2);
+  });
+
+  describe('stagnation detection', () => {
+    const ASSERTION_FAIL_OUTPUT = [
+      ' FAIL src/foo.test.ts',
+      '  AssertionError: expected 1 to equal 2',
+      '  expect(result).toBe(2)',
+      ' FAIL src/bar.test.ts',
+      '  AssertionError: expected "hello" to equal "world"',
+      '  expect(greeting).toEqual("world")',
+    ].join('\n');
+
+    it('terminates early when identical failures repeat for 2 consecutive rounds', async () => {
+      ctx.store.write('test-report.manifest.json', JSON.stringify({ verdict: 'fail' }));
+      ctx.store.write('test-report.md', ASSERTION_FAIL_OUTPUT);
+
+      // Executor never changes the test output -- same failures every round
+      (executor.execute as ReturnType<typeof vi.fn>).mockResolvedValue({ type: 'done' });
+
+      const runner = new FixLoopRunner(executor, ctx);
+      await runner.run(run, onStateSave);
+
+      // Should terminate after 2 rounds (stagnation), not 5
+      // 2 rounds * 2 calls (coder + tester) = 4 calls
+      const calls = (executor.execute as ReturnType<typeof vi.fn>).mock.calls;
+      expect(calls.length).toBeLessThan(10); // Less than full 5 rounds
+      expect(calls.length).toBe(4); // Exactly 2 rounds
+    });
+
+    it('writes stagnation-report.md to store on stagnation', async () => {
+      ctx.store.write('test-report.manifest.json', JSON.stringify({ verdict: 'fail' }));
+      ctx.store.write('test-report.md', ASSERTION_FAIL_OUTPUT);
+
+      (executor.execute as ReturnType<typeof vi.fn>).mockResolvedValue({ type: 'done' });
+
+      const runner = new FixLoopRunner(executor, ctx);
+      await runner.run(run, onStateSave);
+
+      // Stagnation report should exist
+      const report = ctx.store.read('stagnation-report.md');
+      expect(report).toContain('# Stagnation Report');
+      expect(report).toContain('src/foo.test.ts');
+      expect(report).toContain('src/bar.test.ts');
+      expect(report).toContain('assertion');
+    });
+
+    it('stagnation report contains suggested fix direction', async () => {
+      ctx.store.write('test-report.manifest.json', JSON.stringify({ verdict: 'fail' }));
+      ctx.store.write('test-report.md', ASSERTION_FAIL_OUTPUT);
+
+      (executor.execute as ReturnType<typeof vi.fn>).mockResolvedValue({ type: 'done' });
+
+      const runner = new FixLoopRunner(executor, ctx);
+      await runner.run(run, onStateSave);
+
+      const report = ctx.store.read('stagnation-report.md');
+      expect(report).toContain('Suggested Fix Direction');
+      expect(report).toContain('logic mismatch');
+    });
+
+    it('does not stagnate when failures change between rounds', async () => {
+      ctx.store.write('test-report.manifest.json', JSON.stringify({ verdict: 'fail' }));
+
+      let round = 0;
+      (executor.execute as ReturnType<typeof vi.fn>).mockImplementation(async (_run: unknown, stage: string) => {
+        if (stage === 'tester') {
+          round++;
+          // Different failures each round
+          ctx.store.write('test-report.md', [
+            ` FAIL src/test-${round}.test.ts`,
+            `  Error: unique failure ${round}`,
+          ].join('\n'));
+          if (round >= 5) {
+            ctx.store.write('test-report.manifest.json', JSON.stringify({ verdict: 'pass' }));
+          }
+        }
+        return { type: 'done' };
+      });
+
+      const runner = new FixLoopRunner(executor, ctx);
+      await runner.run(run, onStateSave);
+
+      // Should run all 5 rounds since failures change each time
+      expect(round).toBe(5);
+    });
+  });
+
+  describe('classification-driven strategy', () => {
+    it('selectApproach returns FixStrategy with direction based on error classification', async () => {
+      ctx.store.write('test-report.manifest.json', JSON.stringify({ verdict: 'fail' }));
+      // Write assertion errors
+      ctx.store.write('test-report.md', [
+        ' FAIL src/logic.test.ts',
+        '  expect(add(1, 2)).toBe(4)',
+        '  Expected: 4',
+        '  Received: 3',
+      ].join('\n'));
+
+      let capturedApproach = '';
+      let callCount = 0;
+      (executor.execute as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        callCount++;
+        if (callCount >= 2) {
+          ctx.store.write('test-report.manifest.json', JSON.stringify({ verdict: 'pass' }));
+        }
+        return { type: 'done' };
+      });
+
+      ctx.eventBus.on('coder:fix-round', (_round, _total, _passed, approach, errorCategory) => {
+        capturedApproach = approach;
+      });
+
+      const runner = new FixLoopRunner(executor, ctx);
+      await runner.run(run, onStateSave);
+
+      expect(capturedApproach).toBe('direct-fix');
+    });
+
+    it('emits errorCategory in coder:fix-round event', async () => {
+      ctx.store.write('test-report.manifest.json', JSON.stringify({ verdict: 'fail' }));
+      ctx.store.write('test-report.md', [
+        ' FAIL src/import.test.ts',
+        '  Cannot find module "./missing-module"',
+        '  ERR_MODULE_NOT_FOUND',
+      ].join('\n'));
+
+      let capturedCategory: string | undefined;
+      let callCount = 0;
+      (executor.execute as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        callCount++;
+        if (callCount >= 2) {
+          ctx.store.write('test-report.manifest.json', JSON.stringify({ verdict: 'pass' }));
+        }
+        return { type: 'done' };
+      });
+
+      ctx.eventBus.on('coder:fix-round', (_round, _total, _passed, _approach, errorCategory) => {
+        capturedCategory = errorCategory;
+      });
+
+      const runner = new FixLoopRunner(executor, ctx);
+      await runner.run(run, onStateSave);
+
+      expect(capturedCategory).toBe('parse-import');
+    });
+
+    it('includes classification context in test-failures-for-coder.md', async () => {
+      ctx.store.write('test-report.manifest.json', JSON.stringify({ verdict: 'fail' }));
+      ctx.store.write('test-report.md', [
+        ' FAIL src/logic.test.ts',
+        '  expect(result).toBe(42)',
+        '  Expected: 42',
+        '  Received: 0',
+      ].join('\n'));
+
+      let callCount = 0;
+      (executor.execute as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        callCount++;
+        if (callCount >= 2) {
+          ctx.store.write('test-report.manifest.json', JSON.stringify({ verdict: 'pass' }));
+        }
+        return { type: 'done' };
+      });
+
+      const runner = new FixLoopRunner(executor, ctx);
+      await runner.run(run, onStateSave);
+
+      const coderFile = ctx.store.read('test-failures-for-coder.md');
+      expect(coderFile).toContain('Test Failure Analysis');
+      expect(coderFile).toContain('Fix Focus:');
+      expect(coderFile).toContain('Fix direction:');
+    });
+
+    it('maps parse-import to config-dependency direction', async () => {
+      ctx.store.write('test-report.manifest.json', JSON.stringify({ verdict: 'fail' }));
+      ctx.store.write('test-report.md', [
+        ' FAIL src/broken-import.test.ts',
+        '  Cannot find module "@/lib/api"',
+        '  Module not found: Error: cannot resolve',
+      ].join('\n'));
+
+      let callCount = 0;
+      (executor.execute as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        callCount++;
+        if (callCount >= 2) {
+          ctx.store.write('test-report.manifest.json', JSON.stringify({ verdict: 'pass' }));
+        }
+        return { type: 'done' };
+      });
+
+      const runner = new FixLoopRunner(executor, ctx);
+      await runner.run(run, onStateSave);
+
+      const coderFile = ctx.store.read('test-failures-for-coder.md');
+      expect(coderFile).toContain('config-dependency');
+      expect(coderFile).toContain('Fix Focus: Config/Dependencies');
+    });
   });
 });
