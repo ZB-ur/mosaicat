@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { writeArtifact, readArtifact } from './artifact.js';
+import { QualityGateSchema, ImplementationStatusSchema } from './quality-gate-types.js';
 
 // --- Manifest Schemas ---
 
@@ -8,6 +9,7 @@ export const ResearchManifestSchema = z.object({
   key_insights: z.array(z.string()),
   feasibility: z.enum(['high', 'medium', 'low']),
   risks: z.array(z.string()),
+  quality_gate: QualityGateSchema.optional(),
 });
 
 export const FeatureSchema = z.object({
@@ -19,6 +21,7 @@ export const PrdManifestSchema = z.object({
   features: z.array(FeatureSchema),
   constraints: z.array(z.string()),
   out_of_scope: z.array(z.string()),
+  quality_gate: QualityGateSchema.optional(),
 });
 
 export const UxFlowsManifestSchema = z.object({
@@ -30,6 +33,7 @@ export const UxFlowsManifestSchema = z.object({
   ),
   components: z.array(z.string()),
   interaction_rules: z.array(z.string()),
+  quality_gate: QualityGateSchema.optional(),
 });
 
 export const ApiSpecManifestSchema = z.object({
@@ -41,6 +45,7 @@ export const ApiSpecManifestSchema = z.object({
     })
   ),
   models: z.array(z.string()),
+  quality_gate: QualityGateSchema.optional(),
 });
 
 export const ComponentsManifestSchema = z.object({
@@ -53,6 +58,7 @@ export const ComponentsManifestSchema = z.object({
   ),
   screenshots: z.array(z.string()),
   previews: z.array(z.string()).optional(),
+  quality_gate: QualityGateSchema.optional(),
 });
 
 export const TechSpecManifestSchema = z.object({
@@ -72,6 +78,7 @@ export const TechSpecManifestSchema = z.object({
       covers_features: z.array(z.string()),
     })
   ),
+  quality_gate: QualityGateSchema.optional(),
 });
 
 export const CodeManifestSchema = z.object({
@@ -80,11 +87,13 @@ export const CodeManifestSchema = z.object({
       path: z.string(),
       module: z.string(),
       description: z.string(),
+      implementation_status: ImplementationStatusSchema.optional(),
     })
   ),
   modules: z.array(z.string()),
   covers_tasks: z.array(z.string()),
   covers_features: z.array(z.string()),
+  quality_gate: QualityGateSchema.optional(),
 });
 
 export const TestPlanManifestSchema = z.object({
@@ -106,6 +115,7 @@ export const TestPlanManifestSchema = z.object({
       ),
     })
   ),
+  quality_gate: QualityGateSchema.optional(),
 });
 
 export const TestReportManifestSchema = z.object({
@@ -122,6 +132,7 @@ export const TestReportManifestSchema = z.object({
     })
   ),
   verdict: z.enum(['pass', 'fail']),
+  quality_gate: QualityGateSchema.optional(),
 });
 
 export const SecurityReportManifestSchema = z.object({
@@ -139,6 +150,7 @@ export const SecurityReportManifestSchema = z.object({
     })
   ),
   verdict: z.enum(['pass', 'fail', 'warn']),
+  quality_gate: QualityGateSchema.optional(),
 });
 
 export const ReviewManifestSchema = z.object({
@@ -155,6 +167,7 @@ export const ReviewManifestSchema = z.object({
     missing_tasks: z.array(z.string()),
   }),
   verdict: z.enum(['pass', 'pass_with_suggestions', 'fail']),
+  quality_gate: QualityGateSchema.optional(),
 });
 
 // Schema registry by manifest name
@@ -214,6 +227,8 @@ export function extractManifestSummary(manifestName: string): string[] {
     return [];
   }
 }
+
+export type { QualityGate, ImplementationStatus } from './quality-gate-types.js';
 
 const SUMMARY_EXTRACTORS: Record<string, (data: Record<string, unknown>) => string[]> = {
   'research.manifest.json': (data) => {
