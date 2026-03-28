@@ -1,8 +1,8 @@
-# Mosaicat v2 — Core Engine Rewrite
+# Mosaicat
 
 ## What This Is
 
-Mosaicat 是一个 AI 多 Agent 流水线系统：用户给一条指令，经过最多 13 个 Agent 串行处理，产出从需求文档到设计稿到 API 规范到完整代码的交付物。当前版本（v1）功能完整但积累了显著的架构债务和代码质量问题。本次重写聚焦核心引擎层和 Agent 实现层，保留稳定接口和领域资产。
+Mosaicat 是一个 AI 多 Agent 流水线系统：用户给一条指令，经过最多 13 个 Agent 串行处理，产出从需求文档到设计稿到 API 规范到完整代码的交付物。v1.0 完成了核心引擎重写（PipelineLoop + StageExecutor + FixLoopRunner + ShutdownCoordinator），消除了架构债务。当前聚焦产出物质量和运行效率。
 
 ## Core Value
 
@@ -28,22 +28,14 @@ Pipeline 引擎的可靠性和可维护性 — 每个 Agent 的输入输出契�
 
 ### Active
 
-本次重写的目标需求：
+v1.1 产出物质量提升 & 成本优化：
 
-- [x] Orchestrator 用迭代循环替代递归 `executeStage`，消除栈溢出风险 — Validated in Phase 3: Execution Engine
-- [x] Orchestrator 的 Tester→Coder 修复循环从索引操作改为独立方法 — Validated in Phase 3: Execution Engine
-- [x] Artifact 层从全局可变状态改为 `ArtifactStore` 实例，按 run 隔离 — Validated in Phase 2: Foundation Layer
-- [x] Coder Agent 从 1312 行单文件拆分为 Planner / Builder / BuildVerifier / SmokeRunner — Validated in Phase 4: Coder Decomposition
-- [x] Evolution Engine 消灭 9 个 silent catch，引入统一错误处理（log + fallback） — Validated in Phase 2: Foundation Layer
-- [x] Validator 消灭 7 个 silent catch，对损坏的 manifest 返回显式 "unreadable" 状态 — Validated in Phase 2: Foundation Layer
-- [x] Context Manager 在 prompt 文件缺失时 fail-fast 或 log warning，不静默降级 — Validated in Phase 2: Foundation Layer
-- [x] Retrying Provider 设有限重试上限（默认 20 次）+ 总耗时熔断器 — Validated in Phase 3: Execution Engine
-- [x] 添加优雅关闭处理（SIGINT/SIGTERM → 完成当前 stage 写入后退出） — Validated in Phase 3: Execution Engine
-- [x] 补齐 resume 流程集成测试（覆盖 `resumeRun()`、`--from` stage reset、artifact cleanup） — Validated in Phase 1: Test Infrastructure Hardening
-- [x] 补齐 Coder shell 命令执行路径测试（setup/build/verify/smoke-test） — Validated in Phase 4: Coder Decomposition
-- [x] 统一 console.log 到 logger 模块（消除 30+ 处绕过 logger 的直接输出） — Validated in Phase 5: Orchestrator Facade
-- [x] Orchestrator 可变 config 注入改为 clone-before-mutate 模式 — Validated in Phase 2: Foundation Layer
-- [x] SecurityAuditor 排除 .env 文件内容扫描，只检查存在性 — Validated in Phase 2: Foundation Layer
+- [ ] 各阶段自检门控强化：manifest 区分 stub vs 真实实现，不达标产物阻断而非放行
+- [ ] Coder 产出质量保障：禁止 placeholder 组件通过验证，支持分批实现
+- [ ] QA/Tester 基础设施修复：测试文件规范校验，fix loop 根因诊断能力
+- [ ] UI Designer 成本优化：减少不必要的组件生成和截图，控制 token 消耗
+- [ ] 意图澄清 & 研究深度提升：结构化用户画像，支持真实网络调研
+- [ ] Validator 从 manifest 表面检查升级为产出物内容抽检
 
 ### Out of Scope
 
@@ -55,21 +47,27 @@ Pipeline 引擎的可靠性和可维护性 — 每个 Agent 的输入输出契�
 - 前端 UI 组件重写 — 输出层不在核心引擎范围内
 - Backend (Cloudflare Worker) 重写 — 独立部署单元，无架构债务
 
-## Current State
+## Current Milestone: v1.1 产出物质量全面提升 & 产出成本与耗时优化
+
+**Goal:** 提升全链路产出物质量（消灭 placeholder/虚报覆盖率/无效测试），优化 UI 设计成本和 fix loop 效率
+
+**Target features:**
+- 强化各阶段自检门控：manifest 必须区分 stub vs 真实实现，阶段产出不达标时阻断而非放行
+- Coder 产出质量保障：禁止 placeholder 组件通过验证，分批实现而非一次性全量
+- QA/Tester 基础设施修复：测试文件规范校验，fix loop 根因诊断能力
+- UI Designer 成本优化：减少不必要的组件生成和截图，控制 token 消耗
+- 意图澄清 & 研究深度提升：结构化用户画像，支持真实网络调研
+- Validator 从 manifest 表面检查升级为产出物内容抽检
+
+## History
 
 **v1.0 Core Engine Rewrite — SHIPPED 2026-03-28**
 
 - 22,226 行 TypeScript，13 个 Agent，323 commits over 13 days
 - 核心引擎完全重写：PipelineLoop + StageExecutor + FixLoopRunner + ShutdownCoordinator
 - 零全局状态：所有 production code 使用 RunContext 依赖注入
-- 零 console 调用：全部通过 Logger/stderr
 - Coder: 1312 行 → 226 行 facade + 4 子模块
 - Orchestrator: 1080 行 → 208 行 facade + OrchestratorGitOps
-
-**已知 tech debt（carry forward to v1.1）：**
-- Fix loop 缺乏停滞检测，无效跑满 5 轮
-- Tester 错误分类粗糙（parse error vs assertion failure 不区分）
-- Manifest 只检查文件存在，不检查内容质量
 
 ## Context
 
@@ -79,7 +77,7 @@ Pipeline 引擎的可靠性和可维护性 — 每个 Agent 的输入输出契�
 
 **代码库分析**：`.planning/codebase/` 包含完整的架构、技术栈、规范、测试、集成、问题分析（2026-03-26）
 
-**重写策略**：方案 B — 保留接口契约和稳定胶水层（~30%），重写核心引擎和 Agent 实现（~70%）。v1.0 已完成。
+**v1.0 产出物质量基线**（run-1774640936546 分析）：code.manifest 虚报 100% 覆盖但实际仅 45%，14/16 test suite 因 .ts/.tsx 扩展名问题全部 crash，fix loop 未能诊断根因，UIDesigner 耗时 39min 占总时长 30%
 
 ## Constraints
 
