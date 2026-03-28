@@ -141,7 +141,7 @@ describe('GitPublisher (API mode)', () => {
     });
 
     it('should upload files, create commit, and create Draft PR on first commit', async () => {
-      const tmpFile = '/tmp/mosaicat-test-artifact.txt';
+      const tmpFile = '/tmp/mosaicat-test-artifact.md';
       fs.writeFileSync(tmpFile, 'hello world');
 
       try {
@@ -170,7 +170,7 @@ describe('GitPublisher (API mode)', () => {
     });
 
     it('should NOT create PR again on second commit', async () => {
-      const tmpFile = '/tmp/mosaicat-test-artifact2.txt';
+      const tmpFile = '/tmp/mosaicat-test-artifact2.md';
       fs.writeFileSync(tmpFile, 'first');
 
       try {
@@ -192,11 +192,11 @@ describe('GitPublisher (API mode)', () => {
     });
 
     it('should skip missing files but commit existing ones', async () => {
-      const tmpFile = '/tmp/mosaicat-test-existing.txt';
+      const tmpFile = '/tmp/mosaicat-test-existing.md';
       fs.writeFileSync(tmpFile, 'exists');
 
       try {
-        await publisher.commitStage('ux_designer', ['/nonexistent.txt', tmpFile]);
+        await publisher.commitStage('ux_designer', ['/nonexistent.md', tmpFile]);
         const blobCalls = adapter.calls.filter((c) => c.method === 'createBlob');
         expect(blobCalls).toHaveLength(1);
       } finally {
@@ -208,7 +208,7 @@ describe('GitPublisher (API mode)', () => {
   describe('publish', () => {
     it('should add comment and mark PR ready', async () => {
       await publisher.init('run-12345', 'Test');
-      const tmpFile = '/tmp/mosaicat-test-publish.txt';
+      const tmpFile = '/tmp/mosaicat-test-publish.md';
       fs.writeFileSync(tmpFile, 'data');
       await publisher.commitStage('researcher', [tmpFile]);
       fs.unlinkSync(tmpFile);

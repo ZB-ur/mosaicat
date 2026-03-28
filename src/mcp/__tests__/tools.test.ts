@@ -19,7 +19,7 @@ class MockLLMProvider implements LLMProvider {
     this.callCount++;
     // UIDesigner planner sub-phase
     if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
-      return { content: `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "C1", "file": "components/C1.tsx", "preview": "previews/C1.html", "purpose": "Test", "covers_features": ["F-001"], "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->` };
+      return { content: `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "C1", "file": "components/C1.tsx", "preview": "previews/C1.html", "purpose": "Test", "covers_features": ["F-001"], "parent": null, "children": [], "props": [], "priority": 1, "category": "atomic"}]}\n<!-- END:ui-plan.json -->` };
     }
     // UIDesigner builder sub-phase
     if (sys.includes('UIBuilder') || sys.includes('builder phase of the UI designer')) {
@@ -27,27 +27,51 @@ class MockLLMProvider implements LLMProvider {
     }
 
     const stageResponses: Record<string, string> = {
-      researcher: JSON.stringify({ artifact: "## Market Overview\nTest", manifest: { competitors: ["A"], key_insights: ["t"], feasibility: "high", risks: [] } }),
+      researcher: "## Market Overview\nTest\n\n```json\n{\"competitors\":[\"A\"],\"key_insights\":[\"t\"],\"feasibility\":\"high\",\"risks\":[]}\n```",
       product_owner: JSON.stringify({ artifact: "## Goal\nTest\n## Features\n- f1", manifest: { features: [{ id: "F-001", name: "f1" }], constraints: [], out_of_scope: [] } }),
       ux_designer: JSON.stringify({ artifact: "## User Journeys\n### Flow 1: main\nA → B\n## Component Inventory\n- C1", manifest: { flows: [{ name: "main", covers_features: ["F-001"] }], components: ["C1"], interaction_rules: [] } }),
       api_designer: JSON.stringify({ artifact: "openapi: \"3.0.0\"\ninfo:\n  title: T\npaths:\n  /t:\n    get:\n      summary: T", manifest: { endpoints: [{ method: "GET", path: "/t", covers_features: ["F-001"] }], models: ["M"] } }),
       validator: `<!-- ARTIFACT:validation-report.md -->\n## Validation Summary\n- Status: PASS\n<!-- END:validation-report.md -->`,
     };
 
-    // Detect stage from prompt content
-    for (const [stage, response] of Object.entries(stageResponses)) {
-      const artifactName = stage === 'researcher' ? 'research.md' : stage === 'product_owner' ? 'prd.md' : stage === 'ux_designer' ? 'ux-flows.md' : stage === 'api_designer' ? 'api-spec.yaml' : 'validation-report.md';
-      if (_prompt.includes(artifactName) || sys.includes(stage.replace('_', ' '))) {
-        return { content: response };
+    // Detect stage from system prompt heading (case-insensitive)
+    const sysLower = sys.toLowerCase();
+    const stageDetection: Array<[string, string]> = [
+      ['researcher agent', 'researcher'],
+      ['productowner agent', 'product_owner'],
+      ['uxdesigner agent', 'ux_designer'],
+      ['apidesigner agent', 'api_designer'],
+      ['validator agent', 'validator'],
+    ];
+    for (const [pattern, stage] of stageDetection) {
+      if (sysLower.includes(pattern)) {
+        return { content: stageResponses[stage]! };
       }
     }
 
     // Fallback
     const nonUIStages = DEFAULT_STAGES.filter((s) => s !== 'ui_designer');
     const stage = nonUIStages[this.callCount - 1];
-    return { content: stageResponses[stage] ?? '[mock] unknown' };
+    return { content: stageResponses[stage!] ?? '[mock] unknown' };
   }
 }
+
+// Mock CLIInteractionHandler to avoid terminal input blocking
+vi.mock('../../core/interaction-handler.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../core/interaction-handler.js')>();
+  return {
+    ...original,
+    CLIInteractionHandler: class AutoAnswerCLIHandler {
+      async onManualGate() { return { approved: true }; }
+      async onClarification(
+        _stage: string, _question: string, _runId: string,
+        options?: Array<{ label: string }>,
+      ) {
+        return options?.[0]?.label ?? 'default';
+      }
+    },
+  };
+});
 
 vi.mock('../../core/provider-factory.js', () => ({
   createProvider: () => new MockLLMProvider(),
@@ -106,7 +130,7 @@ describe('MCP Tools', () => {
     const runManager = new RunManager();
 
     // Start run with auto-approve
-    const runId = await runManager.startRun('test idea', true);
+    const runId = await runManager.startRun('test idea', true, 'design-only');
     expect(runId).toBeDefined();
 
     // Wait for pipeline to complete
@@ -116,17 +140,21 @@ describe('MCP Tools', () => {
     expect(status).toBeDefined();
     expect(status!.state).toBe('completed');
 
-    // Artifacts should exist
-    expect(fs.existsSync('.mosaic/artifacts/research.md')).toBe(true);
-    expect(fs.existsSync('.mosaic/artifacts/prd.md')).toBe(true);
-    expect(fs.existsSync('.mosaic/artifacts/validation-report.md')).toBe(true);
+    // Artifacts should exist in run-scoped directory
+    const artifactsBase = '.mosaic/artifacts';
+    const runDirs = fs.readdirSync(artifactsBase).filter((d: string) => d.startsWith('run-'));
+    expect(runDirs.length).toBeGreaterThanOrEqual(1);
+    const runDir = `${artifactsBase}/${runDirs[runDirs.length - 1]}`;
+    expect(fs.existsSync(`${runDir}/research.md`)).toBe(true);
+    expect(fs.existsSync(`${runDir}/prd.md`)).toBe(true);
+    expect(fs.existsSync(`${runDir}/validation-report.md`)).toBe(true);
   }, 30000);
 
   it('should list artifacts from disk', async () => {
     const { RunManager } = await import('../../core/run-manager.js');
     const runManager = new RunManager();
 
-    const runId = await runManager.startRun('test', true);
+    const runId = await runManager.startRun('test', true, 'design-only');
     await runManager.waitForRun(runId);
 
     // Simulate what mosaic_artifacts tool does
@@ -144,8 +172,9 @@ describe('MCP Tools', () => {
     const files = listFiles(artifactsDir);
 
     expect(files.length).toBeGreaterThan(0);
-    expect(files).toContain('research.md');
-    expect(files).toContain('prd.md');
+    // Files are nested under run-{timestamp}/ so check with partial match
+    expect(files.some((f: string) => f.endsWith('/research.md'))).toBe(true);
+    expect(files.some((f: string) => f.endsWith('/prd.md'))).toBe(true);
   }, 30000);
 
   it('should return error for unknown run status', async () => {

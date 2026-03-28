@@ -19,7 +19,7 @@ class MockLLMProvider implements LLMProvider {
     this.callCount++;
     // UIDesigner planner sub-phase
     if (sys.includes('UIPlanner') || sys.includes('planning phase of the UI designer')) {
-      return { content: `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "Test", "covers_features": ["F-001"], "parent": null, "children": [], "props": [], "priority": 1}]}\n<!-- END:ui-plan.json -->` };
+      return { content: `<!-- ARTIFACT:ui-plan.json -->\n{"components": [{"name": "CompA", "file": "components/CompA.tsx", "preview": "previews/CompA.html", "purpose": "Test", "covers_features": ["F-001"], "parent": null, "children": [], "props": [], "priority": 1, "category": "atomic"}]}\n<!-- END:ui-plan.json -->` };
     }
     // UIDesigner builder sub-phase
     if (sys.includes('UIBuilder') || sys.includes('builder phase of the UI designer')) {
@@ -29,7 +29,7 @@ class MockLLMProvider implements LLMProvider {
     const stage = DEFAULT_STAGES[this.callCount - 1];
 
     const responses: Record<string, string> = {
-      researcher: JSON.stringify({ artifact: "## Market Overview\nTest research content", manifest: { competitors: ["A"], key_insights: ["test"], feasibility: "high", risks: [] } }),
+      researcher: "## Market Overview\nTest research content\n\n```json\n{\"competitors\":[\"A\"],\"key_insights\":[\"test\"],\"feasibility\":\"high\",\"risks\":[]}\n```",
       product_owner: JSON.stringify({ artifact: "## Goal\nTest goal\n## Features\n- feat-a", manifest: { features: [{ id: "F-001", name: "feat-a" }], constraints: [], out_of_scope: [] } }),
       ux_designer: JSON.stringify({ artifact: "## User Journeys\n### Flow 1: main-flow\nStep 1 → Step 2\n## Component Inventory\n- CompA", manifest: { flows: [{ name: "main-flow", covers_features: ["F-001"] }], components: ["CompA"], interaction_rules: [] } }),
       api_designer: JSON.stringify({ artifact: "openapi: \"3.0.0\"\ninfo:\n  title: Test\npaths:\n  /test:\n    get:\n      summary: Test", manifest: { endpoints: [{ method: "GET", path: "/test", covers_features: ["F-001"] }], models: ["TestModel"] } }),
@@ -39,6 +39,23 @@ class MockLLMProvider implements LLMProvider {
     return { content: responses[stage!] ?? '[mock] unknown stage' };
   }
 }
+
+// Mock CLIInteractionHandler to avoid terminal input blocking
+vi.mock('../interaction-handler.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../interaction-handler.js')>();
+  return {
+    ...original,
+    CLIInteractionHandler: class AutoAnswerCLIHandler {
+      async onManualGate() { return { approved: true }; }
+      async onClarification(
+        _stage: string, _question: string, _runId: string,
+        options?: Array<{ label: string }>,
+      ) {
+        return options?.[0]?.label ?? 'default';
+      }
+    },
+  };
+});
 
 // Mock the provider factory to use our mock
 vi.mock('../provider-factory.js', () => ({
@@ -87,7 +104,7 @@ describe('RunManager', () => {
     const { RunManager } = await import('../run-manager.js');
     const manager = new RunManager();
 
-    const runId = await manager.startRun('test instruction', true);
+    const runId = await manager.startRun('test instruction', true, 'design-only');
     expect(runId).toMatch(/^managed-/);
 
     // Status should be available immediately
@@ -108,7 +125,7 @@ describe('RunManager', () => {
     const { RunManager } = await import('../run-manager.js');
     const manager = new RunManager();
 
-    const id1 = await manager.startRun('test 1', true);
+    const id1 = await manager.startRun('test 1', true, 'design-only');
     await manager.waitForRun(id1);
 
     const runs = manager.listRuns();

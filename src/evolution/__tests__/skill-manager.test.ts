@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { EvolutionProposal } from '../types.js';
 import {
   persistSkill,
@@ -7,8 +9,6 @@ import {
   listSkills,
   loadSkillsForAgent,
 } from '../skill-manager.js';
-
-const SKILLS_DIR = '.mosaic/evolution/skills';
 
 function makeProposal(overrides: Partial<EvolutionProposal> = {}): EvolutionProposal {
   return {
@@ -30,15 +30,20 @@ function makeProposal(overrides: Partial<EvolutionProposal> = {}): EvolutionProp
 }
 
 describe('skill-manager', () => {
+  let originalCwd: string;
+  let tmpDir: string;
+
   beforeEach(() => {
-    if (fs.existsSync(SKILLS_DIR)) {
-      fs.rmSync(SKILLS_DIR, { recursive: true });
-    }
+    // Isolate from project's real skills/builtin by chdir to a temp dir
+    originalCwd = process.cwd();
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mosaic-skill-test-'));
+    process.chdir(tmpDir);
   });
 
   afterEach(() => {
-    if (fs.existsSync(SKILLS_DIR)) {
-      fs.rmSync(SKILLS_DIR, { recursive: true });
+    process.chdir(originalCwd);
+    if (tmpDir && fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 
@@ -78,7 +83,7 @@ describe('skill-manager', () => {
       expect(fs.readFileSync(info.filePath, 'utf-8')).toContain('Structured Comparison');
     });
 
-    it('persists a private skill to agent directory', () => {
+    it('persists a private skill to agent directory with SKILL.md format', () => {
       const info = persistSkill(makeProposal({
         skillMetadata: {
           name: 'deep-analysis',
@@ -88,7 +93,8 @@ describe('skill-manager', () => {
       }));
 
       expect(info.scope).toBe('private');
-      expect(info.filePath).toContain('researcher/deep-analysis.md');
+      // New format: researcher/deep-analysis/SKILL.md
+      expect(info.filePath).toContain(path.join('researcher', 'deep-analysis', 'SKILL.md'));
     });
 
     it('throws when skillMetadata is missing', () => {
@@ -103,7 +109,9 @@ describe('skill-manager', () => {
         proposedContent: '# Updated content',
       }));
 
-      expect(fs.readFileSync(updated.filePath, 'utf-8')).toBe('# Updated content');
+      // File now has frontmatter + content
+      const fileContent = fs.readFileSync(updated.filePath, 'utf-8');
+      expect(fileContent).toContain('# Updated content');
       // Index should still have only 1 entry
       const skills = listSkills('researcher');
       const matching = skills.filter((s) => s.name === 'structured-comparison');

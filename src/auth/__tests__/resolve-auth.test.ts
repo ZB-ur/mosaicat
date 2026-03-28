@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../auth-store.js', () => ({
   loadCachedAuth: vi.fn(),
@@ -13,10 +13,15 @@ vi.mock('node:child_process', () => ({
   execSync: vi.fn(),
 }));
 
+vi.mock('@inquirer/prompts', () => ({
+  select: vi.fn(),
+}));
+
 import { resolveGitHubAuth, parseGitHubUrl } from '../resolve-auth.js';
 import { loadCachedAuth } from '../auth-store.js';
 import { listInstallations, getInstallationToken } from '../token-service.js';
 import { execSync } from 'node:child_process';
+import { select } from '@inquirer/prompts';
 
 describe('resolveGitHubAuth', () => {
   beforeEach(() => {
@@ -58,7 +63,7 @@ describe('resolveGitHubAuth', () => {
     });
   });
 
-  it('should match via git remote', async () => {
+  it('should prompt user to select when multiple repos exist', async () => {
     vi.mocked(loadCachedAuth).mockReturnValue({ userToken: 'gho_test', userLogin: 'alice' });
     vi.mocked(listInstallations).mockResolvedValue([
       {
@@ -74,25 +79,21 @@ describe('resolveGitHubAuth', () => {
     });
     vi.mocked(execSync).mockReturnValue('git@github.com:alice/repo2.git\n');
 
+    // Mock the interactive select to pick repo2
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.mocked(select).mockResolvedValue({
+      installation: { id: 42, account: 'alice', repositories: [] },
+      fullName: 'alice/repo2',
+      owner: 'alice',
+      repo: 'repo2',
+    });
+
     const config = await resolveGitHubAuth();
 
     expect(config.owner).toBe('alice');
     expect(config.repo).toBe('repo2');
-  });
 
-  it('should throw when multiple repos and no git remote match', async () => {
-    vi.mocked(loadCachedAuth).mockReturnValue({ userToken: 'gho_test', userLogin: 'alice' });
-    vi.mocked(listInstallations).mockResolvedValue([
-      {
-        id: 42, account: 'alice', repositories: [
-          { full_name: 'alice/repo1', name: 'repo1' },
-          { full_name: 'alice/repo2', name: 'repo2' },
-        ],
-      },
-    ]);
-    vi.mocked(execSync).mockReturnValue('git@github.com:alice/other.git\n');
-
-    await expect(resolveGitHubAuth()).rejects.toThrow('Could not determine target repository');
+    stdoutSpy.mockRestore();
   });
 });
 

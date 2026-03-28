@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { StageName, GateResult } from '../../core/types.js';
 import type { InteractionHandler, EvolutionApprovalResult } from '../../core/interaction-handler.js';
@@ -12,7 +13,6 @@ import { listSkills } from '../skill-manager.js';
 import { EventBus } from '../../core/event-bus.js';
 
 const eventBus = new EventBus();
-import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
 
 const PROMPT_FILE = '.claude/agents/mosaic/researcher.md';
 
@@ -46,22 +46,53 @@ function makeProposal(overrides: Partial<EvolutionProposal> = {}): EvolutionProp
   };
 }
 
+/**
+ * Set up a temporary working directory with the minimal file structure
+ * needed by proposal-handler tests (config/agents.yaml, prompt file, etc.)
+ */
+function setupTempWorkDir(): { tmpDir: string; originalCwd: string } {
+  const originalCwd = process.cwd();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mosaic-proposal-test-'));
+
+  // Create minimal agents.yaml so prompt-versioning can find the prompt file
+  const configDir = path.join(tmpDir, 'config');
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(configDir, 'agents.yaml'),
+    `agents:\n  researcher:\n    name: Researcher\n    prompt_file: ${PROMPT_FILE}\n    inputs: []\n    outputs: []\n`,
+  );
+
+  // Create the prompt file
+  const promptDir = path.join(tmpDir, '.claude', 'agents', 'mosaic');
+  fs.mkdirSync(promptDir, { recursive: true });
+  fs.writeFileSync(path.join(tmpDir, PROMPT_FILE), '# Original researcher prompt\nOriginal content.');
+
+  // Create logs dir
+  fs.mkdirSync(path.join(tmpDir, 'logs'), { recursive: true });
+
+  process.chdir(tmpDir);
+  return { tmpDir, originalCwd };
+}
+
 describe('ProposalHandler', () => {
-  let originalContent: string;
   let logger: Logger;
-  let tmpRoot: string;
+  let tmpDir: string;
+  let originalCwd: string;
 
   beforeEach(() => {
-    originalContent = fs.readFileSync(PROMPT_FILE, 'utf-8');
-    tmpRoot = createTestMosaicDir();
-    logger = new Logger('test-proposal', path.join(tmpRoot, 'logs'));
+    const setup = setupTempWorkDir();
+    tmpDir = setup.tmpDir;
+    originalCwd = setup.originalCwd;
+    logger = new Logger('test-proposal', path.join(tmpDir, 'logs'));
   });
 
   afterEach(async () => {
-    fs.writeFileSync(PROMPT_FILE, originalContent);
     await logger.close();
-    cleanupTestMosaicDir(tmpRoot);
+    process.chdir(originalCwd);
     eventBus.removeAllListeners();
+    if (tmpDir && fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it('applies approved prompt_modification proposals', async () => {
@@ -130,7 +161,7 @@ describe('ProposalHandler', () => {
     expect(proposal.rejectionReason).toBe('Too aggressive');
 
     // Prompt should not change
-    expect(fs.readFileSync(PROMPT_FILE, 'utf-8')).toBe(originalContent);
+    expect(fs.readFileSync(PROMPT_FILE, 'utf-8')).toBe('# Original researcher prompt\nOriginal content.');
   });
 
   it('emits evolution events', async () => {
