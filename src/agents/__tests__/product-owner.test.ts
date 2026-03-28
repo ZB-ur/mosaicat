@@ -4,6 +4,7 @@ import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-pr
 import type { AgentContext } from '../../core/types.js';
 import { ProductOwnerAgent } from '../product-owner.js';
 import { Logger } from '../../core/logger.js';
+import { initArtifactsDir } from '../../core/artifact.js';
 
 function makeProvider(response: object): LLMProvider {
   return {
@@ -24,6 +25,7 @@ function makeContext(inputArtifacts?: Map<string, string>): AgentContext {
 describe('ProductOwnerAgent', () => {
   beforeEach(() => {
     if (fs.existsSync('.mosaic')) fs.rmSync('.mosaic', { recursive: true });
+    initArtifactsDir('test-run');
   });
 
   afterEach(() => {

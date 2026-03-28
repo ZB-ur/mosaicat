@@ -4,6 +4,7 @@ import type { LLMProvider, LLMCallOptions, LLMResponse } from '../../core/llm-pr
 import type { AgentContext } from '../../core/types.js';
 import { TechLeadAgent } from '../tech-lead.js';
 import { Logger } from '../../core/logger.js';
+import { initArtifactsDir } from '../../core/artifact.js';
 
 const VALID_MANIFEST = {
   modules: [{ name: 'auth', description: 'Authentication module', covers_features: ['F-001'] }],
@@ -30,6 +31,7 @@ function makeContext(inputArtifacts?: Map<string, string>): AgentContext {
 describe('TechLeadAgent', () => {
   beforeEach(() => {
     if (fs.existsSync('.mosaic')) fs.rmSync('.mosaic', { recursive: true });
+    initArtifactsDir('test-run');
   });
 
   afterEach(() => {
