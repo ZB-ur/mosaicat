@@ -2,11 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { getHooksForStage } from '../hooks/index.js';
 
 describe('getHooksForStage', () => {
-  it('should return placeholderCheckHook as mandatory for ui_designer', () => {
+  it('should return placeholderCheckHook as non-mandatory for ui_designer', () => {
     const hooks = getHooksForStage('ui_designer');
     const placeholderHook = hooks.postRun.find(h => h.name === 'placeholder-check');
     expect(placeholderHook).toBeDefined();
-    expect(placeholderHook!.mandatory).toBe(true);
+    expect(placeholderHook!.mandatory).toBe(false);
   });
 
   it('should return placeholderCheckHook as non-mandatory for coder', () => {
