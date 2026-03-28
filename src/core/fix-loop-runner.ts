@@ -103,7 +103,7 @@ export class FixLoopRunner {
   private checkTesterFailed(): boolean {
     try {
       const manifest = JSON.parse(this.ctx.store.read('test-report.manifest.json'));
-      return manifest?.quality_assessment?.verdict === 'fail';
+      return manifest?.verdict === 'fail';
     } catch {
       return false; // No manifest = no failure = don't loop
     }
