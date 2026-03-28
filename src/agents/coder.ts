@@ -11,6 +11,8 @@ import { eventBus } from '../core/event-bus.js';
 import { readArtifact, artifactExists, getArtifactsDir } from '../core/artifact.js';
 import { CodePlanSchema, type CodePlan, type CodePlanModule } from './code-plan-schema.js';
 import { logRetry, classifyError } from '../core/retry-log.js';
+import { analyzeFile, classifyFile } from '../core/hooks/ast-quality-gate.js';
+import type { ImplementationStatus, QualityGate } from '../core/quality-gate-types.js';
 
 const PLANNER_PROMPT_PATH = '.claude/agents/mosaic/code-planner.md';
 const BUILDER_PROMPT_PATH = '.claude/agents/mosaic/code-builder.md';
@@ -1125,21 +1127,54 @@ export class CoderAgent extends BaseAgent {
   private generateManifest(plan: CodePlan): void {
     const codeDir = `${getArtifactsDir()}/code`;
     const allFiles = this.listBuiltFiles(codeDir);
+    const CODE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx']);
 
     const fileEntries = allFiles.map(filePath => {
       const mod = plan.modules.find(m => m.files.some(f => filePath.endsWith(f) || f.endsWith(filePath)));
+      const ext = '.' + filePath.split('.').pop();
+
+      let implementationStatus: ImplementationStatus | undefined;
+      if (CODE_EXTENSIONS.has(ext)) {
+        try {
+          const content = fs.readFileSync(`${codeDir}/${filePath}`, 'utf-8');
+          const analysis = analyzeFile(filePath, content);
+          implementationStatus = classifyFile(analysis);
+        } catch {
+          // If file can't be read/parsed, skip status
+        }
+      }
+
       return {
         path: `code/${filePath}`,
         module: mod?.name ?? 'unknown',
         description: '',
+        ...(implementationStatus !== undefined && { implementation_status: implementationStatus }),
       };
     });
+
+    // Compute quality_gate summary from implementation statuses
+    const statusCounts = { stub: 0, partial: 0, complete: 0 };
+    for (const entry of fileEntries) {
+      const s = (entry as Record<string, unknown>).implementation_status as string | undefined;
+      if (s === 'stub') statusCounts.stub++;
+      else if (s === 'partial') statusCounts.partial++;
+      else if (s === 'complete') statusCounts.complete++;
+    }
+
+    const qualityGate: QualityGate = {
+      stub_count: statusCounts.stub,
+      partial_count: statusCounts.partial,
+      complete_count: statusCounts.complete,
+      coverage_gaps: [], // Filled by feature-coverage-check hook, not here
+      blocked: statusCounts.stub > 0 || statusCounts.partial > 0,
+    };
 
     const manifest = {
       files: fileEntries,
       modules: plan.modules.map(m => m.name),
       covers_tasks: [...new Set(plan.modules.flatMap(m => m.covers_tasks))],
       covers_features: [...new Set(plan.modules.flatMap(m => m.covers_features))],
+      quality_gate: qualityGate,
     };
 
     this.writeOutputManifest('code.manifest.json', manifest);
@@ -1147,6 +1182,7 @@ export class CoderAgent extends BaseAgent {
     this.logger.agent(this.stage, 'info', 'manifest:generated', {
       files: fileEntries.length,
       modules: manifest.modules.length,
+      qualityGate,
     });
   }
 
