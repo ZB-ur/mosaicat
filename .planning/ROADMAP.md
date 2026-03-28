@@ -57,7 +57,11 @@ Plans:
   2. code.manifest.json entries include `implementation_status` (stub/partial/complete) filled by programmatic scanning, not LLM self-report
   3. After each stage, feature coverage is checked against PRD feature list and gaps are reported
   4. Validator produces a summary report aggregating per-stage quality results into a full-pipeline integrity assessment
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 09-01-PLAN.md — Types, manifest schema extensions, AST stub detection hook
+- [ ] 09-02-PLAN.md — Hook registration, feature coverage check, Coder manifest integration
+- [ ] 09-03-PLAN.md — Validator quality gate aggregation
 
 ### Phase 10: Test Fix Loop Intelligence
 **Goal**: The Tester-Coder fix loop correctly diagnoses why tests fail and stops wasting rounds on unfixable infrastructure errors
@@ -105,7 +109,7 @@ Phases execute in numeric order: 8 -> 9 -> 10 -> 11 -> 12
 | 6. Integration Wiring | v1.0 | 2/2 | Complete | 2026-03-27 |
 | 7. README | v1.0 | 1/1 | Complete | 2026-03-27 |
 | 8. Agent Architecture Fixes | v1.1 | 0/3 | Planning | - |
-| 9. Quality Gate Infrastructure | v1.1 | 0/? | Not started | - |
+| 9. Quality Gate Infrastructure | v1.1 | 0/3 | Planning | - |
 | 10. Test Fix Loop Intelligence | v1.1 | 0/? | Not started | - |
 | 11. Cost Tracking & Optimization | v1.1 | 0/? | Not started | - |
 | 12. Intent & Research Enrichment | v1.1 | 0/? | Not started | - |
