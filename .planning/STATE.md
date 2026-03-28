@@ -1,13 +1,13 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: 产出物质量全面提升 & 产出成本与耗时优化
+milestone_name: Quality & Cost Optimization
 status: planning
-stopped_at: Milestone v1.1 started
-last_updated: "2026-03-28T12:00:00.000Z"
+stopped_at: Roadmap created for v1.1
+last_updated: "2026-03-28T14:00:00.000Z"
 last_activity: 2026-03-28
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,112 +21,58 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Pipeline engine reliability and maintainability -- errors must be visible, state must be trackable
-**Current focus:** Defining requirements for v1.1
+**Current focus:** Phase 8 - Agent Architecture Fixes
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-28 — Milestone v1.1 started
+Phase: 8 of 12 (Agent Architecture Fixes)
+Plan: --
+Status: Ready to plan
+Last activity: 2026-03-28 -- Roadmap created for v1.1
 
-Progress: [==========] 100%
+Progress: [__________] 0%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
+- Total plans completed: 0 (v1.1)
 - Average duration: -
 - Total execution time: 0 hours
 
-**By Phase:**
+**v1.0 Reference (19 plans, 16 tracked):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
-
-**Recent Trend:**
-
-- Last 5 plans: -
-- Trend: -
-
-*Updated after each plan completion*
-| Phase 01 P01 | 21min | 2 tasks | 8 files |
-| Phase 01 P02 | 5min | 1 tasks | 1 files |
-| Phase 01 P03 | 57min | 2 tasks | 5 files |
-| Phase 02 P02 | 19min | 2 tasks | 30 files |
-| Phase 02 P04 | 40min | 2 tasks | 19 files |
-| Phase 03 P01 | 5min | 2 tasks | 5 files |
-| Phase 03 P02 | 3min | 1 tasks | 3 files |
-| Phase 03 P03 | 13min | 2 tasks | 5 files |
-| Phase 04 P01 | 4min | 2 tasks | 6 files |
-| Phase 04 P02 | 4min | 2 tasks | 4 files |
-| Phase 04 P03 | 38min | 2 tasks | 4 files |
-| Phase 05 P01 | 2min | 2 tasks | 4 files |
-| Phase 05 P02 | 5min | 2 tasks | 11 files |
-| Phase 05 P03 | 17min | 2 tasks | 5 files |
-| Phase 06 P02 | 6min | 2 tasks | 4 files |
-| Phase 07 P01 | 8min | 2 tasks | 2 files |
+| P01 Test Infra | 3 | 83min | 28min |
+| P02 Foundation | 4 | 59min+ | ~20min |
+| P03 Execution | 3 | 21min | 7min |
+| P04 Coder | 3 | 46min | 15min |
+| P05 Orchestrator | 3 | 24min | 8min |
+| P06 Integration | 2 | 6min+ | ~6min |
+| P07 README | 1 | 8min | 8min |
 
 ## Accumulated Context
-
-### Roadmap Evolution
-
-- Phase 7 added: 优化readme内容
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- [Init]: Bottom-up strangler fig rewrite -- leaf modules first, orchestrator last
-- [Init]: ArtifactStore bridge pattern for backward compatibility with preserved modules
-- [Init]: Phase 4 (Coder) semi-independent of Phase 3 (Execution Engine), depends only on Phase 2
-- [Phase 01]: Used as-unknown-as-Logger cast in createMockLogger (Logger is a class with private fields)
-- [Phase 01]: Used process.chdir for resume test isolation (ARTIFACTS_BASE is relative, vitest sequential)
-- [Phase 01]: Stub agent classes for complex BaseAgent subclasses in E2E tests (Coder, Tester, SecurityAuditor, QALead)
-- [Phase 02]: eventBus singleton kept with @deprecated for non-agent callers -- bridge until Plan 04
-- [Phase 02]: manifest.ts uses function overloads for backward-compatible gradual migration
-- [Phase 02]: Bridge RunContext pattern using Object.create(ArtifactStore.prototype) for orchestrator
-- [Phase 02]: Orchestrator owns single EventBus instance shared across runs for CLI progress attachment
-- [Phase 02]: enableEvolution is constructor option, not runtime mutation (D-14 complete)
-- [Phase 02]: manifest.ts legacy overloads removed entirely -- all production callers use store-based API
-- [Phase 03]: Lazy circuit breaker recovery via Date.now() check instead of setTimeout -- no timer leak
-- [Phase 03]: HALF_OPEN failure immediately reopens circuit (single-probe pattern)
-- [Phase 03]: Duck-typed provider.setContext via typeof check, not instanceof RetryingProvider
-- [Phase 03]: StageExecutor returns StageOutcome, never recurses -- caller decides retry strategy
-- [Phase 03]: FixLoopRunner delegates to StageExecutor, never manipulates pipeline index
-- [Phase 03]: PipelineLoop uses while-loop with outcome switch, no recursion
-- [Phase 04]: ArtifactIO interface wrapping module-level artifact functions for CoderDeps DI pattern
-- [Phase 04]: extractErrorFiles returns relative paths without codeDir prefix for cleaner API
-- [Phase 04]: SmokeRunner.runSmokeTest accepts optional timeoutOverrideMs for testability
-- [Phase 04]: OutputGenerator extracted to keep facade under 250-line target
-- [Phase 05]: Retained EventBus singleton with stronger deprecation -- 15+ production files still import it, migration not in any phase 05 plan
-- [Phase 05]: console.warn -> process.stderr.write; 3 extra files (snapshot, git-publisher, retrying-provider) fixed beyond plan scope
-- [Phase 05]: Extract git/issue operations to OrchestratorGitOps to meet 200-line facade target
-- [Phase 05]: onStageComplete callback fires only for done outcomes, not skipped -- skipped stages have no artifacts to commit
-- [Phase 06]: ShutdownCoordinator instantiated inside startRun async function to scope lifecycle per invocation
-- [Phase 07]: Used formatted code block for terminal demo instead of screenshot/recording (more maintainable)
-
-### Quick Tasks Completed
-
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260328-kot | Fix resume state persistence and malformed path generation | 2026-03-28 | 6ad8880 | [260328-kot](./quick/260328-kot-fix-resume-state-persistence-and-malform/) |
+- [v1.1 Init]: No over-engineering -- minimal code for real problems, no speculative abstractions
+- [v1.1 Init]: Quality over cost -- cost optimization must not degrade output quality
+- [v1.1 Init]: AGENT fixes are foundation -- must come before quality gates, tests, cost optimization
 
 ### Pending Todos
 
-1 pending — /gsd:check-todos to review
+1 pending -- /gsd:check-todos to review
 
 ### Blockers/Concerns
 
-- Cockatiel version verification needed before Phase 3 (or decide to hand-roll retry+circuit-breaker)
-- Resume state file migration strategy needed in Phase 2 planning (version field vs invalidate old files)
-- EventBus event sequence contract undocumented -- capture as test fixture before Phase 3
+None for v1.1 start.
 
 ## Session Continuity
 
-Last session: 2026-03-27T12:53:50.874Z
-Stopped at: Completed 07-01-PLAN.md
+Last session: 2026-03-28
+Stopped at: Roadmap created for v1.1 milestone
 Resume file: None

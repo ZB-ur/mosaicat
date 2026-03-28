@@ -65,17 +65,34 @@
 
 ## Traceability
 
-(Updated during roadmap creation)
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| — | — | — |
+| AGENT-01 | Phase 8 | Pending |
+| AGENT-02 | Phase 8 | Pending |
+| AGENT-03 | Phase 8 | Pending |
+| AGENT-04 | Phase 8 | Pending |
+| AGENT-05 | Phase 8 | Pending |
+| AGENT-06 | Phase 8 | Pending |
+| GATE-01 | Phase 9 | Pending |
+| GATE-02 | Phase 9 | Pending |
+| GATE-03 | Phase 9 | Pending |
+| GATE-04 | Phase 9 | Pending |
+| GATE-05 | Phase 9 | Pending |
+| TEST-01 | Phase 10 | Pending |
+| TEST-02 | Phase 10 | Pending |
+| TEST-03 | Phase 10 | Pending |
+| TEST-04 | Phase 10 | Pending |
+| COST-01 | Phase 11 | Pending |
+| COST-02 | Phase 11 | Pending |
+| COST-03 | Phase 11 | Pending |
+| INTENT-01 | Phase 12 | Pending |
+| INTENT-02 | Phase 12 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20
+- Mapped to phases: 20
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-28*
-*Last updated: 2026-03-28 after initial definition*
+*Last updated: 2026-03-28 after roadmap creation*
