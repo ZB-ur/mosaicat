@@ -188,6 +188,9 @@ export type ReviewManifest = z.infer<typeof ReviewManifestSchema>;
 /** Write a manifest using an ArtifactStore. Validates against schema if available. */
 export function writeManifest(store: ArtifactStore, name: string, data: unknown): void {
   const schema = MANIFEST_SCHEMAS[name];
+  if (!schema && name.endsWith('.manifest.json')) {
+    throw new Error(`No Zod schema registered for manifest: ${name}`);
+  }
   if (schema) schema.parse(data);
   store.write(name, JSON.stringify(data, null, 2));
 }
@@ -197,6 +200,9 @@ export function readManifest<T = unknown>(store: ArtifactStore, name: string): T
   const content = store.read(name);
   const parsed = JSON.parse(content) as unknown;
   const schema = MANIFEST_SCHEMAS[name];
+  if (!schema && name.endsWith('.manifest.json')) {
+    throw new Error(`No Zod schema registered for manifest: ${name}`);
+  }
   if (schema) schema.parse(parsed);
   return parsed as T;
 }

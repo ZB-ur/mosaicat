@@ -37,7 +37,8 @@ export function getHooksForStage(stage: StageName): StageHooks {
       break;
 
     case 'ui_designer':
-      postRun.push(placeholderCheckHook);
+      // Placeholder check is mandatory for UI Designer — stubs are unacceptable
+      postRun.push({ ...placeholderCheckHook, mandatory: true });
       break;
 
     case 'ux_designer':
