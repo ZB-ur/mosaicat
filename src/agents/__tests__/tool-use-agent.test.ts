@@ -90,12 +90,18 @@ describe('ToolUseAgent', () => {
   });
 
   it('calls writeOutputManifest when parseManifest returns data', async () => {
-    agent.manifestData = { competitors: ['A', 'B'] };
+    agent.manifestData = {
+      competitors: ['A', 'B'],
+      key_insights: ['insight1'],
+      feasibility: 'high',
+      risks: ['risk1'],
+    };
     await agent.execute(makeContext());
     const manifest = JSON.parse(
       fs.readFileSync('.mosaic/artifacts/research.manifest.json', 'utf-8'),
     );
     expect(manifest.competitors).toEqual(['A', 'B']);
+    expect(manifest.feasibility).toBe('high');
   });
 
   it('does NOT write manifest when parseManifest returns undefined', async () => {
