@@ -13,18 +13,18 @@
 
 ### Agent 架构修复 (AGENT)
 
-- [ ] **AGENT-01**: LLMAgent 的 `allowed_tools` 配置生效，支持 tool use 与结构化输出共存或按 agent 切换模式
-- [ ] **AGENT-02**: Researcher 改为 tool-use agent（非纯 JSON schema），能实际调用 WebSearch/WebFetch 执行网络搜索
-- [ ] **AGENT-03**: ProductOwner/TechLead 输出的 `constitution_project` 字段被正确写入磁盘，下游 agent 可消费
-- [ ] **AGENT-04**: UXDesigner/APIDesigner 输出格式统一（消除 prompt 与实现的矛盾指令）
-- [ ] **AGENT-05**: 为所有 manifest 类型添加 Zod schema，写入时校验
-- [ ] **AGENT-06**: 激活 BaseAgent hook 机制，注册关键 post-run hooks（placeholder 检测、F-NNN 覆盖验证）
+- [x] **AGENT-01**: LLMAgent 的 `allowed_tools` 配置生效，支持 tool use 与结构化输出共存或按 agent 切换模式
+- [x] **AGENT-02**: Researcher 改为 tool-use agent（非纯 JSON schema），能实际调用 WebSearch/WebFetch 执行网络搜索
+- [x] **AGENT-03**: ProductOwner/TechLead 输出的 `constitution_project` 字段被正确写入磁盘，下游 agent 可消费
+- [x] **AGENT-04**: UXDesigner/APIDesigner 输出格式统一（消除 prompt 与实现的矛盾指令）
+- [x] **AGENT-05**: 为所有 manifest 类型添加 Zod schema，写入时校验
+- [x] **AGENT-06**: 激活 BaseAgent hook 机制，注册关键 post-run hooks（placeholder 检测、F-NNN 覆盖验证）
 
 ### 质量门控 (GATE)
 
-- [ ] **GATE-01**: 每个 stage 完成后运行程序化质量检查（stub 检测 + 特性覆盖率），不达标时阻断进入下一 stage
-- [ ] **GATE-02**: Coder 输出经过 placeholder 扫描（空壳 div、空函数体、TODO/FIXME、return null），检测到 stub 时标记在 manifest
-- [ ] **GATE-03**: code.manifest 每个文件标注 implementation_status（stub / partial / complete），由程序化检查填充
+- [x] **GATE-01**: 每个 stage 完成后运行程序化质量检查（stub 检测 + 特性覆盖率），不达标时阻断进入下一 stage
+- [x] **GATE-02**: Coder 输出经过 placeholder 扫描（空壳 div、空函数体、TODO/FIXME、return null），检测到 stub 时标记在 manifest
+- [x] **GATE-03**: code.manifest 每个文件标注 implementation_status（stub / partial / complete），由程序化检查填充
 - [ ] **GATE-04**: 跨阶段特性覆盖验证：每个 stage 结束后对比 PRD feature list 与 manifest covers_features
 - [ ] **GATE-05**: Validator 简化为汇总各 stage 质量检查结果 + 全链路完整性报告
 
@@ -67,15 +67,15 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AGENT-01 | Phase 8 | Pending |
-| AGENT-02 | Phase 8 | Pending |
-| AGENT-03 | Phase 8 | Pending |
-| AGENT-04 | Phase 8 | Pending |
-| AGENT-05 | Phase 8 | Pending |
-| AGENT-06 | Phase 8 | Pending |
-| GATE-01 | Phase 9 | Pending |
-| GATE-02 | Phase 9 | Pending |
-| GATE-03 | Phase 9 | Pending |
+| AGENT-01 | Phase 8 | Complete |
+| AGENT-02 | Phase 8 | Complete |
+| AGENT-03 | Phase 8 | Complete |
+| AGENT-04 | Phase 8 | Complete |
+| AGENT-05 | Phase 8 | Complete |
+| AGENT-06 | Phase 8 | Complete |
+| GATE-01 | Phase 9 | Complete |
+| GATE-02 | Phase 9 | Complete |
+| GATE-03 | Phase 9 | Complete |
 | GATE-04 | Phase 9 | Pending |
 | GATE-05 | Phase 9 | Pending |
 | TEST-01 | Phase 10 | Pending |
