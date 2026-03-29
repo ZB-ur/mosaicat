@@ -111,7 +111,7 @@ export const TestPlanManifestSchema = z.object({
         z.object({
           name: z.string(),
           covers_tasks: z.array(z.string()),
-          type: z.enum(['unit', 'integration', 'e2e']),
+          type: z.enum(['unit', 'integration', 'e2e', 'acceptance']),
         })
       ),
     })
@@ -319,7 +319,8 @@ const SUMMARY_EXTRACTORS: Record<string, (data: Record<string, unknown>) => stri
         const unitCount = types.filter(t => t === 'unit').length;
         const intCount = types.filter(t => t === 'integration').length;
         const e2eCount = types.filter(t => t === 'e2e').length;
-        const breakdown = [unitCount && `${unitCount} unit`, intCount && `${intCount} integration`, e2eCount && `${e2eCount} e2e`].filter(Boolean).join(', ');
+        const accCount = types.filter(t => t === 'acceptance').length;
+        const breakdown = [unitCount && `${unitCount} unit`, intCount && `${intCount} integration`, e2eCount && `${e2eCount} e2e`, accCount && `${accCount} acceptance`].filter(Boolean).join(', ');
         lines.push(`**${suite.module}** (\`${suite.test_file}\`) — ${breakdown}`);
       }
     }
