@@ -8,6 +8,7 @@ import { Logger } from './logger.js';
 import type { RunContext } from './run-context.js';
 import { createRunContext } from './run-context.js';
 import { ArtifactStore } from './artifact-store.js';
+import { getMosaicArtifactsDir } from './mosaic-home.js';
 import type { InteractionHandler } from './interaction-handler.js';
 import { CLIInteractionHandler } from './interaction-handler.js';
 import type { GitPlatformAdapter } from '../adapters/types.js';
@@ -55,7 +56,7 @@ export class Orchestrator {
     ctx.logger.pipeline('info', 'pipeline:start', { runId, instruction, profile: profile ?? 'default', artifactsDir: ctx.store.getDir(), provider: this.resolveProviderName() });
     await this.initPublisher(runId, instruction, ctx);
     try {
-      await this.runIntentConsultant(pipelineRun);
+      await this.runIntentConsultant(pipelineRun, profile ?? 'full');
       await this.executePipeline(pipelineRun, stageList.filter(s => s !== 'intent_consultant'), profile ?? 'full');
       await this.postRun(runId, instruction, ctx);
     } catch (err) {
@@ -73,7 +74,7 @@ export class Orchestrator {
     const state = loadResumeState(rid);
     if (fromStage) {
       resetFromStage(state, fromStage as StageName, this.resolveStageList(state.profile as PipelineProfile));
-      fs.writeFileSync(`.mosaic/artifacts/${rid}/pipeline-state.json`, JSON.stringify(state, null, 2));
+      fs.writeFileSync(`${getMosaicArtifactsDir()}/${rid}/pipeline-state.json`, JSON.stringify(state, null, 2));
     }
     const validated = validateResumeState(state, this.agentsConfig);
     const ctx = this.initRunContext(rid);
@@ -84,7 +85,7 @@ export class Orchestrator {
       if (status?.state === 'done') pipelineRun.stages[stage as StageName] = status;
     }
     try {
-      await this.runIntentConsultant(pipelineRun);
+      await this.runIntentConsultant(pipelineRun, validated.profile);
       await this.executePipeline(pipelineRun, stageList.filter(s => s !== 'intent_consultant'), validated.profile);
       pipelineRun.completedAt = new Date().toISOString();
       this.savePipelineState(pipelineRun, validated.profile);
@@ -103,7 +104,7 @@ export class Orchestrator {
   getStageIssues(): Map<string, number> { return this.gitOps?.getStageIssues() ?? new Map(); }
 
   private initRunContext(runId: string): RunContext {
-    const store = new ArtifactStore('.mosaic/artifacts', runId);
+    const store = new ArtifactStore(getMosaicArtifactsDir(),runId);
     const ctx = createRunContext({ store, logger: new Logger(runId), provider: createProvider(this.pipelineConfig), eventBus: this.eventBus, config: this.pipelineConfig, signal: this.signal, devMode: this.devMode });
     this.currentCtx = ctx;
     this.gitOps = new OrchestratorGitOps(ctx, this.agentsConfig, this.handler, this.adapter, this.publisher);
@@ -157,13 +158,39 @@ export class Orchestrator {
     return p[rp];
   }
 
-  private async runIntentConsultant(run: PipelineRun): Promise<void> {
+  private async runIntentConsultant(run: PipelineRun, profile?: string): Promise<void> {
     const ctx = this.currentCtx!;
-    if (ctx.store.exists('intent-brief.json')) { ctx.logger.pipeline('info', 'intent-consultant:skipped', { reason: 'brief already exists' }); return; }
+    // Skip if already completed (resume scenario: stage marked done in pipeline-state.json)
+    if (run.stages.intent_consultant?.state === 'done') {
+      ctx.logger.pipeline('info', 'intent-consultant:skipped', { reason: 'stage already done' });
+      return;
+    }
+    // Skip if artifact exists on disk (defensive: covers cases where stage state wasn't saved but output was)
+    if (ctx.store.exists('intent-brief.json')) {
+      ctx.logger.pipeline('info', 'intent-consultant:skipped', { reason: 'brief already exists' });
+      run.stages.intent_consultant ??= { state: 'idle', retryCount: 0 };
+      run.stages.intent_consultant.state = 'done';
+      run.stages.intent_consultant.completedAt = new Date().toISOString();
+      return;
+    }
+    // Skip if downstream stages already completed (IC was done in a previous run that
+    // didn't persist IC state, and intent-brief.json was consumed and is no longer needed)
+    if (run.stages.researcher?.state === 'done') {
+      ctx.logger.pipeline('info', 'intent-consultant:skipped', { reason: 'downstream stages already done' });
+      run.stages.intent_consultant ??= { state: 'idle', retryCount: 0 };
+      run.stages.intent_consultant.state = 'done';
+      run.stages.intent_consultant.completedAt = new Date().toISOString();
+      return;
+    }
     ctx.logger.pipeline('info', 'intent-consultant:start', { runId: run.id });
     ctx.eventBus.emit('stage:start', 'intent_consultant', run.id);
     const stage = 'researcher' as StageName;
     await new IntentConsultantAgent(stage, ctx, new CLIInteractionHandler()).execute({ systemPrompt: '', task: { runId: run.id, stage, instruction: run.instruction }, inputArtifacts: new Map([['user_instruction', run.instruction]]) });
+    // Mark stage as done and persist state so resume knows IC completed
+    run.stages.intent_consultant ??= { state: 'idle', retryCount: 0 };
+    run.stages.intent_consultant.state = 'done';
+    run.stages.intent_consultant.completedAt = new Date().toISOString();
+    this.savePipelineState(run, profile ?? 'full');
     ctx.logger.pipeline('info', 'intent-consultant:complete', { runId: run.id });
   }
 

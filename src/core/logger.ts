@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { StageName } from './types.js';
+import { getMosaicLogsDir } from './mosaic-home.js';
 
 export type LogLevel = 'info' | 'warn' | 'error' | 'debug';
 
@@ -15,7 +16,8 @@ export class Logger {
   private logDir: string;
   private streams = new Map<string, fs.WriteStream>();
 
-  constructor(runId: string, baseDir = '.mosaic/logs') {
+  constructor(runId: string, baseDir?: string) {
+    if (!baseDir) baseDir = getMosaicLogsDir();
     this.logDir = path.join(baseDir, runId);
     fs.mkdirSync(path.join(this.logDir, 'agents'), { recursive: true });
   }

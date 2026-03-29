@@ -2,8 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { StageName } from './types.js';
 
-const LOG_DIR = '.mosaic';
-const LOG_FILE = path.join(LOG_DIR, 'retry-log.jsonl');
+import { getMosaicHome } from './mosaic-home.js';
+
+function getLogFile(): string {
+  return path.join(getMosaicHome(), 'retry-log.jsonl');
+}
 
 export type ErrorCategory =
   | 'type-error'
@@ -45,12 +48,13 @@ export interface FailureStat {
  */
 export function logRetry(entry: RetryLogEntry): void {
   try {
-    fs.mkdirSync(LOG_DIR, { recursive: true });
+    const logFile = getLogFile();
+    fs.mkdirSync(path.dirname(logFile), { recursive: true });
     const truncated = {
       ...entry,
       errorMessage: entry.errorMessage.slice(0, 2000),
     };
-    fs.appendFileSync(LOG_FILE, JSON.stringify(truncated) + '\n');
+    fs.appendFileSync(logFile, JSON.stringify(truncated) + '\n');
   } catch {
     // Logging must never fail the pipeline
   }
@@ -61,9 +65,10 @@ export function logRetry(entry: RetryLogEntry): void {
  */
 export function readRetryLog(since?: Date): RetryLogEntry[] {
   try {
-    if (!fs.existsSync(LOG_FILE)) return [];
+    const logFile = getLogFile();
+    if (!fs.existsSync(logFile)) return [];
 
-    const lines = fs.readFileSync(LOG_FILE, 'utf-8').split('\n').filter(Boolean);
+    const lines = fs.readFileSync(logFile, 'utf-8').split('\n').filter(Boolean);
     const entries: RetryLogEntry[] = [];
 
     for (const line of lines) {

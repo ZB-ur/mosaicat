@@ -181,9 +181,10 @@ describe('Orchestrator Integration (Mock LLM)', () => {
     const orchestrator = new Orchestrator();
     const result = await orchestrator.run('做一个博客系统', true, 'design-only');
     // Find the run-specific artifacts directory
-    const ARTIFACTS_BASE = '.mosaic/artifacts';
-    const runDirs = fs.readdirSync(ARTIFACTS_BASE).filter((d) => d.startsWith('run-'));
-    const ARTIFACTS_DIR = path.join(ARTIFACTS_BASE, runDirs[runDirs.length - 1]);
+    const artifactsBase = path.join(tmpRoot, 'artifacts');
+    const runDirs = fs.readdirSync(artifactsBase).filter((d) => d.startsWith('run-'));
+    const ARTIFACTS_DIR = path.join(artifactsBase, runDirs[runDirs.length - 1]);
+    // Snapshots also go to tmpRoot now via setMosaicHome()
 
     // Pipeline completed
     expect(result.completedAt).toBeDefined();
@@ -243,13 +244,12 @@ describe('Orchestrator Integration (Mock LLM)', () => {
     const orchestrator = new Orchestrator();
     await orchestrator.run('做一个博客系统', true, 'design-only');
 
-    // Snapshots directory should exist with entries
-    const SNAPSHOTS_DIR = '.mosaic/snapshots';
-    expect(fs.existsSync(SNAPSHOTS_DIR)).toBe(true);
-    const snapshots = fs.readdirSync(SNAPSHOTS_DIR);
+    // Snapshots directory should exist with entries (now isolated to tmpRoot)
+    const snapshotsDir = path.join(tmpRoot, 'snapshots');
+    expect(fs.existsSync(snapshotsDir)).toBe(true);
+    const snapshots = fs.readdirSync(snapshotsDir);
     // design-only has 6 stages after intent_consultant (which doesn't snapshot)
     expect(snapshots.length).toBeGreaterThanOrEqual(6);
-    // Clean up snapshots (not covered by temp dir isolation)
-    fs.rmSync(SNAPSHOTS_DIR, { recursive: true, force: true });
+    // cleanup handled by afterEach -> cleanupTestMosaicDir()
   }, 60000);
 });

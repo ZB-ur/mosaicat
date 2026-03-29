@@ -14,6 +14,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createTestMosaicDir, cleanupTestMosaicDir } from './test-helpers.js';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
 
 // ---------------------------------------------------------------------------
@@ -471,19 +472,17 @@ vi.mock('../core/agent-factory.js', async () => {
   };
 });
 
-const ARTIFACTS_BASE = '.mosaic/artifacts';
-
 describe('Canary: Full 13-Stage Pipeline', () => {
+  let tmpRoot: string;
+  let ARTIFACTS_BASE: string;
+
   beforeEach(() => {
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    tmpRoot = createTestMosaicDir();
+    ARTIFACTS_BASE = path.join(tmpRoot, 'artifacts');
   });
 
   afterEach(() => {
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    cleanupTestMosaicDir(tmpRoot);
   });
 
   it('should run full 13-stage pipeline and produce all artifacts', async () => {

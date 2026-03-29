@@ -1,8 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { StageName, StageStatus, AgentsConfig, PipelineProfile } from './types.js';
-
-const ARTIFACTS_BASE = '.mosaic/artifacts';
+import { getMosaicArtifactsDir } from './mosaic-home.js';
 
 export interface SavedPipelineState {
   id: string;
@@ -19,7 +18,7 @@ export interface SavedPipelineState {
  * Throws if the file doesn't exist or is malformed.
  */
 export function loadResumeState(runId: string): SavedPipelineState {
-  const statePath = path.join(ARTIFACTS_BASE, runId, 'pipeline-state.json');
+  const statePath = path.join(getMosaicArtifactsDir(), runId, 'pipeline-state.json');
   if (!fs.existsSync(statePath)) {
     throw new Error(`No pipeline state found for run ${runId}. File missing: ${statePath}`);
   }
@@ -44,7 +43,7 @@ export function validateResumeState(
   state: SavedPipelineState,
   agentsConfig: AgentsConfig,
 ): SavedPipelineState {
-  const runDir = path.join(ARTIFACTS_BASE, state.id);
+  const runDir = path.join(getMosaicArtifactsDir(), state.id);
 
   // Step 1: Reset intermediate states to idle
   for (const [stage, status] of Object.entries(state.stages)) {
@@ -151,7 +150,7 @@ export function resetFromStage(
     throw new Error(`Stage ${fromStage} not found in pipeline state`);
   }
 
-  const runDir = path.join(ARTIFACTS_BASE, state.id);
+  const runDir = path.join(getMosaicArtifactsDir(), state.id);
   const stagesToReset = stageOrder.slice(fromIdx);
 
   // 1. Clean disk artifacts for each reset stage
@@ -197,14 +196,14 @@ export function resetFromStage(
  * Returns the run ID or null.
  */
 export function findResumableRun(): string | null {
-  if (!fs.existsSync(ARTIFACTS_BASE)) return null;
+  if (!fs.existsSync(getMosaicArtifactsDir())) return null;
 
-  const entries = fs.readdirSync(ARTIFACTS_BASE, { withFileTypes: true })
+  const entries = fs.readdirSync(getMosaicArtifactsDir(), { withFileTypes: true })
     .filter(e => e.isDirectory())
     .map(e => ({
       name: e.name,
-      mtime: fs.statSync(path.join(ARTIFACTS_BASE, e.name)).mtime.getTime(),
-      hasState: fs.existsSync(path.join(ARTIFACTS_BASE, e.name, 'pipeline-state.json')),
+      mtime: fs.statSync(path.join(getMosaicArtifactsDir(), e.name)).mtime.getTime(),
+      hasState: fs.existsSync(path.join(getMosaicArtifactsDir(), e.name, 'pipeline-state.json')),
     }))
     .filter(e => e.hasState)
     .sort((a, b) => b.mtime - a.mtime);
