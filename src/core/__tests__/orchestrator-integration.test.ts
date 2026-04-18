@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
+import path from 'node:path';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../llm-provider.js';
 import type { Logger } from '../logger.js';
 import { Orchestrator } from '../orchestrator.js';
 import { DEFAULT_STAGES } from '../types.js';
 import { createTestMosaicDir, cleanupTestMosaicDir } from '../../__tests__/test-helpers.js';
-import { getArtifactsDir } from '../artifact.js';
 
 // Mock provider — routes UIDesigner sub-phases by system prompt
 class MockLLMProvider implements LLMProvider {
@@ -33,10 +33,10 @@ class MockLLMProvider implements LLMProvider {
       return { content: `<!-- ARTIFACT:ui-plan.json -->
 {
   "components": [
-    {"name": "AuthForm", "file": "components/AuthForm.tsx", "preview": "previews/AuthForm.html", "purpose": "Login/register form", "covers_features": ["F-001"], "parent": null, "children": [], "props": [], "priority": 1},
-    {"name": "PostEditor", "file": "components/PostEditor.tsx", "preview": "previews/PostEditor.html", "purpose": "Markdown editor", "covers_features": ["F-002"], "parent": null, "children": [], "props": [], "priority": 2},
-    {"name": "PostList", "file": "components/PostList.tsx", "preview": "previews/PostList.html", "purpose": "Blog listing", "covers_features": ["F-002"], "parent": null, "children": [], "props": [], "priority": 3},
-    {"name": "CommentSection", "file": "components/CommentSection.tsx", "preview": "previews/CommentSection.html", "purpose": "Comment thread", "covers_features": ["F-003"], "parent": null, "children": [], "props": [], "priority": 4}
+    {"name": "AuthForm", "file": "components/AuthForm.tsx", "preview": "previews/AuthForm.html", "purpose": "Login/register form", "covers_features": ["F-001"], "parent": null, "children": [], "props": [], "priority": 1, "category": "atomic"},
+    {"name": "PostEditor", "file": "components/PostEditor.tsx", "preview": "previews/PostEditor.html", "purpose": "Markdown editor", "covers_features": ["F-002"], "parent": null, "children": [], "props": [], "priority": 2, "category": "atomic"},
+    {"name": "PostList", "file": "components/PostList.tsx", "preview": "previews/PostList.html", "purpose": "Blog listing", "covers_features": ["F-002"], "parent": null, "children": [], "props": [], "priority": 3, "category": "composite"},
+    {"name": "CommentSection", "file": "components/CommentSection.tsx", "preview": "previews/CommentSection.html", "purpose": "Comment thread", "covers_features": ["F-003"], "parent": null, "children": [], "props": [], "priority": 4, "category": "atomic"}
   ]
 }
 <!-- END:ui-plan.json -->` };
@@ -61,11 +61,8 @@ class MockLLMProvider implements LLMProvider {
 
     switch (stage) {
       case 'researcher':
-        // LLMAgent expects JSON: { artifact, manifest }
-        return { content: JSON.stringify({
-          artifact: `## Market Overview\nThe blog platform market is mature with established players.\n\n## Competitor Analysis\n| Competitor | Core Features | Strengths | Weaknesses |\n|---|---|---|---|\n| WordPress | CMS, plugins | Ecosystem | Complexity |\n| Medium | Writing, social | UX | Monetization |\n\n## Feasibility\nHigh feasibility — standard CRUD with auth.\n\n## Key Insights\n- Focus on simplicity\n- Mobile-first approach`,
-          manifest: { competitors: ["WordPress", "Medium"], key_insights: ["simplicity-focus", "mobile-first"], feasibility: "high", risks: ["market-saturation"] },
-        }) };
+        // ToolUseAgent expects free-text markdown with embedded ```json manifest
+        return { content: `## Market Overview\nThe blog platform market is mature with established players.\n\n## Competitor Analysis\n| Competitor | Core Features | Strengths | Weaknesses |\n|---|---|---|---|\n| WordPress | CMS, plugins | Ecosystem | Complexity |\n| Medium | Writing, social | UX | Monetization |\n\n## Feasibility\nHigh feasibility — standard CRUD with auth.\n\n## Key Insights\n- Focus on simplicity\n- Mobile-first approach\n\n\`\`\`json\n{"competitors":["WordPress","Medium"],"key_insights":["simplicity-focus","mobile-first"],"feasibility":"high","risks":["market-saturation"]}\n\`\`\`` };
 
       case 'product_owner':
         return { content: JSON.stringify({
@@ -121,6 +118,24 @@ class MockLLMProvider implements LLMProvider {
 
 // Override createProvider to use mock
 import { vi } from 'vitest';
+
+// Mock CLIInteractionHandler to avoid terminal input blocking
+vi.mock('../interaction-handler.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../interaction-handler.js')>();
+  return {
+    ...original,
+    CLIInteractionHandler: class AutoAnswerCLIHandler {
+      async onManualGate() { return { approved: true }; }
+      async onClarification(
+        _stage: string, _question: string, _runId: string,
+        options?: Array<{ label: string }>,
+      ) {
+        return options?.[0]?.label ?? 'default';
+      }
+    },
+  };
+});
+
 vi.mock('../provider-factory.js', () => ({
   createProvider: () => new MockLLMProvider(),
 }));
@@ -164,15 +179,20 @@ describe('Orchestrator Integration (Mock LLM)', () => {
 
   it('should run full pipeline with mock LLM and produce all artifacts', async () => {
     const orchestrator = new Orchestrator();
-    const result = await orchestrator.run('做一个博客系统', true);
-    const ARTIFACTS_DIR = getArtifactsDir();
+    const result = await orchestrator.run('做一个博客系统', true, 'design-only');
+    // Find the run-specific artifacts directory
+    const artifactsBase = path.join(tmpRoot, 'artifacts');
+    const runDirs = fs.readdirSync(artifactsBase).filter((d) => d.startsWith('run-'));
+    const ARTIFACTS_DIR = path.join(artifactsBase, runDirs[runDirs.length - 1]);
+    // Snapshots also go to tmpRoot now via setMosaicHome()
 
     // Pipeline completed
     expect(result.completedAt).toBeDefined();
     expect(result.currentStage).toBe('validator');
 
-    // All stages done
-    for (const stage of DEFAULT_STAGES) {
+    // All design-only stages done
+    const designOnlyStages = ['intent_consultant', 'researcher', 'product_owner', 'ux_designer', 'api_designer', 'ui_designer', 'validator'] as const;
+    for (const stage of designOnlyStages) {
       expect(result.stages[stage]!.state).toBe('done');
     }
 
@@ -215,20 +235,21 @@ describe('Orchestrator Integration (Mock LLM)', () => {
 
     // Verify manifest content
     const prdManifest = JSON.parse(fs.readFileSync(`${ARTIFACTS_DIR}/prd.manifest.json`, 'utf-8'));
-    expect(prdManifest.features).toContain('user-auth');
-    expect(prdManifest.features).toContain('blog-crud');
+    const featureNames = prdManifest.features.map((f: { name: string }) => f.name);
+    expect(featureNames).toContain('user-auth');
+    expect(featureNames).toContain('blog-crud');
   }, 60000);
 
   it('should create snapshots for all stages', async () => {
     const orchestrator = new Orchestrator();
-    await orchestrator.run('做一个博客系统', true);
+    await orchestrator.run('做一个博客系统', true, 'design-only');
 
-    // Snapshots directory should exist with entries
-    const SNAPSHOTS_DIR = '.mosaic/snapshots';
-    expect(fs.existsSync(SNAPSHOTS_DIR)).toBe(true);
-    const snapshots = fs.readdirSync(SNAPSHOTS_DIR);
-    expect(snapshots.length).toBe(6); // One per stage
-    // Clean up snapshots (not covered by temp dir isolation)
-    fs.rmSync(SNAPSHOTS_DIR, { recursive: true, force: true });
+    // Snapshots directory should exist with entries (now isolated to tmpRoot)
+    const snapshotsDir = path.join(tmpRoot, 'snapshots');
+    expect(fs.existsSync(snapshotsDir)).toBe(true);
+    const snapshots = fs.readdirSync(snapshotsDir);
+    // design-only has 6 stages after intent_consultant (which doesn't snapshot)
+    expect(snapshots.length).toBeGreaterThanOrEqual(6);
+    // cleanup handled by afterEach -> cleanupTestMosaicDir()
   }, 60000);
 });

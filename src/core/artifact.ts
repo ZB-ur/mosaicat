@@ -1,9 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { getMosaicArtifactsDir } from './mosaic-home.js';
 
-const DEFAULT_BASE_DIR = '.mosaic/artifacts';
-let baseDir: string = DEFAULT_BASE_DIR;
-let currentRunDir: string = baseDir;
+let baseDir: string | null = null;
+let currentRunDir: string | null = null;
+
+function resolveBaseDir(): string {
+  return baseDir ?? getMosaicArtifactsDir();
+}
+
+function resolveRunDir(): string {
+  return currentRunDir ?? resolveBaseDir();
+}
 
 /**
  * Override the base directory for artifacts (used by tests to avoid
@@ -18,8 +26,8 @@ export function setBaseDir(dir: string): void {
  * Reset the base directory back to the default.
  */
 export function resetBaseDir(): void {
-  baseDir = DEFAULT_BASE_DIR;
-  currentRunDir = DEFAULT_BASE_DIR;
+  baseDir = null;
+  currentRunDir = null;
 }
 
 /**
@@ -27,28 +35,28 @@ export function resetBaseDir(): void {
  * Must be called at the start of each pipeline run.
  */
 export function initArtifactsDir(runId: string): string {
-  currentRunDir = path.join(baseDir, runId);
+  currentRunDir = path.join(resolveBaseDir(), runId);
   fs.mkdirSync(currentRunDir, { recursive: true });
   return currentRunDir;
 }
 
 export function getArtifactsDir(): string {
-  return currentRunDir;
+  return resolveRunDir();
 }
 
 export function writeArtifact(name: string, content: string): void {
-  const filePath = path.join(currentRunDir, name);
+  const filePath = path.join(resolveRunDir(), name);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, 'utf-8');
 }
 
 export function readArtifact(name: string): string {
-  const filePath = path.join(currentRunDir, name);
+  const filePath = path.join(resolveRunDir(), name);
   return fs.readFileSync(filePath, 'utf-8');
 }
 
 export function artifactExists(name: string): boolean {
-  return fs.existsSync(path.join(currentRunDir, name));
+  return fs.existsSync(path.join(resolveRunDir(), name));
 }
 
 /**
@@ -56,13 +64,14 @@ export function artifactExists(name: string): boolean {
  * Returns the run ID (directory name) or null if none found.
  */
 export function findLatestRun(): string | null {
-  if (!fs.existsSync(baseDir)) return null;
+  const base = resolveBaseDir();
+  if (!fs.existsSync(base)) return null;
 
-  const entries = fs.readdirSync(baseDir, { withFileTypes: true })
+  const entries = fs.readdirSync(base, { withFileTypes: true })
     .filter(e => e.isDirectory())
     .map(e => ({
       name: e.name,
-      mtime: fs.statSync(path.join(baseDir, e.name)).mtime.getTime(),
+      mtime: fs.statSync(path.join(base, e.name)).mtime.getTime(),
     }))
     .sort((a, b) => b.mtime - a.mtime);
 
@@ -74,7 +83,7 @@ export function findLatestRun(): string | null {
  * Returns a Map of relative artifact path → content.
  */
 export function loadFromRun(runId: string): Map<string, string> {
-  const runDir = path.join(baseDir, runId);
+  const runDir = path.join(resolveBaseDir(), runId);
   const artifacts = new Map<string, string>();
 
   if (!fs.existsSync(runDir)) return artifacts;

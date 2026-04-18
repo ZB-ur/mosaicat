@@ -5,6 +5,7 @@ import { EventBus } from '../../core/event-bus.js';
 import type { AgentContext } from '../../core/types.js';
 import type { ArtifactIO, CoderDeps } from '../coder/types.js';
 import { CoderPlanner } from '../coder/coder-planner.js';
+import { CodePlanSchema } from '../code-plan-schema.js';
 
 // --- Mock helpers ---
 
@@ -134,5 +135,103 @@ describe('CoderPlanner', () => {
     const plan = planner.loadExistingPlan();
 
     expect(plan).toBeNull();
+  });
+
+  it('createPlan() sanitizes curly-brace paths from LLM response', async () => {
+    const planWithBraces = JSON.stringify({
+      project_name: 'todo-app',
+      tech_stack: { language: 'TypeScript', framework: 'React', build_tool: 'vite' },
+      commands: { setupCommand: 'npm install', verifyCommand: 'npx tsc --noEmit', buildCommand: 'npm run build' },
+      modules: [
+        {
+          name: 'ui',
+          description: 'UI components',
+          files: ['{src/components/Header.tsx}', '{src/App.tsx}'],
+          dependencies: [],
+          covers_tasks: ['T1'],
+          covers_features: ['F-001'],
+          priority: 1,
+        },
+      ],
+    });
+    const responseContent = `<!-- ARTIFACT:code-plan.json -->${planWithBraces}<!-- END:code-plan.json -->`;
+    const provider = createMockProvider(responseContent);
+    const planner = new CoderPlanner(makeDeps({ provider, artifacts }));
+
+    const plan = await planner.createPlan(makeContext());
+
+    expect(plan.modules[0].files[0]).toBe('src/components/Header.tsx');
+    expect(plan.modules[0].files[1]).toBe('src/App.tsx');
+  });
+
+  it('loadExistingPlan() sanitizes stored plan with curly-brace paths', () => {
+    const planWithBraces = JSON.stringify({
+      project_name: 'todo-app',
+      tech_stack: { language: 'TypeScript', framework: 'React', build_tool: 'vite' },
+      commands: { setupCommand: 'npm install', verifyCommand: 'npx tsc --noEmit', buildCommand: 'npm run build' },
+      modules: [
+        {
+          name: 'core',
+          description: 'Core module',
+          files: ['{src/index.ts}'],
+          dependencies: [],
+          covers_tasks: ['T1'],
+          covers_features: ['F-001'],
+          priority: 1,
+        },
+      ],
+    });
+    artifacts.write('code-plan.json', planWithBraces);
+    const planner = new CoderPlanner(makeDeps({ artifacts }));
+
+    const plan = planner.loadExistingPlan();
+
+    expect(plan).not.toBeNull();
+    expect(plan!.modules[0].files[0]).toBe('src/index.ts');
+  });
+});
+
+describe('CodePlanSchema path validation', () => {
+  it('rejects paths containing curly braces', () => {
+    const badPlan = {
+      project_name: 'test',
+      tech_stack: { language: 'TS', framework: 'React', build_tool: 'vite' },
+      commands: { setupCommand: 'npm i', verifyCommand: 'tsc', buildCommand: 'build' },
+      modules: [
+        {
+          name: 'mod',
+          description: 'desc',
+          files: ['{src/bad.ts}'],
+          dependencies: [],
+          covers_tasks: ['T1'],
+          covers_features: ['F-001'],
+          priority: 1,
+        },
+      ],
+    };
+
+    expect(() => CodePlanSchema.parse(badPlan)).toThrow();
+  });
+
+  it('accepts clean paths without curly braces', () => {
+    const goodPlan = {
+      project_name: 'test',
+      tech_stack: { language: 'TS', framework: 'React', build_tool: 'vite' },
+      commands: { setupCommand: 'npm i', verifyCommand: 'tsc', buildCommand: 'build' },
+      modules: [
+        {
+          name: 'mod',
+          description: 'desc',
+          files: ['src/good.ts', 'src/utils/helper.ts'],
+          dependencies: [],
+          covers_tasks: ['T1'],
+          covers_features: ['F-001'],
+          priority: 1,
+        },
+      ],
+    };
+
+    const result = CodePlanSchema.parse(goodPlan);
+    expect(result.modules[0].files).toEqual(['src/good.ts', 'src/utils/helper.ts']);
   });
 });

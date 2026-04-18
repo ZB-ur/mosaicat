@@ -90,8 +90,8 @@ Acceptance-driven testing: tests derived from PRD features and UX flows, not fro
       "module": "auth",
       "test_file": "tests/acceptance/features/auth.test.ts",
       "test_cases": [
-        { "name": "F-001: should create account with valid credentials", "covers_features": ["F-001"], "type": "acceptance" },
-        { "name": "F-001: should show error for wrong password", "covers_features": ["F-001"], "type": "acceptance" }
+        { "name": "F-001: should create account with valid credentials", "covers_tasks": ["T-001"], "type": "acceptance" },
+        { "name": "F-001: should show error for wrong password", "covers_tasks": ["T-001"], "type": "acceptance" }
       ]
     }
   ]

@@ -15,6 +15,7 @@ import type { RunContext } from '../core/run-context.js';
 import { ArtifactStore } from '../core/artifact-store.js';
 import { EventBus } from '../core/event-bus.js';
 import { setBaseDir, resetBaseDir } from '../core/artifact.js';
+import { setMosaicHome } from '../core/mosaic-home.js';
 
 /**
  * Create an isolated temp directory for test artifacts.
@@ -26,6 +27,7 @@ export function createTestMosaicDir(): string {
   const artifactsDir = path.join(tmpRoot, 'artifacts');
   fs.mkdirSync(artifactsDir, { recursive: true });
   setBaseDir(artifactsDir);
+  setMosaicHome(tmpRoot);
   return tmpRoot;
 }
 
@@ -34,6 +36,7 @@ export function createTestMosaicDir(): string {
  */
 export function cleanupTestMosaicDir(tmpRoot: string): void {
   resetBaseDir();
+  setMosaicHome(null);
   if (tmpRoot && fs.existsSync(tmpRoot)) {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }

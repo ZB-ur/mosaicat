@@ -1,132 +1,119 @@
-# Roadmap: Mosaicat v2 Core Engine Rewrite
+# Roadmap: Mosaicat
 
-## Overview
+## Milestones
 
-A bottom-up strangler fig rewrite of the Mosaicat pipeline engine. We harden the test suite first (so we can trust our safety net), then replace leaf modules (ArtifactStore, error handling), build the new execution engine (iterative loop, stage executor), decompose the Coder monolith, and finally collapse the Orchestrator into a thin facade. Each phase leaves the system runnable. The orchestrator -- the hub of all dependencies -- is rewritten last, after everything it delegates to is stable.
+- ✅ **v1.0 Core Engine Rewrite** - Phases 1-7 (shipped 2026-03-28) -- [Archive](milestones/v1.0-ROADMAP.md)
+- 🚧 **v1.1 Quality & Cost Optimization** - Phases 8-12 (in progress)
 
 ## Phases
 
-**Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+<details>
+<summary>✅ v1.0 Core Engine Rewrite (Phases 1-7) - SHIPPED 2026-03-28</summary>
 
-Decimal phases appear between their surrounding integers in numeric order.
+- [x] Phase 1: Test Infrastructure Hardening (3/3 plans)
+- [x] Phase 2: Foundation Layer (4/4 plans)
+- [x] Phase 3: Execution Engine (3/3 plans)
+- [x] Phase 4: Coder Decomposition (3/3 plans)
+- [x] Phase 5: Orchestrator Facade + Logging Cleanup (3/3 plans)
+- [x] Phase 6: Integration Wiring Fixes (2/2 plans)
+- [x] Phase 7: README (1/1 plan)
 
-- [ ] **Phase 1: Test Infrastructure Hardening** - Make the test suite trustworthy before rewriting anything
-- [ ] **Phase 2: Foundation Layer** - ArtifactStore instance scoping, Result type, silent catch elimination, config freeze
-- [ ] **Phase 3: Execution Engine** - Iterative pipeline loop, StageExecutor, FixLoopRunner, graceful shutdown
-- [ ] **Phase 4: Coder Decomposition** - Split 1312-line monolith into 4 focused sub-modules + facade
-- [ ] **Phase 5: Orchestrator Facade + Logging Cleanup** - Thin orchestrator wiring, unified logging, EventBus instance scoping
+</details>
+
+### 🚧 v1.1 Quality & Cost Optimization
+
+**Milestone Goal:** 提升全链路产出物质量（消灭 placeholder/虚报覆盖率/无效测试），优化 UI 设计成本和 fix loop 效率
+
+- [ ] **Phase 8: Agent Architecture Fixes** - Fix tool-use, constitution persistence, output formats, manifest schemas, and hook activation
+- [ ] **Phase 9: Quality Gate Infrastructure** - Programmatic post-agent quality checks that block bad output from advancing
+- [x] **Phase 10: Test Fix Loop Intelligence** - Pre-compilation checks, error classification, and stagnation detection (completed 2026-03-28)
+- [ ] **Phase 11: Cost Tracking & Optimization** - Per-stage token tracking, UI Designer cost reduction, and prompt caching
+- [ ] **Phase 12: Intent & Research Enrichment** - Real web search for Researcher, structured user profiling for IntentConsultant
 
 ## Phase Details
 
-### Phase 1: Test Infrastructure Hardening
-**Goal**: The test suite is trustworthy enough to serve as a safety net for the rewrite -- typed mocks replace unsafe casts, and critical paths (resume, integration) have real coverage
-**Depends on**: Nothing (first phase)
-**Requirements**: TEST-01, TEST-02, TEST-03
+### Phase 8: Agent Architecture Fixes
+**Goal**: Every agent's tool-use, output format, and contract enforcement works correctly -- the foundation all downstream quality improvements depend on
+**Depends on**: Nothing (first phase of v1.1)
+**Requirements**: AGENT-01, AGENT-02, AGENT-03, AGENT-04, AGENT-05, AGENT-06
 **Success Criteria** (what must be TRUE):
-  1. Zero `as any` type casts remain in test files -- all mocks use typed factory functions (`createTestContext()`, `createMockProvider()`)
-  2. Resume flow has integration tests that exercise `resumeRun()`, `--from` stage reset, and artifact cleanup against real modules (not mocks)
-  3. A canary integration test runs a full pipeline (all real modules except LLM, which uses a deterministic stub) and verifies artifacts land on disk
+  1. An agent configured with `allowed_tools` in agents.yaml can call those tools during execution (tool-use mode works alongside or instead of structured output)
+  2. Researcher agent calls web search tools and returns results with citations from real URLs
+  3. `constitution_project` written by ProductOwner/TechLead exists on disk and is loaded by downstream agents
+  4. UXDesigner and APIDesigner produce output that matches their prompt specifications without format contradictions
+  5. Every manifest write is validated against its Zod schema (invalid data throws), and BaseAgent post-run hooks fire after agent execution
 **Plans:** 3 plans
 Plans:
-- [x] 01-01-PLAN.md — Typed mock factories + eliminate all `as any` casts from test files
-- [x] 01-02-PLAN.md — Resume flow integration tests (5 scenarios)
-- [ ] 01-03-PLAN.md — Full 13-stage canary E2E test + coverage baseline
+- [x] 08-01-PLAN.md — ToolUseAgent base class + Researcher migration
+- [x] 08-02-PLAN.md — Constitution persistence + output format alignment
+- [x] 08-03-PLAN.md — Manifest validation hardening + hook activation
 
-### Phase 2: Foundation Layer
-**Goal**: The core building blocks for the rewrite exist and are proven -- artifact I/O is instance-scoped, errors are explicit, config is immutable, and a RunContext bundles everything per run
-**Depends on**: Phase 1
-**Requirements**: ERR-01, ERR-02, ERR-03, ERR-04, STATE-01, STATE-02, STATE-03, STATE-04, SEC-01
+### Phase 9: Quality Gate Infrastructure
+**Goal**: Pipeline stages cannot advance when output contains stubs, placeholder components, or misreported coverage -- bad output is blocked, not passed through
+**Depends on**: Phase 8
+**Requirements**: GATE-01, GATE-02, GATE-03, GATE-04, GATE-05
 **Success Criteria** (what must be TRUE):
-  1. `ArtifactStore` is instantiated per run and all artifact reads/writes go through it -- preserved modules (BaseAgent) continue working via the bridge pattern without modification
-  2. All 16 silent catch blocks (9 in Evolution Engine, 7 in Validator) are replaced with `logger.warn()` + typed fallback -- damaged manifests return an explicit "unreadable" status instead of silent empty results
-  3. Context Manager fails fast (throws) when a prompt file is missing in production mode, and logs a warning in development mode
-  4. Config is frozen via `structuredClone` + `Object.freeze` before pipeline execution -- any mutation attempt throws at runtime
-  5. `RunContext` object exists and bundles ArtifactStore, Logger, Provider, EventBus, Config, and AbortSignal for a single run
+  1. A stage producing placeholder components (empty div shells, empty function bodies, TODO/FIXME markers) is blocked from advancing to the next stage
+  2. code.manifest.json entries include `implementation_status` (stub/partial/complete) filled by programmatic scanning, not LLM self-report
+  3. After each stage, feature coverage is checked against PRD feature list and gaps are reported
+  4. Validator produces a summary report aggregating per-stage quality results into a full-pipeline integrity assessment
+**Plans:** 4 plans
+Plans:
+- [x] 09-01-PLAN.md — Types, manifest schema extensions, AST stub detection hook
+- [ ] 09-02-PLAN.md — Hook registration, feature coverage check, Coder manifest integration
+- [x] 09-03-PLAN.md — Validator quality gate aggregation
+- [ ] 09-04-PLAN.md — Gap closure: fix hooks.test.ts mandatory assertion regression
+
+### Phase 10: Test Fix Loop Intelligence
+**Goal**: The Tester-Coder fix loop correctly diagnoses why tests fail and stops wasting rounds on unfixable infrastructure errors
+**Depends on**: Phase 9
+**Requirements**: TEST-01, TEST-02, TEST-03, TEST-04
+**Success Criteria** (what must be TRUE):
+  1. Before running vitest, test files pass `tsc --noEmit` -- parse/import failures are caught before the test runner executes
+  2. Test failures are classified into three categories (parse/import error, assertion failure, runtime error) visible in fix loop logs
+  3. Fix loop terminates early when identical failure sets repeat for 2 consecutive rounds, producing a stagnation report
+  4. Error type drives fix strategy: parse/import errors trigger config/dependency fixes, assertion errors trigger logic fixes
+**Plans:** 2/2 plans complete
+Plans:
+- [ ] 10-01-PLAN.md — Failure classifier module + TesterAgent pre-compilation
+- [ ] 10-02-PLAN.md — Stagnation detection, classification-driven strategy, visibility wiring
+
+### Phase 11: Cost Tracking & Optimization
+**Goal**: Pipeline runs report per-stage token costs, and UI Designer runs faster without degrading P0/P1 component quality
+**Depends on**: Phase 10
+**Requirements**: COST-01, COST-02, COST-03
+**Success Criteria** (what must be TRUE):
+  1. After a pipeline run, `run-metrics.json` contains per-stage token consumption (input/output) and CLI progress shows cumulative cost
+  2. UI Designer components are tagged by priority (P0/P1/P2); P2 components skip full LLM implementation while P0/P1 retain full quality
+  3. AnthropicSDK provider sets `cache_control` on shared context blocks, and cached token counts appear in run metrics
 **Plans**: TBD
 
-### Phase 3: Execution Engine
-**Goal**: The pipeline executes via an iterative loop with explicit stage outcomes, finite retries, circuit breakers, and clean shutdown -- no recursion, no infinite retries, no orphaned state on SIGINT
-**Depends on**: Phase 2
-**Requirements**: EXEC-01, EXEC-02, EXEC-03, EXEC-04, EXEC-05
+### Phase 12: Intent & Research Enrichment
+**Goal**: The pipeline front-end produces richer, more grounded inputs for downstream agents
+**Depends on**: Phase 8
+**Requirements**: INTENT-01, INTENT-02
 **Success Criteria** (what must be TRUE):
-  1. Pipeline stages execute via a `while` loop with `StageOutcome` discriminated union returns -- recursive `executeStage()` is no longer called
-  2. Tester-Coder fix loop runs as an independent `FixLoopRunner` with progressive strategy (direct-fix, replan, full-history) -- no index manipulation in the main pipeline loop
-  3. `RetryingProvider` enforces a maximum of 20 retries and a circuit breaker that opens after 5 consecutive failures (30s half-open recovery)
-  4. SIGINT/SIGTERM triggers `ShutdownCoordinator` which completes the current stage's artifact write before exiting -- no partial artifacts on disk
-  5. `StageExecutor` handles single-stage execution including retry, gate checking, and context building as a standalone unit testable in isolation
-**Plans:** 1/3 plans executed
-Plans:
-- [x] 03-01-PLAN.md — StageOutcome type + RetryingProvider circuit breaker + ShutdownCoordinator
-- [x] 03-02-PLAN.md — StageExecutor single-stage execution unit
-- [ ] 03-03-PLAN.md — FixLoopRunner + PipelineLoop iterative orchestration
-
-### Phase 4: Coder Decomposition
-**Goal**: The 1312-line Coder monolith is replaced by 4 focused sub-modules and a thin facade, each independently testable with clear single responsibilities
-**Depends on**: Phase 2
-**Requirements**: CODER-01, CODER-02, CODER-03, CODER-04, CODER-05, TEST-04
-**Success Criteria** (what must be TRUE):
-  1. `CoderPlanner` generates `code-plan.json` as a standalone module with its own unit tests
-  2. `CoderBuilder` handles skeleton generation and module implementation as a standalone module
-  3. `BuildVerifier` runs compilation checks and build-fix loops independently -- its retry behavior is testable without the full Coder
-  4. `SmokeRunner` performs HTTP probes and smoke tests as a standalone module with shell command execution path tests
-  5. `coder.ts` is a thin facade (under 250 lines) that delegates to the 4 sub-modules -- all existing Coder behavior is preserved
-**Plans:** 3 plans
-Plans:
-- [x] 04-01-PLAN.md — CoderDeps types + CoderPlanner + CoderBuilder sub-modules
-- [x] 04-02-PLAN.md — BuildVerifier + SmokeRunner sub-modules with shell command tests (TEST-04)
-- [ ] 04-03-PLAN.md — Thin facade rewrite + delegation tests
-
-### Phase 5: Orchestrator Facade + Logging Cleanup
-**Goal**: The Orchestrator is a thin wiring layer that creates RunContext and delegates to PipelineLoop -- all console output goes through Logger, EventBus is instance-scoped
-**Depends on**: Phase 3
-**Requirements**: ORCH-01, ORCH-02, ORCH-03
-**Success Criteria** (what must be TRUE):
-  1. Orchestrator is under 200 lines and its only job is creating RunContext and delegating to PipelineLoop -- no stage execution logic lives in the Orchestrator
-  2. Zero `console.log` / `console.warn` / `console.error` calls remain in `src/` (excluding test files) -- all output routes through the Logger module
-  3. EventBus is instantiated per run (not a singleton) and passed via RunContext -- concurrent runs (future) would not share events
-**Plans:** 2/3 plans executed
-Plans:
-- [x] 05-01-PLAN.md — EventBus singleton removal + infrastructure console.warn cleanup
-- [x] 05-02-PLAN.md — CLI presentation layer console.log replacement with process.stdout/stderr.write
-- [x] 05-03-PLAN.md — Orchestrator facade rewrite + PipelineLoopCallbacks extension
-
-### Phase 6: Integration Wiring Fixes
-**Goal**: All Phase 2-5 modules are correctly wired together -- fix loop triggers on test failures, graceful shutdown works on SIGINT, OutputGenerator uses instance-scoped artifact paths, and all TypeScript event types are declared
-**Depends on**: Phase 5
-**Requirements**: EXEC-01, EXEC-02, EXEC-05
-**Gap Closure**: Closes gaps from v1.0 milestone audit
-**Success Criteria** (what must be TRUE):
-  1. `FixLoopRunner.checkTesterFailed()` reads `manifest?.verdict` (not `quality_assessment?.verdict`) -- fix loop triggers when tester reports failures
-  2. `ShutdownCoordinator` is instantiated in `index.ts` and its `AbortController` is passed to `createRunContext()` -- SIGINT completes current stage then exits
-  3. `OutputGenerator` accepts `ArtifactIO` via constructor instead of importing legacy `getArtifactsDir()`/`readArtifact()` globals -- README and manifest use correct run-scoped paths
-  4. `PipelineEvents` interface declares `stage:skipped` event -- zero TypeScript errors on event emit/subscribe
-**Plans:** 2 plans
-Plans:
-- [x] 06-01-PLAN.md — FixLoopRunner verdict path fix + PipelineEvents stage:skipped type declaration
-- [x] 06-02-PLAN.md — OutputGenerator ArtifactIO refactor + ShutdownCoordinator wiring in index.ts
+  1. Researcher executes real web searches via Anthropic `web_search` server tool and includes cited URLs in research.md
+  2. IntentConsultant outputs a structured user profile (target demographics, devices, usage patterns, core pain points) in intent-brief.json
+**Plans**: TBD
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
-Note: Phase 4 depends on Phase 2 (not Phase 3), so it could theoretically overlap with Phase 3. However, sequential execution is the default.
+Phases execute in numeric order: 8 -> 9 -> 10 -> 11 -> 12
+(Phase 12 depends on Phase 8 only -- can run after Phase 8 if needed)
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Test Infrastructure Hardening | 0/3 | Planning complete | - |
-| 2. Foundation Layer | 0/TBD | Not started | - |
-| 3. Execution Engine | 1/3 | In Progress|  |
-| 4. Coder Decomposition | 0/3 | Planning complete | - |
-| 5. Orchestrator Facade + Logging Cleanup | 2/3 | In Progress|  |
-
-### Phase 7: 优化readme内容
-
-**Goal:** Update README.md and README.en.md to reflect v2 core engine rewrite -- fix all technical inaccuracies, reorganize structure for AI-savvy developers, shift tone from marketing to technical, add terminal demo
-**Requirements**: D-01, D-02, D-03, D-04, D-05, D-06, D-07, D-08
-**Depends on:** Phase 6
-**Plans:** 1 plan
-
-Plans:
-- [x] 07-01-PLAN.md — Rewrite both README files with v2-accurate content, reorganized structure, and technical tone
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. Test Infrastructure | v1.0 | 3/3 | Complete | 2026-03-26 |
+| 2. Foundation Layer | v1.0 | 4/4 | Complete | 2026-03-27 |
+| 3. Execution Engine | v1.0 | 3/3 | Complete | 2026-03-27 |
+| 4. Coder Decomposition | v1.0 | 3/3 | Complete | 2026-03-27 |
+| 5. Orchestrator Facade | v1.0 | 3/3 | Complete | 2026-03-27 |
+| 6. Integration Wiring | v1.0 | 2/2 | Complete | 2026-03-27 |
+| 7. README | v1.0 | 1/1 | Complete | 2026-03-27 |
+| 8. Agent Architecture Fixes | v1.1 | 0/3 | Planning | - |
+| 9. Quality Gate Infrastructure | v1.1 | 0/4 | Planning | - |
+| 10. Test Fix Loop Intelligence | v1.1 | 0/2 | Complete    | 2026-03-28 |
+| 11. Cost Tracking & Optimization | v1.1 | 0/? | Not started | - |
+| 12. Intent & Research Enrichment | v1.1 | 0/? | Not started | - |

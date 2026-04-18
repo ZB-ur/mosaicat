@@ -162,31 +162,16 @@ export class StageExecutor {
       await agent.execute(context);
     } catch (err) {
       if (err instanceof ClarificationNeeded) {
-        let answer: string;
+        transitionStage(run, stage, 'awaiting_clarification');
 
-        if (run.autoApprove) {
-          // Auto-approve mode: pick the first option or use a default answer
-          answer = err.options?.[0]?.label ?? 'auto-approved';
-          this.ctx.logger.pipeline('info', 'clarification:auto-answered', {
-            stage, question: err.question, answer,
-          });
-          this.ctx.eventBus.emit('clarification:answered', stage, err.question, answer, 'auto');
-        } else {
-          transitionStage(run, stage, 'awaiting_clarification');
-
-          answer = await this.handler.onClarification(
-            stage, err.question, run.id,
-            err.options, err.allowCustom, err.context, err.impact,
-          );
-          this.ctx.eventBus.emit('clarification:answered', stage, err.question, answer, 'user');
-        }
-
+        const answer = await this.handler.onClarification(
+          stage, err.question, run.id,
+          err.options, err.allowCustom, err.context, err.impact,
+        );
+        this.ctx.eventBus.emit('clarification:answered', stage, err.question, answer, 'user');
         context.inputArtifacts.set('clarification_answer', `[source: user] ${answer}`);
 
-        // Only transition back to running if we left running state (non-auto-approve path)
-        if (!run.autoApprove) {
-          transitionStage(run, stage, 'running');
-        }
+        transitionStage(run, stage, 'running');
 
         // Re-run agent with clarification answer
         await agent.execute(context);

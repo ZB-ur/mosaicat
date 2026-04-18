@@ -1,174 +1,172 @@
 # Project Research Summary
 
-**Project:** Mosaicat v2 Core Engine Rewrite
-**Domain:** TypeScript multi-agent pipeline orchestration engine (partial rewrite: ~70% rewrite, ~30% preserved)
-**Researched:** 2026-03-26
+**Project:** Mosaicat v1.1 — Quality & Cost Optimization
+**Domain:** Multi-agent LLM pipeline quality gates, cost tracking, and intelligent error classification
+**Researched:** 2026-03-28
 **Confidence:** HIGH
 
 ## Executive Summary
 
-Mosaicat v2 is a surgical rewrite of a working but debt-laden 15K-line TypeScript multi-agent pipeline engine. The research across stack, features, architecture, and pitfalls converges on a single thesis: the problems are structural (global mutable state, recursive execution, god-object orchestrator, silent error swallowing) and the fixes are well-understood patterns (instance scoping, iterative loops, facade extraction, explicit error returns). No exotic technology is needed -- the rewrite uses TypeScript built-in patterns (discriminated unions, AbortController), one optional dependency (cockatiel for resilience), and zero framework changes. The existing pipeline state machine, agent base classes, and all interface contracts are preserved untouched.
+Mosaicat v1.0 completed its first full pipeline run (run-1774640936546) and exposed three classes of critical failure: manifest self-reporting lies (45% actual coverage vs 100% claimed), futile fix loop rounds (5 rounds, 24% of run time wasted because parse errors and assertion errors were treated identically), and excessive UI generation cost (39 min, 30% of run time for screenshots that provided no downstream value). The v1.1 initiative is a targeted surgical upgrade — not a rewrite — to make the existing pipeline reliable and cost-efficient. All needed capabilities already exist in the current dependency set; zero new packages are required.
 
-The recommended approach is a bottom-up strangler fig: rewrite leaf modules first (ArtifactStore, error handling), then mid-tier (StageExecutor, ContextBuilder), then the orchestrator facade last. All four research streams agree on this ordering. The critical insight is that the orchestrator is the hub of all dependencies -- rewriting it early creates a combinatorial explosion of integration breakage, while rewriting it last lets each component stabilize before integration. The Coder agent decomposition (1312 lines to 4 modules) is architecturally independent and can proceed in parallel with the orchestration rewrite.
+The recommended approach is a layered build: foundation components first (token tracking, placeholder detection, error classification as pure independently-testable modules), then the quality gate that composes them, then integration into the pipeline executor. This mirrors the architecture's existing decorator and strategy patterns and avoids coupling new behavior to live pipeline flow until it is tested in isolation. The critical architectural constraint: quality gates must be deterministic mechanical checks, never LLM calls. LLM-based quality assessment already exists in the Reviewer and Validator agents — adding it to intermediate gates creates feedback loops and doubles cost with no reliability gain.
 
-The highest-risk areas are: (1) singleton state contamination during the ArtifactStore transition (preserved code calling global functions while rewritten code uses the instance), (2) test suite false confidence (mock-heavy tests pass while real integration breaks), and (3) phantom interface drift (TypeScript types match but runtime behavior diverges). All three are mitigated by writing behavioral contract tests and integration tests BEFORE rewriting any module -- making test infrastructure hardening the mandatory first phase.
+The primary risk is over-engineering. Each individual quality check is justified in isolation, but cumulative validation overhead must stay under 15% of pipeline duration (currently ~130 min total). The second risk is implementing stub detection via keyword matching alone — the v1.0 run's 13 placeholder components used `<div>ComponentName</div>` patterns that no keyword list catches. Detection must combine structural validation (AST node count, export presence, import resolution) with keyword scanning, not keyword scanning alone.
 
 ## Key Findings
 
 ### Recommended Stack
 
-No new frameworks. The rewrite uses TypeScript's own type system and Node.js built-ins for almost everything. The only potential new dependency is `cockatiel` for retry/circuit-breaker composition, and even that can be hand-rolled.
+All five v1.1 capabilities build on the existing stack. No `npm install` needed. The `@anthropic-ai/sdk ^0.78.0` already exposes `usage.input_tokens`/`output_tokens` on every response (AnthropicSDKProvider already populates `LLMResponse.usage` but nothing consumes it). `zod ^4.3.6` supports `.refine()` and `.superRefine()` for semantic validation beyond schema shape. The existing `classifyError()` in `retry-log.ts` has 9 categories and pure regex — it only needs its return type extended and stage-aware routing added.
 
-**Core patterns (not libraries):**
-- **Custom `Result<T, E>` type**: 50-line file replacing 16 silent catch blocks with explicit typed error returns. Rejected Effect-TS (paradigm mismatch) and neverthrow (unmaintained).
-- **`RunContext` object**: Single context parameter replacing 5+ constructor args, carrying ArtifactStore, Logger, Provider, EventBus, Config per run. Rejected DI frameworks (tsyringe, InversifyJS) as overkill for 13 agents.
-- **Iterative `while` loop + `StageOutcome` discriminated union**: Replaces recursive `executeStage()`. Rejected XState (existing pipeline.ts state machine works; XState solves a different problem).
-- **`ArtifactStore` class per run**: Replaces module-level `currentRunDir` global. Instance-scoped, test-isolated, future-concurrent.
-- **`cockatiel` (optional)**: Retry with exponential backoff + circuit breaker + timeout. Replaces `maxRetries: Infinity` default. Can hand-roll if dependency aversion is strong.
-- **`AbortController`**: Node.js built-in for graceful SIGINT/SIGTERM shutdown through the pipeline.
+**Core technologies (existing, leveraged for v1.1):**
+- `zod ^4.3.6`: Manifest semantic validation via `.refine()` — co-located with existing schemas, no split validation systems
+- `@anthropic-ai/sdk ^0.78.0` usage field: Post-call exact token counts — more accurate than any third-party tokenizer for Claude models
+- `@anthropic-ai/sdk ^0.78.0` `messages.countTokens()`: Pre-call estimation for budget-aware stages (Coder, UIDesigner)
+- Enhanced `classifyError()` in `retry-log.ts`: Extended return type with `suggestedAction` — no new library needed
+- `web_search_20250305` server tool (Anthropic API-level): Zero-infrastructure web search for Researcher — runs server-side, returns citations, no API key management
 
-**What stays unchanged:** TypeScript 5.9, Vitest 4.1, Zod 4.3, p-queue, eventemitter3, Anthropic SDK, Playwright.
+**What NOT to add:**
+- `tiktoken` or `anthropic-tokenizer-typescript` — approximations only; SDK `usage` is exact and free
+- `langchain`/`langsmith` — dependency tree conflicts with agent architecture; built-in EventBus handles observability
+- `ajv`/`joi` — splits validation across two schema systems; Zod refinements keep everything in one place
+- Template UI libraries (Shadcn, Storybook automation) — constrains LLM design freedom; smarter batching is the right optimization
 
 ### Expected Features
 
-**Must have (table stakes -- fix real broken things):**
-1. Structured error visibility -- eliminate all 16 silent catches
-2. Finite retry (20) + circuit breaker -- prevent stuck pipelines
-3. Artifact isolation (ArtifactStore) -- eliminate global mutable state
-4. Iterative execution loop -- eliminate recursive stack growth
-5. Graceful shutdown -- SIGINT/SIGTERM handler with clean state save
-6. Unified logging -- route 30+ console.log calls through logger
-7. Immutable config -- clone-before-mutate for `agentsConfig`
-8. Resume integration tests -- cover the untested critical path
+The v1.0 run data provides a concrete prioritization signal: every P1 feature addresses a documented failure from run-1774640936546.
 
-**Should have (differentiators worth the effort):**
-9. Elapsed-time circuit breaker -- force-fail stages stuck > 30min
-10. Context-aware fallback -- fail-fast on missing prompts in production
-11. Artifact integrity verification on resume -- validate schemas, not just file existence
+**Must have — v1.1 (P1, addresses known critical failures):**
+- Stub/placeholder detection — eliminates the #1 quality problem (13 fake components claimed as real)
+- Test file validity pre-check (`tsc --noEmit`) — catches infrastructure errors before fix loop starts
+- Fix loop stagnation detection — aborts after 2 rounds with identical failure sets (would have saved 24% of v1.0 run time)
+- Error category distinction: infrastructure vs logic — prevents futile fix loop rounds on parse errors
+- Manifest stub-vs-real distinction (`implementation_status` enum per file) — makes `code.manifest.json` trustworthy
+- Validator content spot-checking (sample N files programmatically) — catches manifest lies at final gate
 
-**Defer (not this rewrite):**
-- Parallel stage execution -- ArtifactStore enables it, but don't implement now
-- Event bus persistence/replay -- checkpoint-based resume is sufficient
-- Pipeline-level cost tracking -- needs billing infrastructure
-- Generic agent plugin system -- the 13-agent pipeline IS the product
-- Per-stage error context propagation -- needs UX design for error display
+**Should have — v1.2 (P2, efficiency gains once quality baseline is solid):**
+- Cumulative cost tracking per stage — required baseline before any cost optimization
+- UI Designer token budget control — after cost tracking confirms UIDesigner dominates
+- Cross-stage artifact dependency validation — if feature gaps still reach Validator despite v1.1
+- Prompt caching for shared context — after cost tracking identifies shared context as dominant cost driver
+
+**Defer — v2+ (P3, high complexity, needs more production data):**
+- Intelligent root cause diagnosis in fix loop — needs multi-run data to tune strategy mapping
+- Researcher web search integration — large scope: API key management, result parsing, rate limiting; independent project
 
 ### Architecture Approach
 
-The rewrite decomposes the 1057-line god-object Orchestrator into 5 focused components wired through a `RunContext`. The Orchestrator becomes a thin facade (< 200 lines) that creates the RunContext and delegates to PipelineLoop. Config is frozen at construction via `structuredClone` + `Object.freeze`. Errors flow via return types (discriminated unions), not exceptions, for expected outcomes. The EventBus becomes instance-scoped (not singleton), enabling future concurrent runs.
+V1.1 adds 5 new modules and modifies 6 existing ones, all following established patterns in the codebase. New modules are pure and independently testable before any pipeline integration. The QualityGate composes PlaceholderDetector and ManifestContentValidator, then runs as a synchronous check between `agent.execute()` and the existing gate check in StageExecutor — no new StageOutcome variant needed, quality failures reuse the existing `retry` path with violation details injected into ArtifactStore. TokenTrackingProvider wraps RetryingProvider (outside, not inside) so retried calls are counted — this follows the existing decorator pattern in `retrying-provider.ts`.
 
 **Major new components:**
-1. **RunContext** -- holds all run-scoped instances (ArtifactStore, Logger, Provider, EventBus, Config, AbortSignal)
-2. **PipelineLoop** -- iterative stage sequencing, replaces recursive executeStage
-3. **StageExecutor** -- execute single stage with retry, gate handling, context building
-4. **FixLoopRunner** -- dedicated Tester-Coder retry loop with progressive strategy (direct-fix, replan, full-history)
-5. **ArtifactStore** -- instance-scoped artifact I/O, bridge pattern for backward compatibility
-6. **Coder sub-modules** -- CoderPlanner, CoderBuilder, BuildVerifier, SmokeRunner (from 1312-line monolith)
+1. `QualityGate` (`src/core/quality-gate.ts`) — post-agent content validator; pure deterministic checks, no LLM; composes ManifestContentValidator + PlaceholderDetector + per-stage rules
+2. `TokenTracker + TokenTrackingProvider` (`src/core/token-tracker.ts`) — accumulates `LLMResponse.usage` per stage; wraps provider chain as decorator; emits `token:usage` events; writes `token-usage.json` at run end
+3. `PlaceholderDetector` (`src/core/placeholder-detector.ts`) — pure function `(content, fileType) => PlaceholderMatch[]`; reusable by both QualityGate and Validator
+4. `ManifestContentValidator` (`src/core/manifest-validator.ts`) — cross-references manifest claims against disk reality; separate from `manifest.ts` (schema structure vs semantic truth)
+5. `StageMetrics` (`src/core/stage-metrics.ts`) — per-stage timing + token usage + quality results; written as `stage-metrics.json` at run end
+
+**Modified existing components:**
+- `retry-log.ts`: Extend `classifyError()` to `classifyErrorDetailed()` returning `ClassifiedError { category, rootCause, suggestedAction, affectedFiles }`
+- `StageExecutor`: Add `QualityGate` injection, call after executeAgent, inject violations into store on failure
+- `FixLoopRunner`: Use `classifyErrorDetailed()` instead of round-number heuristic for approach selection
+- `RunContext`: Add `readonly tokenTracker: TokenTracker` (one field addition)
+- `EventBus`: Add `token:usage`, `quality:violation`, `quality:passed` events
+- `Orchestrator`: Create tracker/gate in `initRunContext()`, write reports in `postRun()`
 
 ### Critical Pitfalls
 
-1. **Singleton state contamination during ArtifactStore transition** -- Preserved code (BaseAgent) calls global `writeArtifact()` while rewritten code uses the ArtifactStore instance, causing artifacts to land in different directories. Prevention: bridge pattern where ArtifactStore wraps the global, never runs parallel. Test both read paths see same data.
+1. **Gameable heuristic quality gates** — Keyword-based stub detection (`PLACEHOLDER_KEYWORDS`) fails as the LLM generates slightly different placeholders that bypass the list. Avoid: combine structural validation (AST node count, export presence, minimum JSX nodes) with keyword scanning; verify the gate rejects the actual 13 v1.0 placeholder components in tests before deployment.
 
-2. **Test suite becomes a lie** -- Mock-heavy tests with `as any` casts create a parallel universe. Rewritten modules pass unit tests while integration breaks silently. Prevention: fix `as any` casts first, create typed mock factories, add canary integration test that uses real everything except LLM.
+2. **Self-reported manifest as authoritative source** — LLM lists what it was *asked* to build, not what it *actually* built. The v1.0 run claimed 100% coverage, actual was 45%. Avoid: programmatic manifest generation by scanning disk artifacts; move verification from Validator (stage 13, too late) to immediately post-Coder (fail fast).
 
-3. **Rewriting the orchestrator while it orchestrates everything** -- The hub has the most dependencies. Rewriting it early means building against old interfaces; rewriting it late means adapting to every change. Prevention: rewrite it LAST, or in two surgical phases (iterative loop first, then adapt to new components).
+3. **Error classification complexity without routing** — The existing `classifyError()` has 9 categories but the fix loop treats all identically. More categories add logs, not better behavior. Avoid: focus on the binary — "is this error in code the Coder controls, or in infrastructure/config?" Infrastructure errors → abort fix loop immediately; code errors → continue fixing.
 
-4. **Phantom interface drift** -- TypeScript types match but runtime behavior changes (error propagation paths, timing, return semantics). Compiler sees no error; preserved modules break at runtime. Prevention: behavioral contract tests before rewrite, E2E tests after every module change.
+4. **Wrong UI cost optimization target** — Capping component count reduces decomposition quality and degrades Coder output. Avoid: target screenshots (pure Playwright overhead — page-level only, skip atomic components; eliminates 40-60% of Playwright time) and batch generation. Never cap component count.
 
-5. **Resume contract breakage** -- Old `pipeline-state.json` files become incompatible with new ArtifactStore paths. Prevention: document resume contract, add version field to state file, write resume integration tests BEFORE artifact layer rewrite.
+5. **Validation cascade overhead** — Each quality check is justified in isolation; together they can add 15-30 minutes to a 130-minute pipeline run. Avoid: enforce a 15% overhead budget; prefer early fast checks over late comprehensive ones; all gate checks must be programmatic (milliseconds, no LLM calls).
 
 ## Implications for Roadmap
 
-Based on dependency analysis across all four research streams, here is the recommended phase structure:
+Based on combined research, the ARCHITECTURE.md build order maps cleanly to 4 phases. Phase ordering follows two constraints: (1) new modules must be unit-testable before integration into live pipeline, (2) cost tracking must precede cost optimization.
 
-### Phase 1: Test Infrastructure Hardening
-**Rationale:** All research streams agree: the test suite must be trustworthy BEFORE any rewrite begins. Pitfall 3 (test suite lies) is the meta-risk that makes all other pitfalls invisible. This phase has zero dependencies and unblocks everything.
-**Delivers:** Typed mock factories (`createTestContext()`, `createMockProvider()`), elimination of all `as any` casts in test files, canary integration test, resume integration tests.
-**Addresses:** Resume integration test gap (table stake #8), `as any` test fragility.
-**Avoids:** Pitfall 3 (test suite becomes a lie), Pitfall 9 (resume contract breakage -- tests written before artifact rewrite).
+### Phase 1: Foundation Modules
+**Rationale:** These 4 items have zero cross-dependencies and can be built and tested in isolation. No pipeline integration required. Getting them right in isolation prevents bugs from compounding in later integration phases.
+**Delivers:** `TokenTracker`, `PlaceholderDetector`, `classifyErrorDetailed()` extension in `retry-log.ts`, `StageMetrics` types — all fully tested, zero pipeline impact
+**Addresses:** Establishes the building blocks for all P1 features (stub detection, error categorization, cost tracking)
+**Avoids:** Pitfall 6 (validation cascade) — foundation components are pure functions with millisecond execution time
 
-### Phase 2: Foundation Layer (ArtifactStore + Error Handling + Config Freeze)
-**Rationale:** ArtifactStore is the dependency everything else needs. Error handling (Result type + silent catch elimination) and config freeze are low-risk, high-value changes with no cross-dependencies. All three researchers (STACK, FEATURES, ARCHITECTURE) identify these as the foundational layer.
-**Delivers:** `ArtifactStore` class with bridge pattern, `Result<T, E>` type, silent catch elimination (16 catches across evolution engine + validator), `structuredClone` config freeze, `RunContext` factory.
-**Addresses:** Table stakes #1 (error visibility), #3 (artifact isolation), #7 (immutable config).
-**Avoids:** Pitfall 2 (singleton state contamination -- bridge pattern), Pitfall 7 (silent catch migration -- enforce policy from day one).
+### Phase 2: Quality Gate
+**Rationale:** Depends only on PlaceholderDetector from Phase 1 and the existing ArtifactStore interface. Can be built and validated against v1.0 artifacts before touching StageExecutor.
+**Delivers:** `ManifestContentValidator`, `QualityGate` — verified against real v1.0 failure artifacts (must reject the 13 placeholder components and catch the `.tsx`/`.ts` test extension bug)
+**Addresses:** P1 features: stub/placeholder detection, manifest stub-vs-real distinction, test file validity pre-check, Validator content spot-checking
+**Avoids:** Pitfall 1 (gameable heuristics) — gate tested against known-bad output before deployment; Pitfall 2 (self-reported manifest)
 
-### Phase 3: Execution Engine (Iterative Loop + StageExecutor + FixLoopRunner)
-**Rationale:** Depends on RunContext and ArtifactStore existing. This is the structural core of the rewrite -- converting recursive execution to iterative, extracting the Tester-Coder fix loop, and introducing discriminated union stage results. Graceful shutdown depends on the iterative loop having a clean exit point.
-**Delivers:** `PipelineLoop`, `StageExecutor`, `FixLoopRunner`, `GateHandler`, `ShutdownCoordinator`, iterative execution with `StageOutcome` union.
-**Addresses:** Table stakes #4 (iterative execution), #5 (graceful shutdown), #2 (finite retry + circuit breaker).
-**Avoids:** Pitfall 1 (phantom interface drift -- behavioral contract tests from Phase 1), Pitfall 4 (orchestrator as hub -- building components bottom-up before touching orchestrator), Pitfall 10 (event bus subscriber drift).
+### Phase 3: Pipeline Integration
+**Rationale:** Pure components are proven in isolation. Now wire into StageExecutor, FixLoopRunner, Orchestrator. This is the highest-risk phase (modifies live pipeline flow) but risk is bounded because the components it integrates are already tested.
+**Delivers:** Quality gate active in pipeline, token tracking live, error-aware fix loop approach selection, `token-usage.json` and `stage-metrics.json` artifacts written on every run
+**Addresses:** P1 features: error category distinction in Tester, fix loop stagnation detection; P2 features: cumulative cost tracking
+**Avoids:** Pitfall 3 (classification without routing) — `suggestedAction` field drives fix loop strategy; Pitfall 6 (validation overhead) — pipeline duration monitored before/after
 
-### Phase 4: Coder Agent Decomposition
-**Rationale:** Architecturally independent from the orchestration rewrite. Can technically run in parallel with Phase 3, but sequencing after Phase 3 means the new CoderAgent can use StageExecutor patterns. The 1312-line monolith is the single largest maintenance burden.
-**Delivers:** `CoderPlanner`, `CoderBuilder`, `BuildVerifier`, `SmokeRunner`, rewritten `CoderAgent` facade (~200 lines).
-**Addresses:** Coder split requirement from PROJECT.md, Coder shell command test gap (table stake from Active requirements).
-**Avoids:** Pitfall 5 (import extension breakage -- keep `coder.ts` barrel file), Pitfall 11 (circular barrel imports -- sub-modules import specific files).
-
-### Phase 5: Orchestrator Facade + Logging Cleanup
-**Rationale:** The orchestrator is rewritten LAST, after all components it depends on are stable. By this point, it becomes a thin wiring layer (< 200 lines) that creates RunContext and delegates to PipelineLoop. Logging cleanup (30+ console.log calls) is mechanical work that fits here.
-**Delivers:** Rewritten `Orchestrator` (< 200 lines), unified logging (all output through Logger), EventBus instance-scoping (no more singleton).
-**Addresses:** Table stake #6 (unified logging), god-object decomposition.
-**Avoids:** Pitfall 4 (rewriting the hub -- all dependencies are now stable), Pitfall 8 (config mutation leaks -- already fixed by Phase 2 config freeze).
+### Phase 4: UI Cost Optimization
+**Rationale:** Depends on Phase 3 cost tracking to confirm UIDesigner is the dominant cost driver and establish the baseline. Pitfall 4 warns that optimizing the wrong target (component count) destroys quality.
+**Delivers:** Selective screenshot rendering (page-level only), component deduplication in planner, batch size configuration in `config/pipeline.yaml`
+**Addresses:** P2 feature: UI Designer token budget control
+**Avoids:** Pitfall 4 (wrong optimization target) — token/time measurements from Phase 3 guide what to cut
 
 ### Phase Ordering Rationale
 
-- **Phase 1 before everything**: You cannot safely rewrite code if the tests are lying. Every researcher flagged test quality as a prerequisite.
-- **Phase 2 before Phase 3**: The iterative execution loop needs RunContext and ArtifactStore to exist. Error handling patterns must be established before writing new code that handles errors.
-- **Phase 3 before Phase 5**: The orchestrator facade cannot be written until the components it delegates to (PipelineLoop, StageExecutor, FixLoopRunner) exist.
-- **Phase 4 is semi-independent**: It depends on Phase 2 (ArtifactStore) but not on Phase 3. Could run in parallel with Phase 3 if resources allow.
-- **Phase 5 is the capstone**: Everything wires together. The orchestrator is the last piece because it touches everything.
+- Phase 1 before Phase 2: QualityGate composes PlaceholderDetector; build the parts before the composite
+- Phase 2 before Phase 3: Gate logic needs isolated testing against v1.0 artifacts before it can block real pipeline stages
+- Phase 3 before Phase 4: Can't measure cost optimization ROI without tracking baseline from Phase 3
+- Intent enrichment (Researcher web search) deferred beyond this roadmap: Pitfall 5 warns it must come AFTER downstream quality gates are in place so you can measure whether enrichment actually changes gate pass rates
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
-- **Phase 2 (ArtifactStore bridge pattern):** The backward-compatibility shim between ArtifactStore instance and global functions needs careful design. Research the exact call sites in BaseAgent and preserved modules to verify the bridge covers all paths.
-- **Phase 3 (FixLoopRunner progressive strategy):** The current Tester-Coder fix loop has undocumented progressive retry logic (rounds 1-2 direct-fix, round 3 replan, rounds 4-5 full-history). This behavior must be fully understood before extraction.
+Phases with well-documented patterns (standard implementation, skip research-phase):
+- **Phase 1:** All four modules are pure functions or decorator extensions of existing code — established patterns, direct implementation
+- **Phase 2:** QualityGate follows StageExecutor's existing check pattern; ManifestContentValidator follows existing `manifest.ts` structure; both can be tested against real v1.0 artifacts
 
-Phases with standard patterns (skip research-phase):
-- **Phase 1 (test infrastructure):** Well-documented Vitest patterns. Typed mock factories are standard practice.
-- **Phase 4 (Coder split):** Straightforward module extraction. The sub-module boundaries are already identified in ARCHITECTURE.md.
-- **Phase 5 (Orchestrator facade):** By this point, all components exist. The facade is just wiring.
+Phases that may need targeted research during planning:
+- **Phase 3 (FixLoopRunner stagnation detection):** Error signature normalization — comparing failures across rounds without matching on line numbers requires a concrete normalization strategy before implementation (compare on file + error category tuples, not raw error strings)
+- **Phase 4 (UI cost optimization):** Selective Playwright rendering for page-level components only — need to verify which UIDesigner component categories map to pages vs atomics in the current `UIPlanSchema` output format
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All recommendations use existing tech or TypeScript built-ins. Only optional new dep (cockatiel) has a hand-roll fallback. Sources verified. |
-| Features | MEDIUM-HIGH | Table stakes well-grounded in LangGraph/CrewAI comparison and codebase analysis. Differentiators are judgment calls. |
-| Architecture | HIGH | Component boundaries derived directly from codebase analysis. Patterns (RunContext, iterative loop, discriminated unions) are textbook. |
-| Pitfalls | HIGH | All critical pitfalls grounded in specific code locations (line numbers, module names). Prevention strategies are concrete. |
+| Stack | HIGH | Verified against Anthropic SDK docs and existing codebase. Zero new dependencies. All integration points identified with file/line references. |
+| Features | HIGH | Grounded in real run-1774640936546 failure data. Priorities derived from measured impact (minutes wasted, coverage gap percentage). |
+| Architecture | HIGH | Based on direct analysis of shipped v1.0 modules with exact line counts. New component interfaces fully specified with TypeScript types. Build order has clear dependency rationale. |
+| Pitfalls | HIGH | Derived from v1.0 run analysis and codebase review. Each pitfall has concrete evidence (not hypothetical) and specific warning signs for early detection. |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Cockatiel version verification:** STACK.md notes MEDIUM confidence on exact version. Verify `cockatiel@^3.2` is current before Phase 3. Alternatively, hand-roll retry+circuit-breaker (~100 lines).
-- **Zod v4 schema patterns:** Pitfall 6 warns about v3/v4 incompatibility in online resources. Any new Zod schemas in the rewrite must be verified against v4 docs specifically.
-- **Resume state file migration:** No version field exists in current `pipeline-state.json`. Need to decide: add migration logic, or simply invalidate old state files on v2 upgrade. Decision needed in Phase 2 planning.
-- **EventBus event sequence contract:** No documentation exists for the expected event emission order. Before Phase 3 (which changes emission points), capture the current sequence as a test fixture.
+- **Stagnation detection normalization strategy:** How to compare "same failures" across fix loop rounds when error messages include line numbers that shift between rounds. Proposed approach: compare on `(file path, error category)` tuples, not raw error strings — needs validation against real fix loop logs from the v1.0 run.
+- **Manifest backward compatibility:** `CodeManifestSchema` will gain `implementation_status` per file. Existing manifests written in old format must be handled gracefully by `readManifest()`. Resolution during Phase 2 planning: add Zod `.optional().default('unknown')` to all new fields.
+- **Quality gate threshold calibration:** At what stub-density does a stage fail vs warn? Proposed: fail if >20% of code files are pure stubs; warn otherwise. Validate against v1.0 artifacts before shipping Phase 2.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- Codebase analysis: `src/core/orchestrator.ts`, `src/core/artifact.ts`, `src/core/event-bus.ts`, `src/agents/coder.ts`
-- Project documents: `.planning/PROJECT.md`, `.planning/codebase/CONCERNS.md`, `.planning/codebase/ARCHITECTURE.md`
-- [Cockatiel resilience library](https://github.com/connor4312/cockatiel) -- retry, circuit breaker, timeout
-- [Strangler Fig Pattern - Martin Fowler](https://martinfowler.com/bliki/StranglerFigApplication.html) -- incremental rewrite strategy
+- `.planning/debug/run-analysis-1774640936546.md` — Real v1.0 production failure data: 13 placeholder components, 14/16 test files unparseable, 5 futile fix loop rounds, 24% run time wasted
+- [Anthropic Web Search Tool Docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) — verified `web_search_20250305` TypeScript integration and pricing ($10/1000 searches)
+- [Anthropic Count Tokens API](https://platform.claude.com/docs/en/api/typescript/messages/count_tokens) — verified `client.messages.countTokens()` availability
+- Direct codebase analysis: `src/core/stage-executor.ts` (207 lines), `src/core/fix-loop-runner.ts` (130 lines), `src/core/retry-log.ts` (173 lines), `src/core/manifest.ts` (329 lines), `src/core/llm-provider.ts` (38 lines), `src/agents/ui-designer.ts`, `src/core/retrying-provider.ts` (165 lines)
 
 ### Secondary (MEDIUM confidence)
-- [LangGraph Error Handling and Retry Policies](https://deepwiki.com/langchain-ai/langgraph/3.7-error-handling-and-retry-policies) -- retry patterns comparison
-- [AgentTrace: Structured Logging for Agent Systems](https://arxiv.org/abs/2602.10133) -- observability patterns
-- [Circuit Breaker Pattern in Node.js](https://dev.to/wallacefreitas/circuit-breaker-pattern-in-nodejs-and-typescript-enhancing-resilience-and-stability-bfi) -- implementation reference
-- [TypeScript at Scale in 2026](https://blog.logrocket.com/typescript-at-scale-2026/) -- architecture patterns
-- [DI Benchmark: Vanilla vs Frameworks](https://blog.vady.dev/di-benchmark-vanilla-registrycomposer-typed-inject-tsyringe-inversify-nestjs) -- DI decision support
-- [AI Agent Error Handling Best Practices 2025](https://fast.io/resources/ai-agent-error-handling/) -- error classification patterns
-- [Agents At Work: 2026 Playbook for Reliable Agentic Workflows](https://promptengineering.org/agents-at-work-the-2026-playbook-for-building-reliable-agentic-workflows/) -- production reliability
+- [Agentic Engineering: Dual Quality Gates](https://www.sagarmandal.com/2026/03/15/agentic-engineering-part-7-dual-quality-gates-why-validation-and-testing-must-be-separate-processes/) — Separation of validation and testing as distinct pipeline processes
+- [Why AI Agents Break: Production Failures](https://arize.com/blog/common-ai-agent-failures/) — Error propagation patterns in production agents
+- [7 AI Agent Failure Modes](https://galileo.ai/blog/agent-failure-modes-guide) — Fix loop anti-patterns, ensemble verification tradeoffs
+- [Detecting Hallucinations via AST Analysis](https://arxiv.org/html/2601.19106v1) — AST vs regex tradeoffs; deterministic analysis catches 77% of code hallucinations
+- [Google ADK Multi-Agent Patterns](https://developers.googleblog.com/developers-guide-to-multi-agent-patterns-in-adk/) — LoopAgent quality gate patterns
 
-### Tertiary (LOW confidence)
-- [AI Agent Frameworks comparison (2026)](https://designrevision.com/blog/ai-agent-frameworks) -- general landscape, not directly applicable
-- [Effect-TS Documentation](https://effect.website/) -- evaluated and rejected
+### Tertiary (for context)
+- [LLM Token Optimization](https://redis.io/blog/llm-token-optimization-speed-up-apps/) — Prompt caching (90% reduction on cached prefixes), context compression strategies
+- [Agents At Work: 2026 Playbook](https://promptengineering.org/agents-at-work-the-2026-playbook-for-building-reliable-agentic-workflows/) — Production reliability patterns for agentic workflows
+- [Characterizing Faults in Agentic AI](https://arxiv.org/html/2603.06847v1) — Taxonomy of fault types and root causes in agent systems
 
 ---
-*Research completed: 2026-03-26*
+*Research completed: 2026-03-28*
 *Ready for roadmap: yes*

@@ -4,6 +4,12 @@ export default defineConfig({
   test: {
     // Integration tests share .mosaic/ directory, must run sequentially
     fileParallelism: false,
+    // Exclude worktree copies and node_modules to avoid duplicate/stale tests
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.claude/worktrees/**',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

@@ -93,11 +93,11 @@ describe('AnthropicSDKProvider', () => {
     expect(result.content).toBe('Part 1 Part 2');
   });
 
-  it('should filter out non-text blocks', async () => {
+  it('should filter out non-text blocks when no tool_use present', async () => {
     mockCreate.mockResolvedValue({
       content: [
         { type: 'text', text: 'Hello' },
-        { type: 'tool_use', id: 'x', name: 'y', input: {} },
+        { type: 'image', source: {} },
         { type: 'text', text: ' World' },
       ],
       usage: MOCK_USAGE,
@@ -107,6 +107,22 @@ describe('AnthropicSDKProvider', () => {
     const result = await provider.call('Hello');
 
     expect(result.content).toBe('Hello World');
+  });
+
+  it('should prefer tool_use block input as JSON when present', async () => {
+    mockCreate.mockResolvedValue({
+      content: [
+        { type: 'text', text: 'Hello' },
+        { type: 'tool_use', id: 'x', name: 'structured_output', input: { key: 'value' } },
+        { type: 'text', text: ' World' },
+      ],
+      usage: MOCK_USAGE,
+    });
+
+    const provider = new AnthropicSDKProvider('test-key');
+    const result = await provider.call('Hello');
+
+    expect(result.content).toBe(JSON.stringify({ key: 'value' }));
   });
 
   it('should propagate API errors', async () => {

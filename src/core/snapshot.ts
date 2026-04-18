@@ -2,11 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { StageName } from './types.js';
 
-const SNAPSHOTS_DIR = '.mosaic/snapshots';
+import { getMosaicSnapshotsDir } from './mosaic-home.js';
+
+const getSnapshotsDir = () => getMosaicSnapshotsDir();
 
 export function createSnapshot(stage: StageName, runId: string, issueNumbers?: Record<string, number>, artifactsDir?: string): string {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const snapshotDir = path.join(SNAPSHOTS_DIR, `${timestamp}_${stage}`);
+  const snapshotDir = path.join(getSnapshotsDir(), `${timestamp}_${stage}`);
   const artifactsSnapshot = path.join(snapshotDir, 'artifacts');
   if (!artifactsDir) {
     throw new Error('artifactsDir is required for createSnapshot');

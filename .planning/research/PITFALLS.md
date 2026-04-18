@@ -1,242 +1,236 @@
-# Domain Pitfalls: Partial Codebase Rewrite
+# Pitfalls Research
 
-**Domain:** TypeScript multi-agent pipeline system -- partial rewrite (~70% rewrite, ~30% preserved)
-**Researched:** 2026-03-26
-**Overall Confidence:** HIGH (based on codebase analysis + established rewrite patterns)
+**Domain:** Adding quality gates, manifest validation, cost optimization, and error intelligence to existing multi-agent LLM pipeline
+**Researched:** 2026-03-28
+**Confidence:** HIGH (based on v1.0 run data analysis + codebase review)
 
 ---
 
 ## Critical Pitfalls
 
-Mistakes that cause rewrites of the rewrite, or multi-day debugging sessions.
+### Pitfall 1: Quality Gates That Reject Based on Heuristics the LLM Can Game
 
-### Pitfall 1: Phantom Interface Drift
+**What goes wrong:**
+You add content-level validation (e.g., "detect placeholder `<div>ComponentName</div>` patterns") and the LLM learns to produce slightly different placeholders that pass the check: `<div className="component-name-wrapper"><span>Loading...</span></div>`. The gate passes, but the component is equally non-functional. The quality gate gives false confidence.
 
-**What goes wrong:** The preserved interface files (`types.ts`, `llm-provider.ts`, `interaction-handler.ts`, `adapters/types.ts`) define the contracts. During rewrite, a developer changes the *runtime behavior* of a rewritten module (return shape, error semantics, timing) while keeping the TypeScript type signature identical. The compiler sees no error, but the preserved modules that depend on the old behavior break at runtime.
+**Why it happens:**
+Heuristic detection (regex, keyword matching) is a cat-and-mouse game against LLM output. The `PLACEHOLDER_KEYWORDS` array in `build-verifier.ts` already demonstrates this approach -- it checks for `'Coming Soon'`, `'Placeholder'`, `'TODO:'`, `'Lorem ipsum'`. But the v1.0 run showed 13 components with `<div>ComponentName</div>` that none of those keywords catch. Adding more keywords just shifts the problem.
 
-**Why it happens:** TypeScript types are erased at runtime. A function that returns `Promise<string>` can return an empty string, a JSON string, or throw -- all type-correct. When you rewrite the orchestrator's `executeStage` from recursive to iterative, the return value types match, but the error propagation path changes. Preserved modules like `git-publisher.ts` or `github-interaction-handler.ts` that catch specific error types or rely on specific timing will silently break.
+**How to avoid:**
+1. **Structural validation over keyword matching.** Instead of scanning for placeholder text, verify functional structure: does the component import and use hooks? Does it render conditional logic? Measure AST node count per component -- a real component has 20+ JSX nodes, a placeholder has 1-3.
+2. **Behavioral validation where possible.** Playwright can render the component and check if it has interactive elements, minimum visual complexity (screenshot pixel variance), or correct DOM structure.
+3. **Manifest must declare what it skipped, not just what it covered.** Add `skipped_tasks` and `stub_components` arrays to `CodeManifestSchema`. The quality gate blocks if `covers_features` claims coverage that `stub_components` contradicts.
 
-**Consequences:** Tests pass (they mock the rewritten module). Integration breaks in production. Debugging is hard because the type system says everything is fine.
+**Warning signs:**
+- Quality gate pass rate jumps to 100% immediately after deployment -- real quality gates should fail some runs
+- Gate checks all use string matching or regex
+- No test exists that verifies the gate rejects known-bad output from the v1.0 run
 
-**Prevention:**
-1. Before rewriting any module, write a **behavioral contract test** that exercises the module from the perspective of its consumers. This test uses the real (preserved) consumer code, not mocks.
-2. Specifically document the *runtime contract* beyond types: "executeStage throws ClarificationNeeded on clarification, re-throws agent errors after logging, always writes pipeline-state.json before returning."
-3. Run the existing E2E tests (`e2e-phase3/4/5.test.ts`) after every module rewrite -- they exercise the preserved + rewritten modules together.
-
-**Detection:** Integration test failures that unit tests miss. Preserved module behavior changes without any code changes to preserved files. Error messages appearing in different log locations.
-
-**Phase relevance:** Every phase. The very first rewritten module sets the pattern.
-
----
-
-### Pitfall 2: Singleton State Contamination During Transition
-
-**What goes wrong:** The codebase has two singletons with mutable state: `eventBus` (module-level singleton in `event-bus.ts`) and `artifact.ts` (module-level `currentRunDir`/`baseDir`). The rewrite plan includes replacing `artifact.ts` global state with `ArtifactStore` instances. During the transition period where *some* code uses the new `ArtifactStore` and *some* preserved code still calls `readArtifact()`/`writeArtifact()` (which use the global), the two systems point to different directories or have inconsistent state.
-
-**Why it happens:** You cannot atomically switch all callers. The `BaseAgent.execute()` method (preserved) calls `writeArtifact()` (global). A rewritten orchestrator might initialize `ArtifactStore` but the agent base class still writes to the old global. During the transition, artifacts end up in two different locations.
-
-**Consequences:** Agents write artifacts to one location; downstream agents read from another. Pipeline completes but with missing or stale artifacts. Resume from `pipeline-state.json` points to the wrong directory.
-
-**Prevention:**
-1. **Bridge pattern:** Make `ArtifactStore` the single source of truth internally, but have its constructor also call `initArtifactsDir()` to keep the global in sync. The global functions become thin wrappers around the store instance. This way, preserved code calling `readArtifact()` goes through the same store.
-2. **Never have two parallel artifact systems.** The store must wrap the global, not replace it. Remove the global only after all callers are migrated.
-3. Write a test that creates an `ArtifactStore`, writes via the store, then reads via the global `readArtifact()` -- and vice versa. They must see the same data.
-
-**Detection:** `readArtifact()` returns empty/undefined when you know the artifact was written. Test isolation failures (tests leak state to each other). `fileParallelism: false` in vitest config is a symptom of this class of problem -- it already exists.
-
-**Phase relevance:** The phase that rewrites `artifact.ts` and orchestrator. Must be handled as the first or second rewrite target, because everything depends on it.
+**Phase to address:**
+Phase 1 (manifest schema hardening) -- the schema must distinguish stub vs real before any gate logic is added.
 
 ---
 
-### Pitfall 3: Test Suite Becomes a Lie
+### Pitfall 2: Manifest Self-Reporting Without Cross-Verification Creates a Liar's System
 
-**What goes wrong:** The existing test suite uses `as any` casts (6 files documented in CONCERNS.md), inline mock providers that return hardcoded responses, and `vi.mock()` to replace entire modules. When you rewrite a module, the tests that mock it continue to pass because they never exercise the real rewritten code. Meanwhile, the tests for the rewritten module pass because they mock the preserved modules. Nobody tests the real integration.
+**What goes wrong:**
+The current manifest system is self-reported: the Coder agent writes `code.manifest.json` claiming `covers_features: ["F-001", ..., "F-013"]` and `covers_tasks: ["T-001", ..., "T-029"]`. In the v1.0 run, it claimed 100% coverage when actual was 45%. Adding more fields to the manifest schema (like `stub_components`) doesn't fix this if the same LLM that produced the stubs also fills in the manifest.
 
-**Why it happens:** Mock-heavy test suites create a parallel universe. Each test file defines its own `MockLLMProvider` with hardcoded responses routed by system prompt content. When you change how prompts are assembled (rewriting `prompt-assembler.ts` or `context-manager.ts`), the mock routing breaks silently -- the mock just returns a default response instead of the stage-specific one.
+**Why it happens:**
+The LLM optimizes for task completion, not accuracy. When the prompt says "generate a manifest listing what you built," the LLM lists everything it was *asked* to build, not what it *actually* built. This is a fundamental limitation of self-reported quality in LLM systems. The `OutputGenerator.generateManifest()` in coder does plan-based manifest generation, not artifact-based.
 
-**Consequences:** 100% test pass rate with a broken system. False confidence leads to skipping manual verification. Regressions discovered only during actual pipeline runs.
+**How to avoid:**
+1. **Programmatic manifest generation, not LLM-generated.** The manifest should be built by scanning actual disk artifacts: parse the AST of each generated file, count exports/components/functions, check import resolution, verify files referenced in manifest actually exist.
+2. **The Validator already does some programmatic checks (Check 5-8).** Extend this pattern: move verification from the Validator (end of pipeline) to immediately after each agent (fail fast).
+3. **Cross-manifest verification at gate time.** When code.manifest says it covers T-015 (session list component), check that the file listed actually imports React, exports a named component, and has >50 lines of non-comment code.
 
-**Prevention:**
-1. **Integration tests are the source of truth during a rewrite, not unit tests.** Run `e2e-phase3/4/5.test.ts` and `orchestrator-integration.test.ts` after every module change. If they break, fix them before proceeding.
-2. **Kill the `as any` casts early.** Create typed mock factories (`createMockProvider(): LLMProvider`, `createMockLogger(): Logger`) in `test-helpers.ts` and replace all `as any` casts. This ensures test constructors match real constructors.
-3. **Add a "canary" integration test** that runs the full pipeline with mock LLM but real everything else (real agents, real artifact I/O, real context assembly, real manifest validation). If this test passes, the system works.
-4. After rewriting a module, verify that removing the `vi.mock()` for that module in integration tests still passes. If the integration test requires mocking the module you just rewrote, the test is not testing reality.
+**Warning signs:**
+- Manifest `covers_features` array matches the PRD features list exactly (suspiciously perfect)
+- No manifest field is ever empty or partial
+- Validator passes with "all checks green" on first run
 
-**Detection:** Tests pass but `mosaicat run` fails. Test coverage numbers are high but concentrated in unit tests. Integration tests have not been updated since the rewrite started.
-
-**Phase relevance:** Must be addressed in the first phase (test infrastructure hardening) before any rewrite work begins.
-
----
-
-### Pitfall 4: Rewriting the Orchestrator While It Orchestrates Everything
-
-**What goes wrong:** The orchestrator (`orchestrator.ts`, 1057 lines) is the hub that connects all other modules. It calls the agent factory, context manager, event bus, artifact layer, interaction handler, evolution engine, git publisher, and pipeline state machine. Rewriting it while all those modules exist in various states of rewritten/preserved creates a combinatorial explosion of integration points to verify.
-
-**Why it happens:** The orchestrator has the most dependencies of any module in the system (see the dependency graph in ARCHITECTURE.md). Every other rewrite target (artifact store, coder agent, evolution engine, context manager) changes something the orchestrator depends on. If you rewrite the orchestrator first, you build against old interfaces. If you rewrite it last, you must adapt it to every intermediate change.
-
-**Consequences:** The orchestrator rewrite takes 3x longer than estimated because every other module change requires re-verifying orchestrator behavior. Or the orchestrator is rewritten first and must be patched repeatedly as other modules change.
-
-**Prevention:**
-1. **Rewrite the orchestrator last, or split it into two phases.** First phase: extract the fix loop, retry logic, and recursive `executeStage` into an iterative loop (surgical change, behavior-preserving). Second phase: adapt to new `ArtifactStore`, new coder sub-modules, etc.
-2. **Alternatively, rewrite leaf modules first (evolution engine, validator, coder sub-modules), then mid-tier (context manager, artifact store), then orchestrator.** This is the strangler fig approach -- each layer is stable before the next one changes.
-3. Keep the orchestrator integration test (`orchestrator-integration.test.ts`) green at all times. It is the canary for the whole system.
-
-**Detection:** Orchestrator changes touching 5+ other modules in a single PR. Orchestrator test requiring constant mock updates. Multiple "fix orchestrator after X rewrite" commits.
-
-**Phase relevance:** Phase ordering decision. The orchestrator rewrite phase must come after leaf and mid-tier module rewrites.
+**Phase to address:**
+Phase 1 (manifest schema) + Phase 2 (Coder quality) -- manifest schema adds `implementation_status` enum per task, Coder's `OutputGenerator` switches to AST-based scanning.
 
 ---
 
-## Moderate Pitfalls
+### Pitfall 3: Fix Loop Error Classification That Over-Engineers Categories But Misses Infrastructure vs Logic
 
-### Pitfall 5: Import Extension Breakage (.js in ESM)
+**What goes wrong:**
+The v1.0 fix loop ran 5 rounds because it could not distinguish "test file won't parse" (infrastructure) from "assertion failed" (logic). You add an error classifier with categories like `syntax-error`, `import-resolution`, `type-mismatch`, `assertion-failure`, `timeout`, etc. The classifier correctly tags errors, but the fix loop still fails because the *action* for each category is the same: "re-run Coder with error message." The classification adds complexity without changing behavior.
 
-**What goes wrong:** The codebase uses NodeNext module resolution, requiring `.js` extensions on all relative imports (`import { foo } from './bar.js'`). When splitting a module (e.g., `coder.ts` into `coder-planner.ts`, `coder-builder.ts`, etc.), every file that imported from the original must be updated. Missing a single `.js` extension causes a runtime `ERR_MODULE_NOT_FOUND` that TypeScript does not catch at compile time.
+**Why it happens:**
+Error classification feels like progress. It makes logs prettier and dashboards richer. But the Coder's ability to fix an error doesn't depend on how we classify it -- it depends on whether the error is in code the Coder controls (fixable) vs infrastructure the Coder cannot change (unfixable). The existing `classifyError()` in `retry-log.ts` already does basic classification, but it doesn't affect the fix strategy.
 
-**Why it happens:** TypeScript checks types, not runtime module resolution correctness for `.js` extensions in NodeNext mode. If you rename `coder.ts` to `coder/index.ts` and re-export, existing `import from './coder.js'` may or may not resolve depending on your exact Node.js version and file structure.
+**How to avoid:**
+1. **Binary decision, not taxonomy.** The only question that matters: "Is this error in code the Coder wrote, or in infrastructure/config/test setup?" If infrastructure: abort the fix loop, surface to the user. If code: continue fixing.
+2. **Infrastructure errors have signatures.** Parse errors at line 0, `Cannot find module` for packages not in package.json, `SyntaxError: Cannot use import statement` (missing transform), `.tsx` extension in `.ts` test runner config. Detect these specific patterns and short-circuit.
+3. **Stagnation detection is more valuable than classification.** If consecutive rounds have identical failure sets (same files, same error counts), abort early. The v1.0 run wasted rounds 2-5 with zero progress -- stagnation detection would have saved 24% of run time.
 
-**Prevention:**
-1. After any file rename or split, run `npm run build && node dist/index.js --help` to verify runtime resolution.
-2. Use `tsc --noEmit` as a pre-commit check, but also run the actual compiled output.
-3. When splitting `coder.ts`, keep a `coder.ts` barrel file that re-exports from the sub-modules. This preserves all existing import paths.
+**Warning signs:**
+- Error classifier has 10+ categories but the fix loop treats all categories identically
+- Fix loop still runs all 5 rounds on infrastructure errors
+- New error categories being added without corresponding fix strategies
 
-**Detection:** `tsc` passes but `node dist/...` fails with module not found. Tests pass (vitest handles resolution differently than Node.js runtime).
-
-**Phase relevance:** The coder split phase and any module reorganization phase.
-
----
-
-### Pitfall 6: Zod v4 Schema Incompatibility
-
-**What goes wrong:** The project uses Zod v4 (^4.3.6), which has breaking changes from v3. During the rewrite, if you copy-paste schema patterns from v3 documentation, StackOverflow answers, or AI suggestions trained on v3, the schemas compile but validate incorrectly (different coercion rules, different error formats).
-
-**Why it happens:** Zod v4 changed `.parse()` error format, removed `.passthrough()` default behavior, and changed how `.transform()` interacts with `.default()`. Most online resources and AI training data still reference v3 patterns. The manifest schemas in `manifest.ts` are critical -- incorrect validation means corrupt manifests pass validation and reach the Validator agent.
-
-**Prevention:**
-1. When writing new Zod schemas, verify against the Zod v4 documentation specifically.
-2. Write explicit test cases for each schema with both valid and intentionally invalid data.
-3. Never copy Zod patterns from external sources without verifying the version.
-
-**Detection:** Manifests that should fail validation pass silently. Validator agent reports "PASS" on malformed data. Schema `parse()` errors have unexpected format.
-
-**Phase relevance:** Any phase that adds or modifies Zod schemas (manifest changes, new sub-module schemas for coder split).
+**Phase to address:**
+Phase 3 (fix loop intelligence) -- implement stagnation detection first (highest ROI), then infrastructure detection, then skip fine-grained classification.
 
 ---
 
-### Pitfall 7: Silent Error Swallowing Migrates to New Code
+### Pitfall 4: UI Cost Optimization That Degrades Output Quality by Cutting the Wrong Things
 
-**What goes wrong:** The codebase has 9 silent catches in evolution engine and 7 in validator (documented in CONCERNS.md). During rewrite, the developer copies the pattern or "preserves behavior" by keeping the silent catches. The rewrite was supposed to fix this, but the pattern is contagious -- new code inherits the anti-pattern from adjacent preserved code.
+**What goes wrong:**
+UIDesigner took 39min (30% of total run time) and generated 63 components + 73 screenshots. The obvious optimization is to reduce component count. You add a "component budget" that caps output at 30 components. But the UIDesigner now produces 30 large monolithic components instead of 63 focused ones. The downstream Coder receives worse component boundaries, leading to more implementation problems.
 
-**Why it happens:** When rewriting a module, the developer reads the existing code for behavior reference. They see `catch {}` and think "this must be intentional" or "I'll fix it later." Later never comes because the tests pass (the silent catch makes error paths invisible to tests).
+**Why it happens:**
+LLM cost is driven by: (1) number of LLM calls, (2) tokens per call, (3) screenshot rendering time. Component count affects all three, so capping it seems like the right lever. But the UIDesigner's value is in component decomposition -- that's what informs the Coder's module structure. Reducing component count destroys the decomposition quality.
 
-**Prevention:**
-1. **Error handling policy must be defined before the rewrite starts:** Every catch block must either (a) log at warn/error level, (b) return an explicit error state, or (c) re-throw. No empty catches.
-2. Add a lint rule or grep check: `grep -rn 'catch\s*{' src/ | grep -v 'catch (e' | grep -v 'catch (err'` should return zero results after each phase.
-3. For each rewritten module, explicitly list the error scenarios in the PR description and how they are handled.
+**How to avoid:**
+1. **Cut screenshots, not components.** Screenshot rendering is pure Playwright overhead, not LLM cost. Generate screenshots for page-level components only (5-8 pages), not every atomic component. In the v1.0 run, 73 screenshots for buttons, inputs, and cards added no value.
+2. **Cut preview HTML files for atomic components.** Preview HTML is useful for page compositions but unnecessary for `<Button>`, `<Card>`, `<Badge>`.
+3. **Batch component code generation.** Instead of one LLM call per component, group related components (all form components, all card variants) into single calls. This reduces call count without reducing output quality.
+4. **Measure cost in tokens/dollars, not component count.** The optimization target is cost, not component count. Track `LLMUsage` per stage and set a token budget, not a component budget.
 
-**Detection:** `grep -rn 'catch\s*(\w*)\s*{\s*}' src/` finds empty catch blocks. New code has `catch (e) { /* TODO */ }` comments.
+**Warning signs:**
+- Component count decreased but LLM token usage didn't change proportionally
+- Coder receives fewer, larger components and produces worse code structure
+- Screenshot rendering time is still the dominant cost factor after "optimization"
 
-**Phase relevance:** Every phase. Enforce in code review for every PR.
-
----
-
-### Pitfall 8: Config Mutation Leaks Across Stages
-
-**What goes wrong:** The orchestrator mutates `this.agentsConfig.agents['coder'].inputs` during the tester-coder fix loop (documented in CONCERNS.md). The rewrite plans to fix this with clone-before-mutate. But the same pattern may exist in other places not yet identified, or the rewrite introduces new mutations on shared config objects.
-
-**Why it happens:** JavaScript objects are passed by reference. When you write `const config = this.agentsConfig.agents[stage]`, you get a reference, not a copy. Mutations on `config` affect the shared state. TypeScript's type system does not prevent mutation of non-`readonly` properties.
-
-**Prevention:**
-1. Make all config types use `Readonly<>` or `ReadonlyDeep<>` wrapper types. This makes accidental mutation a compile-time error.
-2. In the orchestrator, deep-clone config at the start of each stage: `const stageConfig = structuredClone(this.agentsConfig.agents[stage])`.
-3. Add a test that runs two stages sequentially and verifies the config object is unchanged after the first stage completes.
-
-**Detection:** A stage receives config that contains data from a previous stage's execution. The `test_failures` input appears in the coder config even on fresh runs.
-
-**Phase relevance:** The orchestrator rewrite phase specifically.
+**Phase to address:**
+Phase 4 (UI cost optimization) -- implement screenshot tiering first (page vs atomic), then batch generation, then token budget tracking.
 
 ---
 
-### Pitfall 9: Breaking the Resume Contract
+### Pitfall 5: Intent Enrichment That Adds LLM Calls Without Measurable Downstream Impact
 
-**What goes wrong:** The resume flow depends on `pipeline-state.json` being an accurate representation of completed stages and their artifacts existing on disk. When you rewrite the artifact layer (global to `ArtifactStore`) or change how the orchestrator writes state, old `pipeline-state.json` files from v1 runs become incompatible with v2 resume logic. Users who interrupt a v1 run and try to resume after upgrading to v2 get corrupt state.
+**What goes wrong:**
+You add "structured user persona," "competitive landscape," and "real web research" to IntentConsultant and Researcher. Each addition costs 1-3 minutes and $0.10-0.50 in tokens. The enriched intent-brief and research artifacts look more professional, but the ProductOwner produces the same PRD because it was already distilling user intent into features. The downstream agents never consume the extra fields.
 
-**Why it happens:** Resume is an implicit serialization contract. The state file format, artifact directory structure, and stage completion semantics are all part of this contract. None of these are documented -- they are emergent from the code.
+**Why it happens:**
+Early pipeline enrichment feels high-leverage ("better input = better output everywhere"). But the pipeline has a bottleneck at ProductOwner: it reduces all upstream context to `prd.md`, and that PRD format is what downstream agents actually read. If the PRD template doesn't have fields for "user persona" or "competitive landscape," the enrichment is wasted.
 
-**Prevention:**
-1. **Document the resume contract explicitly** before rewriting: state file schema, expected artifact paths per stage, stage status meanings.
-2. Add a version field to `pipeline-state.json`. On resume, check the version and either migrate or fail with a clear message.
-3. Write the resume integration tests (identified as a gap in CONCERNS.md) *before* rewriting the artifact layer. These tests become the regression safety net.
+**How to avoid:**
+1. **Trace downstream consumption before adding upstream enrichment.** Before enriching intent-brief, verify: does ProductOwner's prompt reference the new fields? Does the PRD template include them? Does any downstream agent read them from the PRD?
+2. **Measure impact with A/B comparison.** Run the pipeline twice with the same instruction -- once with enriched intent, once without. Diff the PRD output. If the diff is cosmetic, the enrichment has no value.
+3. **If adding web research (Researcher agent), verify it reaches the Coder.** The Researcher writes `research.md`, but the Coder only reads `tech-spec.md` and `api-spec.yaml`. Research findings must flow through TechLead to have any effect on code quality.
 
-**Detection:** `mosaicat resume` fails with cryptic errors after upgrading. Artifacts from completed stages are re-run unnecessarily. Stage marked "done" but artifacts missing.
+**Warning signs:**
+- New fields added to intent-brief.json that no downstream agent references in its prompt
+- Researcher output grows 3x but PRD remains the same length
+- Intent enrichment adds >2 minutes to pipeline with no quality change in final artifacts
 
-**Phase relevance:** Must be addressed before the artifact layer rewrite. The resume integration tests are a prerequisite.
-
----
-
-## Minor Pitfalls
-
-### Pitfall 10: Event Bus Subscriber Drift
-
-**What goes wrong:** The `eventBus` singleton emits typed events. When you change event emission points in the orchestrator (e.g., `stage:start` now fires at a different point in the iterative loop vs the recursive call), subscribers like `cli-progress.ts` receive events in a different order or at different times, causing garbled terminal output.
-
-**Prevention:** Write a test that captures the sequence of events emitted during a full pipeline run. After rewrite, verify the sequence is unchanged or intentionally changed with corresponding subscriber updates.
-
-**Phase relevance:** Orchestrator rewrite phase.
+**Phase to address:**
+Phase 5 (intent enrichment) -- this should be the LAST phase, after all downstream quality gates are in place so you can measure whether enrichment actually changes gate pass rates.
 
 ---
 
-### Pitfall 11: Barrel File Re-export Ordering
+### Pitfall 6: Adding Validation Everywhere Creates a Pipeline That Mostly Validates Itself
 
-**What goes wrong:** `src/agents/index.ts` re-exports all agent classes. When adding new sub-modules from the coder split (e.g., `CoderPlanner`, `CoderBuilder`), circular dependency issues can arise if the new modules import from the barrel while the barrel imports from them.
+**What goes wrong:**
+You add: post-agent manifest validation, cross-manifest coverage checks, AST-based stub detection, test infrastructure pre-checks, build artifact analysis, stagnation detection, and Validator content sampling. Each check is individually reasonable. Together, they add 5-15 minutes of validation overhead to every run, and the pipeline spends more time checking its work than doing its work. Worse, validation failures trigger retries, which trigger more validation, creating a cascade.
 
-**Prevention:** New sub-modules should import from specific files, never from the barrel `index.ts`. The barrel is for external consumers only.
+**Why it happens:**
+After a bad run (like v1.0's 45% real coverage), the instinct is to add checks everywhere. Each check addresses a real failure mode. But the cumulative cost is invisible because each check is designed independently.
 
-**Phase relevance:** Coder split phase.
+**How to avoid:**
+1. **Budget validation time.** Total validation overhead should be <10% of pipeline duration. Currently, post-code stages (security + review + validate) take 5% of total time. Adding checks should not more than double this.
+2. **Fail fast, don't validate late.** A stub detection check after Coder is worth 10x more than the same check in Validator (which runs 5 stages later). Invest in early gates, not late comprehensive validation.
+3. **Make validation checks fast and programmatic.** AST parsing, file size checks, import resolution -- these take milliseconds. Don't use LLM calls for validation that can be done programmatically.
+4. **Validation that triggers retry must be counted as retry cost.** If a quality gate fails Coder 3 times, that's 3x Coder cost. The gate is only worthwhile if the 3rd attempt produces significantly better output than the 1st would have without the gate.
 
----
+**Warning signs:**
+- Pipeline duration increases >20% after adding quality gates
+- Most gate failures lead to retries that produce the same output
+- Multiple validation stages check the same things redundantly (e.g., Validator check 5-8 overlap with post-Coder checks)
 
-### Pitfall 12: Vitest Module Mock Staleness
-
-**What goes wrong:** Vitest's `vi.mock()` hoists to the top of the file and replaces modules before any imports. When you rename or move a module during rewrite (e.g., `../provider-factory.js` becomes `../providers/factory.js`), the `vi.mock()` path in test files silently stops matching -- the mock is never applied, and the test runs against the real module. This can cause tests to unexpectedly pass or fail for the wrong reasons.
-
-**Prevention:** After any module path change, search all test files for `vi.mock` calls referencing the old path. Use `grep -rn "vi.mock.*old-module-name" src/` as a post-rename check.
-
-**Phase relevance:** Any phase involving file moves or renames.
-
----
-
-## Phase-Specific Warnings
-
-| Phase Topic | Likely Pitfall | Mitigation |
-|-------------|---------------|------------|
-| Test infrastructure hardening | Pitfall 3 (test suite becomes a lie) | Fix `as any` casts, create typed mock factories, add canary integration test BEFORE any rewrites |
-| Artifact layer rewrite (global to ArtifactStore) | Pitfall 2 (singleton state contamination) | Bridge pattern: ArtifactStore wraps the global, never runs parallel |
-| Artifact layer rewrite | Pitfall 9 (resume contract breakage) | Write resume integration tests first, add version to state file |
-| Coder agent split (1312 lines to 4 modules) | Pitfall 5 (import extension breakage) | Keep `coder.ts` as barrel re-export, verify runtime resolution |
-| Coder agent split | Pitfall 11 (circular barrel imports) | Sub-modules import specific files, never the barrel |
-| Evolution engine error handling | Pitfall 7 (silent catch migration) | Enforce error handling policy, grep for empty catches |
-| Orchestrator rewrite (recursive to iterative) | Pitfall 1 (phantom interface drift) | Behavioral contract tests before rewrite, E2E tests after |
-| Orchestrator rewrite | Pitfall 4 (rewriting the hub) | Do it last or in two surgical phases |
-| Orchestrator rewrite | Pitfall 8 (config mutation leaks) | `Readonly<>` types + `structuredClone()` at stage boundaries |
-| Orchestrator rewrite | Pitfall 10 (event bus subscriber drift) | Event sequence snapshot test |
-| Any module rename/move | Pitfall 12 (vi.mock staleness) | Grep for old paths in test files post-rename |
-| Any schema work | Pitfall 6 (Zod v4 incompatibility) | Verify against v4 docs, test with invalid data |
+**Phase to address:**
+Cross-cutting concern -- every phase must track the time cost of its additions and verify they don't create cascading retries.
 
 ---
+
+## Technical Debt Patterns
+
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| Keyword-based stub detection (`PLACEHOLDER_KEYWORDS` array) | Quick to implement, catches obvious stubs | LLM generates slightly different stubs that bypass detection; constant keyword maintenance | Never as the sole detection mechanism; OK as a fast pre-filter before AST analysis |
+| Token tracking via post-hoc log parsing | No code changes to LLM provider | Inaccurate (misses retries, doesn't capture per-stage breakdown), can't enforce budgets in real-time | MVP only; must move to `LLMUsage` accumulation in provider for real budgets |
+| Hardcoded error patterns for fix-loop classification | Quick implementation, addresses known v1.0 failures | New error patterns not covered, brittle regex matching | Acceptable if combined with stagnation detection as fallback |
+| Self-reported manifest with post-hoc validation | Minimal code change, keeps current agent architecture | False coverage reports until validator runs (too late), validator adds pipeline time | Never for code.manifest; acceptable for design-stage manifests (PRD, UX, API) where human reviews anyway |
+| Screenshot budget as component count cap | Simple to implement, directly reduces Playwright time | Destroys component decomposition quality, wrong optimization target | Never; use page-level-only screenshot policy instead |
+
+## Integration Gotchas
+
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| Post-agent validation + retry logic | Gate fails agent, retry re-runs agent, agent produces same output, gate fails again (infinite loop) | Set max gate-failures per stage (2), and on final failure, mark stage as `done_with_warnings` rather than blocking |
+| AST-based stub detection + generated code | Parsing JSX/TSX requires full TypeScript compiler setup; `ts.createSourceFile()` alone doesn't resolve imports | Use `typescript` compiler API with `ts.createSourceFile()` for syntax-only checks (sufficient for stub detection); don't attempt full type checking on generated code |
+| Token tracking + RetryingProvider | RetryingProvider wraps calls with automatic retries; token tracking at the outer layer misses retry overhead | Track tokens inside the base provider (`AnthropicSDKProvider`, `ClaudeCLIProvider`), not in wrapping layers |
+| Stagnation detection + fix loop state | Comparing "same failures" requires normalizing error messages (line numbers change between rounds) | Compare failure *signatures* (file + error type), not raw error strings |
+| Manifest cross-verification + resume | Resume skips completed stages but cross-verification needs manifests from all stages; some manifests may not exist if early stages were from a previous run format | Always check manifest existence before cross-referencing; missing manifest = skip that check, don't crash |
+
+## Performance Traps
+
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| AST parsing every generated file after every Coder module | Each `ts.createSourceFile()` is fast (~5ms) but reading 50+ files from disk after each of 10 modules = 500 reads per run | Parse only files in the current module, not all files; cache parse results across modules | >100 generated files per run |
+| Playwright screenshot rendering for all components | 73 screenshots at ~10s each = ~12 minutes pure rendering time | Screenshot only page-level compositions (5-8 pages); skip atomic components | >30 components |
+| LLM-based validation (calling LLM to assess quality of LLM output) | Each validation call costs $0.05-0.20 and 30-60 seconds; multiple validation points multiply this | Programmatic validation for structural checks; reserve LLM validation for semantic quality only | >3 LLM validation calls per pipeline run |
+| Full test suite execution in fix loop | Running all 16 test suites when only 1 module changed | Run only test files that import from the changed module; use vitest's `--related` flag | >20 test files |
+
+## Security Mistakes
+
+Not applicable to this domain (quality gates and cost optimization don't introduce new security surfaces). The existing SecurityAuditor stage handles code security concerns.
+
+## UX Pitfalls
+
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-----------------|
+| Quality gate rejects a run that was "good enough" for the user | User waited 2 hours, pipeline says "FAIL" on a component that user doesn't care about | Quality gates should produce warnings, not hard failures, for non-critical issues; only block on critical issues (all components are stubs, no tests pass) |
+| Token/cost tracking shown as raw numbers without context | User sees "$4.23 spent" but doesn't know if that's good or bad | Show cost relative to baseline ("23% less than average run") and breakdown by stage |
+| Fix loop runs silently for 30 minutes with no user feedback | User thinks pipeline is stuck; considers killing the process | Emit progress events during fix loop with round number, approach, and failure count; show estimated time remaining |
+| Stagnation detection aborts fix loop but user doesn't understand why | Pipeline ends with "fix loop aborted: stagnation detected" -- not actionable | Explain what's stagnant (same 14 test files failing with parse errors), suggest manual action (fix vitest.config.ts for TSX support) |
+
+## "Looks Done But Isn't" Checklist
+
+- [ ] **Quality gate deployed:** Often missing test that verifies the gate rejects known-bad output -- verify by running the gate against actual v1.0 artifacts
+- [ ] **Manifest schema extended:** Often missing migration for existing manifests -- verify that `readManifest()` handles old-format manifests gracefully (Zod `.optional()` or `.default()`)
+- [ ] **Fix loop stagnation detection:** Often missing normalization of error strings between rounds -- verify by comparing round N and round N+1 failure sets from a real fix loop log
+- [ ] **Token tracking added:** Often missing tracking of retry attempts and clarification rounds -- verify total tracked tokens match actual API usage in billing dashboard
+- [ ] **Screenshot optimization:** Often missing fallback for when page-level screenshots fail (component not mountable standalone) -- verify with a component that has required providers/context
+- [ ] **Error classification deployed:** Often missing the mapping from classification to action -- verify that at least one error category triggers a different fix strategy than the default
+- [ ] **Validator content sampling:** Often missing handling of stages that produce binary/non-text artifacts (screenshots, gallery.html) -- verify Validator doesn't crash on non-text artifacts
+- [ ] **Cross-manifest verification:** Often missing handling of partial pipeline runs (design-only profile has no code.manifest) -- verify checks are profile-aware
+
+## Recovery Strategies
+
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| Quality gate too strict (blocking good runs) | LOW | Add `--skip-gates` CLI flag; relax threshold; gate failures produce warnings not blocks |
+| Quality gate too loose (missing bad output) | MEDIUM | Audit failed run artifacts; add detection pattern; re-run pipeline |
+| Fix loop runs all 5 rounds uselessly | LOW | Add stagnation detection (compare failure sets); no data loss, just time waste |
+| Manifest claims false coverage | MEDIUM | Switch to programmatic manifest generation; re-validate existing runs |
+| Token tracking shows wrong numbers | LOW | Fix tracking points; no functional impact, just reporting accuracy |
+| Cost optimization degrades UI quality | HIGH | Revert component budget; redesign optimization to target screenshots/batching instead of component count |
+| Intent enrichment adds latency with no quality gain | LOW | Disable enrichment features; no downstream dependency |
+| Cascading validation overhead | MEDIUM | Profile pipeline timing; disable redundant checks; consolidate validation points |
+
+## Pitfall-to-Phase Mapping
+
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| P1: Gameable heuristic gates | Phase 1 (manifest hardening) | Run gate against v1.0 artifacts; must reject the 13 placeholder components |
+| P2: Self-reported manifest lying | Phase 1 (manifest hardening) + Phase 2 (Coder quality) | Generate manifest programmatically; compare against LLM-reported manifest; they should diverge on stub components |
+| P3: Over-engineered error classification | Phase 3 (fix loop) | Replay v1.0 fix loop logs; stagnation detector should abort after round 2; infrastructure errors should be flagged before round 1 |
+| P4: Wrong cost optimization target | Phase 4 (UI cost) | Measure cost in tokens and time, not component count; screenshot count should drop 80%+ while component count stays similar |
+| P5: Wasteful intent enrichment | Phase 5 (intent enrichment) | A/B comparison: enriched vs non-enriched intent; diff PRD output; difference must be non-cosmetic |
+| P6: Validation cascade overhead | All phases | Pipeline duration with all gates < 1.15x pipeline duration without gates (15% overhead budget) |
 
 ## Sources
 
-- Codebase analysis: `.planning/codebase/CONCERNS.md`, `.planning/codebase/ARCHITECTURE.md`, `.planning/codebase/CONVENTIONS.md`, `.planning/codebase/TESTING.md`
-- Project context: `.planning/PROJECT.md`
-- [Strangler Fig Pattern - Microsoft Azure Architecture Center](https://learn.microsoft.com/en-us/azure/architecture/patterns/strangler-fig)
-- [Strangler Fig Pattern - Martin Fowler](https://martinfowler.com/bliki/StranglerFigApplication.html)
-- [Refactor or Rewrite? - DEV Community](https://dev.to/kodus/refactor-or-rewrite-dealing-with-code-thats-grown-too-large-2cm)
-- [Good Refactoring vs Bad Refactoring - Builder.io](https://www.builder.io/blog/good-vs-bad-refactoring)
-- [Singleton Anti-Pattern - Medium](https://medium.com/@gedeon.dominguez/the-singleton-anti-pattern-3c8a46499f0d)
-- [Don't use Singleton in unit tests - DEV Community](https://dev.to/bacarpereira/don-t-use-singleton-pattern-in-your-unit-tests-8p7)
-- [TypeScript Performance in Large-Scale Projects - Mindful Chase](https://www.mindfulchase.com/explore/troubleshooting-tips/programming-languages/troubleshooting-typescript-performance-and-type-safety-issues-in-large-scale-projects.html)
+- Run analysis: `.planning/debug/run-analysis-1774640936546.md` (real v1.0 failure data, HIGH confidence)
+- Codebase: `src/core/manifest.ts` (current manifest schemas), `src/agents/coder/build-verifier.ts` (current placeholder detection), `src/core/fix-loop-runner.ts` (current fix loop strategy), `src/agents/validator.ts` (current validation approach), `src/core/stage-executor.ts` (current retry/gate logic)
+- Project context: `.planning/PROJECT.md` (v1.1 feature targets)
 
 ---
-
-*Pitfalls analysis: 2026-03-26*
+*Pitfalls research for: quality gates, manifest validation, cost optimization, error intelligence in multi-agent LLM pipeline*
+*Researched: 2026-03-28*

@@ -32,7 +32,7 @@ describe('listInstallations', () => {
 
     expect(result).toEqual(installations);
     expect(mockFetch).toHaveBeenCalledWith(
-      'https://api.mosaicat.dev/auth/installations',
+      'https://mosaicat-backend.zhangbeifan.workers.dev/auth/installations',
       expect.objectContaining({
         headers: expect.objectContaining({
           'Authorization': 'Bearer gho_user_token',
@@ -78,7 +78,7 @@ describe('getInstallationToken', () => {
       expiresAt: '2026-03-17T21:00:00Z',
     });
     expect(mockFetch).toHaveBeenCalledWith(
-      'https://api.mosaicat.dev/auth/token',
+      'https://mosaicat-backend.zhangbeifan.workers.dev/auth/token',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ installation_id: 42 }),

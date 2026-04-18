@@ -10,6 +10,7 @@ import { WebPreviewStrategy, type PreviewStrategy } from './preview-strategy.js'
 import { RefineAgent } from '../agents/refine-agent.js';
 import { CodePlanSchema } from '../agents/code-plan-schema.js';
 import type { AgentContext, Task } from './types.js';
+import { getMosaicArtifactsDir } from './mosaic-home.js';
 
 /**
  * Run the refine loop: user feedback -> diagnose -> fix -> verify -> repeat.
@@ -19,16 +20,16 @@ import type { AgentContext, Task } from './types.js';
  */
 export async function runRefine(feedback: string, runId?: string): Promise<void> {
   // Resolve target run
-  const targetRun = runId ?? ArtifactStore.findLatestRun('.mosaic/artifacts');
+  const targetRun = runId ?? ArtifactStore.findLatestRun(getMosaicArtifactsDir());
   if (!targetRun) {
     process.stderr.write('\x1b[31m[mosaicat] No previous run found. Run `mosaicat run` first.\x1b[0m\n');
     process.exit(1);
   }
 
   // Create store for the target run
-  const store = new ArtifactStore('.mosaic/artifacts', targetRun);
+  const store = new ArtifactStore(getMosaicArtifactsDir(), targetRun);
   process.stdout.write(`\x1b[2mRefining run: ${targetRun}\x1b[0m\n`);
-  process.stdout.write(`\x1b[2mArtifacts: .mosaic/artifacts/${targetRun}/\x1b[0m\n`);
+  process.stdout.write(`\x1b[2mArtifacts: ${getMosaicArtifactsDir()}/${targetRun}/\x1b[0m\n`);
 
   const refineEventBus = new EventBus();
   const detach = attachCLIProgress(refineEventBus);

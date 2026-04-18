@@ -45,7 +45,8 @@ export class CoderPlanner {
       throw new Error('Planner did not produce a code-plan.json ARTIFACT block');
     }
 
-    const plan = CodePlanSchema.parse(JSON.parse(planJson));
+    const rawPlan = this.sanitizePlan(JSON.parse(planJson));
+    const plan = CodePlanSchema.parse(rawPlan);
 
     // Write to artifact store + emit events (replaces BaseAgent.writeOutput)
     const planContent = JSON.stringify(plan, null, 2);
@@ -70,11 +71,32 @@ export class CoderPlanner {
       return null;
     }
     const raw = this.deps.artifacts.read('code-plan.json');
-    const plan = CodePlanSchema.parse(JSON.parse(raw));
+    const sanitized = this.sanitizePlan(JSON.parse(raw));
+    const plan = CodePlanSchema.parse(sanitized);
     this.deps.logger.agent(this.deps.stage, 'info', 'planner:reuse', {
       modules: plan.modules.length,
     });
     return plan;
+  }
+
+  /**
+   * Defensively strip curly braces from file paths in modules[].files[].
+   * LLMs sometimes wrap paths like `{src/components/Foo.tsx}` instead of `src/components/Foo.tsx`.
+   */
+  private sanitizePlan(raw: unknown): unknown {
+    if (typeof raw !== 'object' || raw === null) return raw;
+    const obj = raw as Record<string, unknown>;
+    if (Array.isArray(obj.modules)) {
+      obj.modules = (obj.modules as Record<string, unknown>[]).map((mod) => {
+        if (Array.isArray(mod.files)) {
+          mod.files = (mod.files as string[]).map((f) =>
+            typeof f === 'string' ? f.replace(/[{}]/g, '') : f,
+          );
+        }
+        return mod;
+      });
+    }
+    return obj;
   }
 
   /**

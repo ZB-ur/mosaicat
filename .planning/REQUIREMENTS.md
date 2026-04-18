@@ -1,123 +1,98 @@
-# Requirements: Mosaicat v2 Core Engine Rewrite
+# Requirements: Mosaicat
 
-**Defined:** 2026-03-26
-**Core Value:** Pipeline 引擎的可靠性和可维护性 — 错误必须可见，状态必须可追踪
+**Defined:** 2026-03-28
+**Core Value:** Pipeline 引擎的可靠性和可维护性 — 每个 Agent 的输入输出契约必须被严格执行，错误必须可见，状态必须可追踪。
 
-## v1 Requirements
+## Constraints
 
-### Test Infrastructure
+- **No over-engineering**: 每个改动用最少代码解决实际问题，不为假设性需求设计抽象
+- **No code rot**: 修改必须与现有代码风格一致，不引入新的架构概念或命名规范
+- **Quality over cost**: 成本优化不得以降低产出质量为代价
 
-- [x] **TEST-01**: 消除所有测试文件中的 `as any` 类型转换，创建 typed mock factories (`createTestContext()`, `createMockProvider()`)
-- [x] **TEST-02**: 编写 resume 流程集成测试，覆盖 `resumeRun()`、`--from` stage reset、artifact cleanup
-- [x] **TEST-03**: 添加 canary 集成测试（使用真实模块除 LLM 外），验证端到端 pipeline 执行
-- [x] **TEST-04**: 编写 Coder shell 命令执行路径测试（setup/build/verify/smoke-test）
+## v1.1 Requirements
 
-### Error Handling
+### Agent 架构修复 (AGENT)
 
-- [ ] **ERR-01**: 消灭 Evolution Engine 中 9 个 silent catch 块，替换为 `logger.warn()` + typed fallback
-- [ ] **ERR-02**: 消灭 Validator 中 7 个 silent catch 块，对损坏 manifest 返回显式 "unreadable" 状态
-- [ ] **ERR-03**: 实现自定义 `Result<T, E>` 类型（~50 行），用于新模块的错误返回
-- [x] **ERR-04**: Context Manager 在 prompt 文件缺失时 fail-fast（生产模式）或 log warning（开发模式）
+- [x] **AGENT-01**: LLMAgent 的 `allowed_tools` 配置生效，支持 tool use 与结构化输出共存或按 agent 切换模式
+- [x] **AGENT-02**: Researcher 改为 tool-use agent（非纯 JSON schema），能实际调用 WebSearch/WebFetch 执行网络搜索
+- [x] **AGENT-03**: ProductOwner/TechLead 输出的 `constitution_project` 字段被正确写入磁盘，下游 agent 可消费
+- [x] **AGENT-04**: UXDesigner/APIDesigner 输出格式统一（消除 prompt 与实现的矛盾指令）
+- [x] **AGENT-05**: 为所有 manifest 类型添加 Zod schema，写入时校验
+- [x] **AGENT-06**: 激活 BaseAgent hook 机制，注册关键 post-run hooks（placeholder 检测、F-NNN 覆盖验证）
 
-### State Management
+### 质量门控 (GATE)
 
-- [ ] **STATE-01**: 实现 `ArtifactStore` 类替代 `artifact.ts` 全局可变状态 `currentRunDir`，按 run 实例化
-- [x] **STATE-02**: ArtifactStore 提供 bridge pattern 兼容层，使保留模块（BaseAgent 等）无需修改即可工作
-- [x] **STATE-03**: Config 在执行前通过 `structuredClone` + `Object.freeze` 冻结，消除可变 config 注入问题
-- [x] **STATE-04**: 实现 `RunContext` 对象，聚合 ArtifactStore/Logger/Provider/EventBus/Config/AbortSignal
+- [ ] **GATE-01**: 每个 stage 完成后运行程序化质量检查（stub 检测 + 特性覆盖率），不达标时阻断进入下一 stage
+- [ ] **GATE-02**: Coder 输出经过 placeholder 扫描（空壳 div、空函数体、TODO/FIXME、return null），检测到 stub 时标记在 manifest
+- [ ] **GATE-03**: code.manifest 每个文件标注 implementation_status（stub / partial / complete），由程序化检查填充
+- [ ] **GATE-04**: 跨阶段特性覆盖验证：每个 stage 结束后对比 PRD feature list 与 manifest covers_features
+- [x] **GATE-05**: Validator 简化为汇总各 stage 质量检查结果 + 全链路完整性报告
 
-### Execution Engine
+### 测试修复循环 (TEST)
 
-- [x] **EXEC-01**: Orchestrator 用 `while` 迭代循环 + `StageOutcome` 判别联合类型替代递归 `executeStage`
-- [x] **EXEC-02**: 提取 Tester→Coder 修复循环为独立 `FixLoopRunner`，消除循环索引操作
-- [x] **EXEC-03**: 实现 `StageExecutor`（单 stage 执行 + 重试 + 门控处理）和 `PipelineLoop`（stage 编排）
-- [x] **EXEC-04**: RetryingProvider 设有限重试上限（默认 20 次）+ 熔断器（5 次连续失败后 OPEN，30s HALF_OPEN）
-- [x] **EXEC-05**: 实现 `ShutdownCoordinator`：SIGINT/SIGTERM → 完成当前 stage artifact 写入后优雅退出
+- [x] **TEST-01**: Tester 运行 vitest 前先执行测试文件预编译检查（tsc --noEmit）
+- [x] **TEST-02**: 测试失败结果分为 3 类：parse/import error、assertion failure、runtime error
+- [x] **TEST-03**: Fix loop 连续 2 轮相同失败集时提前终止并输出停滞报告
+- [x] **TEST-04**: 错误类型映射到修复策略：parse → 修 config，assertion → 修逻辑，import → 修依赖
 
-### Coder Decomposition
+### 成本优化 (COST)
 
-- [x] **CODER-01**: 从 `coder.ts` 提取 `CoderPlanner` — 负责生成 code-plan.json
-- [x] **CODER-02**: 从 `coder.ts` 提取 `CoderBuilder` — 负责骨架生成和模块实现
-- [x] **CODER-03**: 从 `coder.ts` 提取 `BuildVerifier` — 负责编译检查和构建修复循环
-- [x] **CODER-04**: 从 `coder.ts` 提取 `SmokeRunner` — 负责 HTTP 探测和冒烟测试
-- [x] **CODER-05**: `coder.ts` 重写为 thin facade（~200 行），委派到 4 个子模块
+- [ ] **COST-01**: 每个 stage 的 LLM 调用累计 token 消耗写入 run-metrics.json，CLI 进度显示
+- [ ] **COST-02**: UI Designer 组件按功能重要性分级（P0/P1/P2），P2 组件跳过完整 LLM 实现但不降低 P0/P1 质量
+- [ ] **COST-03**: AnthropicSDK provider 对共享上下文设置 cache_control，减少重复输入 token
 
-### Orchestrator Facade
+### 意图研究 (INTENT)
 
-- [x] **ORCH-01**: 重写 Orchestrator 为 thin facade（< 200 行），创建 RunContext 并委派到 PipelineLoop
-- [x] **ORCH-02**: EventBus 从 singleton 改为实例化，通过 RunContext 传递
-- [x] **ORCH-03**: 统一 30+ 处 `console.log` 到 Logger 模块，消除绕过 logger 的直接输出
+- [ ] **INTENT-01**: Researcher 通过 Anthropic web_search 工具执行真实网络搜索（依赖 AGENT-02）
+- [ ] **INTENT-02**: IntentConsultant 输出结构化用户画像（年龄段/设备/使用频率/核心痛点）
 
-### Security
+## Future Requirements (v1.2)
 
-- [ ] **SEC-01**: SecurityAuditor 排除 `.env` 文件内容扫描，只检查存在性
-
-## v2 Requirements
-
-### Performance & Observability
-
-- **PERF-01**: 支持独立 stage 并行执行（如 APIDesigner 和 UXDesigner 可并行）
-- **PERF-02**: 事件总线持久化，支持 resume 后事件回放
-- **OBS-01**: 结构化 stage 遥测（timing、token usage、retry count、error summary）
-- **OBS-02**: Per-stage 错误上下文传播（失败详情、LLM 响应片段、验证错误）
-
-### Resilience
-
-- **RES-01**: Stage 级耗时熔断器（单 stage 运行 > 30min 强制失败）
-- **RES-02**: Resume 时 artifact 完整性校验（schema 验证，不仅检查文件存在）
-
-### Cost Control
-
-- **COST-01**: Pipeline 级费用聚合和预算上限
+- **COST-04**: Pipeline 级软预算告警（基于 COST-01 数据）
+- **TEST-05**: 智能根因诊断策略映射（需多次 v1.1 运行数据调优）
+- **AGENT-07**: 激活 run-memory 跨 agent 上下文共享
+- **GATE-06**: Reviewer 改为 programmatic + LLM 混合模式（类似 Validator）
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Shell 命令白名单校验 | YOLO 模式设计，LLM 已有完全 shell 权限，白名单收益低 |
-| bypassPermissions 移除 | 产品设计本身就是 YOLO 模式 |
-| 前端 UI 组件重写 | 输出层不在核心引擎范围内 |
-| Backend (Cloudflare Worker) 重写 | 独立部署单元，无架构债务 |
-| 通用 Agent 插件系统 | 13-agent pipeline 即产品，添加插件 API 是过度工程化 |
-| 分布式/多进程执行 | 无使用场景，单用户单 pipeline 单机器 |
-| Auto-healing 泛化 | Tester-Coder 修复循环已覆盖，其他 stage 用简单重试 |
+| LLM-as-judge 评分 | LLM 评估自身输出不可靠，程序化检测更准确且免费 |
+| Full AST 分析 | 增加 ~50MB 依赖，regex 可覆盖 95%+ 场景 |
+| Pipeline 级费用硬上限 | 中途强制中断导致工件不一致，用软预算 + 告警替代 |
+| Stage 并行执行 | 串行是基本架构，仅 security+reviewer 可并行省 5%，ROI 不足 |
+| Ensemble 多模型共识 | 2-3x 成本，共识不等于正确，程序化检查更有效 |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TEST-01 | Phase 1 | Complete |
-| TEST-02 | Phase 1 | Complete |
-| TEST-03 | Phase 1 | Complete |
-| TEST-04 | Phase 4 | Complete |
-| ERR-01 | Phase 2 | Complete |
-| ERR-02 | Phase 2 | Complete |
-| ERR-03 | Phase 2 | Complete |
-| ERR-04 | Phase 2 | Complete |
-| STATE-01 | Phase 2 | Complete |
-| STATE-02 | Phase 2 | Complete |
-| STATE-03 | Phase 2 | Complete |
-| STATE-04 | Phase 2 | Complete |
-| EXEC-01 | Phase 6 (gap closure) | Complete |
-| EXEC-02 | Phase 6 (gap closure) | Complete |
-| EXEC-03 | Phase 3 | Complete |
-| EXEC-04 | Phase 3 | Complete |
-| EXEC-05 | Phase 6 (gap closure) | Complete |
-| CODER-01 | Phase 4 | Complete |
-| CODER-02 | Phase 4 | Complete |
-| CODER-03 | Phase 4 | Complete |
-| CODER-04 | Phase 4 | Complete |
-| CODER-05 | Phase 4 | Complete |
-| ORCH-01 | Phase 5 | Complete |
-| ORCH-02 | Phase 5 | Complete |
-| ORCH-03 | Phase 5 | Complete |
-| SEC-01 | Phase 2 | Complete |
+| AGENT-01 | Phase 8 | Complete |
+| AGENT-02 | Phase 8 | Complete |
+| AGENT-03 | Phase 8 | Complete |
+| AGENT-04 | Phase 8 | Complete |
+| AGENT-05 | Phase 8 | Complete |
+| AGENT-06 | Phase 8 | Complete |
+| GATE-01 | Phase 9 | Pending |
+| GATE-02 | Phase 9 | Pending |
+| GATE-03 | Phase 9 | Pending |
+| GATE-04 | Phase 9 | Pending |
+| GATE-05 | Phase 9 | Complete |
+| TEST-01 | Phase 10 | Complete |
+| TEST-02 | Phase 10 | Complete |
+| TEST-03 | Phase 10 | Complete |
+| TEST-04 | Phase 10 | Complete |
+| COST-01 | Phase 11 | Pending |
+| COST-02 | Phase 11 | Pending |
+| COST-03 | Phase 11 | Pending |
+| INTENT-01 | Phase 12 | Pending |
+| INTENT-02 | Phase 12 | Pending |
 
 **Coverage:**
-- v1 requirements: 26 total
-- Mapped to phases: 26
+- v1.1 requirements: 20 total
+- Mapped to phases: 20
 - Unmapped: 0
 
 ---
-*Requirements defined: 2026-03-26*
-*Last updated: 2026-03-26 after initial definition*
+*Requirements defined: 2026-03-28*
+*Last updated: 2026-03-28 after roadmap creation*

@@ -14,6 +14,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createTestMosaicDir, cleanupTestMosaicDir } from './test-helpers.js';
 import type { LLMProvider, LLMCallOptions, LLMResponse } from '../core/llm-provider.js';
 
 // ---------------------------------------------------------------------------
@@ -92,16 +93,24 @@ class CanaryStubProvider implements LLMProvider {
   // --- Response factories ---
 
   private researcherResponse(): string {
-    return JSON.stringify({
-      artifact:
-        '## Market Overview\nTodo app market analysis.\n\n## Competitor Analysis\n| Competitor | Core Features | Strengths | Weaknesses |\n|---|---|---|---|\n| Todoist | Tasks | UX | Price |\n\n## Feasibility\nHigh.\n\n## Key Insights\n- Keep it simple',
-      manifest: {
-        competitors: ['Todoist'],
-        key_insights: ['simplicity'],
-        feasibility: 'high',
-        risks: [],
-      },
-    });
+    // ToolUseAgent expects free-text markdown with embedded ```json manifest
+    return `## Market Overview
+Todo app market analysis.
+
+## Competitor Analysis
+| Competitor | Core Features | Strengths | Weaknesses |
+|---|---|---|---|
+| Todoist | Tasks | UX | Price |
+
+## Feasibility
+High.
+
+## Key Insights
+- Keep it simple
+
+\`\`\`json
+{"competitors":["Todoist"],"key_insights":["simplicity"],"feasibility":"high","risks":[]}
+\`\`\``;
   }
 
   private productOwnerResponse(): string {
@@ -463,19 +472,17 @@ vi.mock('../core/agent-factory.js', async () => {
   };
 });
 
-const ARTIFACTS_BASE = '.mosaic/artifacts';
-
 describe('Canary: Full 13-Stage Pipeline', () => {
+  let tmpRoot: string;
+  let ARTIFACTS_BASE: string;
+
   beforeEach(() => {
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    tmpRoot = createTestMosaicDir();
+    ARTIFACTS_BASE = path.join(tmpRoot, 'artifacts');
   });
 
   afterEach(() => {
-    if (fs.existsSync('.mosaic')) {
-      fs.rmSync('.mosaic', { recursive: true });
-    }
+    cleanupTestMosaicDir(tmpRoot);
   });
 
   it('should run full 13-stage pipeline and produce all artifacts', async () => {

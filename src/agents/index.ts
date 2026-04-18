@@ -1,4 +1,5 @@
 export { LLMAgent } from './llm-agent.js';
+export { ToolUseAgent } from './tool-use-agent.js';
 export { ResearcherAgent } from './researcher.js';
 export { ProductOwnerAgent } from './product-owner.js';
 export { UXDesignerAgent } from './ux-designer.js';

@@ -22,19 +22,22 @@ You are a market researcher and feasibility analyst. Analyze the user's product 
 
 ## Output
 
-Your response must be a JSON object with two fields:
+You have access to WebSearch and WebFetch tools. Use them to gather real data.
+
+Your final response should be the full research.md content as plain text (markdown).
+
+At the very end of your response, include the manifest as a fenced JSON block:
 
 ```json
 {
-  "artifact": "...full research.md content...",
-  "manifest": {
-    "competitors": ["name1", "name2", "name3"],
-    "key_insights": ["insight1", "insight2"],
-    "feasibility": "high | medium | low",
-    "risks": ["risk1", "risk2"]
-  }
+  "competitors": ["name1", "name2", "name3"],
+  "key_insights": ["insight1", "insight2"],
+  "feasibility": "high | medium | low",
+  "risks": ["risk1", "risk2"]
 }
 ```
+
+The pipeline will extract the JSON block automatically. Everything before the JSON block becomes research.md.
 
 ## research.md Structure
 ```markdown
